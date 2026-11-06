@@ -1,11 +1,13 @@
 -- Sightings: `seen` journal events (other players this character saw) and `group` events.
--- Gated by RynaDB.settings: `census` (off: no `seen` events at all), `chatSightings` (chat) and
--- `groupMembers` (group members, and the `group` event's member list).
+-- Gated by RynaDB.settings: `census` (off: no `seen` events at all), `chatSightings` (chat),
+-- `groupMembers` (group members, and the `group` event's member list) and `nearbyPlayers`
+-- (players whose nameplate, target or mouseover the client shows).
 --
--- Privacy: a chat message yields only who sent it: the sender's GUID and name, plus class and
--- race where the client's GUID cache has them. The message text, the channel and the recipient
--- are never read into a variable, stored, buffered or printed; the chat handler takes only the
--- sender (argument 2) and the GUID (argument 12) and discards the rest.
+-- Privacy: a chat message yields only who sent it and, for local chat, where: the sender's GUID and
+-- name, class and race where the client's GUID cache has them, and the observer's own zone for
+-- say, yell, emotes and the zone's General channel. The message text and the recipient are never
+-- read into a variable, stored, buffered or printed. The channel's id and base name are read only
+-- to decide whether the zone applies, and are never stored or printed.
 
 local _, ns = ...
 
@@ -13,7 +15,35 @@ local S = {}
 ns.Sightings = S
 
 local NonEmpty = ns.NonEmpty
-local CHAT_WINDOW = 600 -- seconds: one chat sighting per player per 10 minutes
+local WINDOW = 600 -- seconds: one sighting per player per 10 minutes, whatever the source
+
+-- The last sighting per GUID, shared by every source: { at = GetTime(), level = n or nil }. In
+-- memory only (never saved), pruned as it grows. Chat and nearby sightings within the window are
+-- skipped, except that one with a level is recorded after one without.
+local last, lastCount = {}, 0
+
+local function remember(guid, level)
+  local now = GetTime()
+  if not last[guid] then lastCount = lastCount + 1 end
+  last[guid] = { at = now, level = level }
+  if lastCount > 2000 then
+    local kept, n = {}, 0
+    for g, l in pairs(last) do
+      if now - l.at < WINDOW then
+        kept[g] = l
+        n = n + 1
+      end
+    end
+    last, lastCount = kept, n
+  end
+end
+
+-- The earlier sighting of guid within the window, or nil.
+local function recent(guid, now)
+  local l = last[guid]
+  if l and now - l.at < WINDOW then return l end
+  return nil
+end
 
 -- info: { guid, fullName, level, class, race, guild, zone }
 -- Nothing is written while the census setting is off, whatever the source (chat, group, roster).
@@ -27,10 +57,12 @@ function S.Seen(source, info, quiet)
   local guid = NonEmpty(info.guid)
   if guid and guid == ns.playerGuid then return nil end
   if not guid and not NonEmpty(info.fullName) then return nil end
-  return ns.Journal.Add("seen", {
+  local e = ns.Journal.Add("seen", {
     guid = guid, fullName = NonEmpty(info.fullName), level = info.level, class = info.class,
     race = info.race, guild = info.guild, zone = info.zone, source = source,
   }, quiet)
+  if e and guid then remember(guid, info.level) end
+  return e
 end
 
 local function guidInfo(guid)
@@ -38,21 +70,37 @@ local function guidInfo(guid)
   return NonEmpty(class), NonEmpty(race)
 end
 
--- Chat: last-seen times per GUID in memory only (never saved), pruned as it grows.
-local lastChat, lastChatCount = {}, 0
-
--- Debug only: a skipped chat sighting is noted once per sender per window, not per message.
+-- Debug only: a skipped sighting is noted once per player per window, not per message or event.
 local skipNoted, skipNotedCount = {}, 0
 local function noteSkip(guid, now)
   local t = skipNoted[guid]
-  if t and now - t < CHAT_WINDOW then return false end
+  if t and now - t < WINDOW then return false end
   if skipNotedCount > 2000 then skipNoted, skipNotedCount = {}, 0 end
   if not t then skipNotedCount = skipNotedCount + 1 end
   skipNoted[guid] = now
   return true
 end
 
-local function onChat(_, ...)
+-- Chat that is heard only nearby, or only in the observer's zone, gets the observer's zone. The
+-- General channel is zone-bound (zone channel id 1, base name "General"). Trade, LocalDefense and
+-- LookingForGroup would need a list of cities to tell, which the addon doesn't keep, so they get
+-- no zone; nor do whispers, guild, party, raid and instance chat (group members come from the
+-- group scan, with their zones).
+local LOCAL_CHAT = {
+  CHAT_MSG_SAY = true, CHAT_MSG_YELL = true, CHAT_MSG_EMOTE = true, CHAT_MSG_TEXT_EMOTE = true,
+}
+local function chatZone(event, ...)
+  if LOCAL_CHAT[event] then return ns.rec.zone end
+  if event ~= "CHAT_MSG_CHANNEL" then return nil end
+  local zoneChannel = select(7, ...)
+  if type(zoneChannel) == "number" and not ns.IsSecret(zoneChannel) and zoneChannel == 1 then
+    return ns.rec.zone
+  end
+  if NonEmpty(select(9, ...)) == "General" then return ns.rec.zone end
+  return nil
+end
+
+local function onChat(event, ...)
   if not ns.rec then return end
   local recording = ns.Setting("census") and ns.Setting("chatSightings")
   if not recording and not ns.Debugging() then return end
@@ -68,28 +116,18 @@ local function onChat(_, ...)
     end
     return
   end
-  local last = lastChat[guid]
-  if last and now - last < CHAT_WINDOW then
+  local earlier = recent(guid, now)
+  if earlier then
     if ns.Debugging() and noteSkip(guid, now) then
-      ns.Debug("census: %s already seen in chat %s, skipped until 10 minutes have passed",
-        tostring(NonEmpty(sender) or guid), ns.DurationText(now - last) .. " ago")
+      ns.Debug("census: %s already seen %s ago, skipped until 10 minutes have passed",
+        tostring(NonEmpty(sender) or guid), ns.DurationText(now - earlier.at))
     end
     return
   end
-  if not last then lastChatCount = lastChatCount + 1 end
-  lastChat[guid] = now
-  if lastChatCount > 2000 then
-    local kept, n = {}, 0
-    for g, t in pairs(lastChat) do
-      if now - t < CHAT_WINDOW then
-        kept[g] = t
-        n = n + 1
-      end
-    end
-    lastChat, lastChatCount = kept, n
-  end
   local class, race = guidInfo(guid)
-  S.Seen("chat", { guid = guid, fullName = NonEmpty(sender), class = class, race = race })
+  S.Seen("chat", {
+    guid = guid, fullName = NonEmpty(sender), class = class, race = race, zone = chatZone(event, ...),
+  })
 end
 
 local CHAT_EVENTS = {
@@ -185,3 +223,113 @@ function S.ScanGroup()
 end
 
 ns.On("GROUP_ROSTER_UPDATE", function() ns.Debounce("group", 1, S.ScanGroup) end)
+
+-- Nearby: players whose nameplate appears, whom you target, or whom you mouse over. Each gives
+-- the client's level, class, race and guild, and the observer's zone; the shared 10-minute
+-- window applies (a sighting with a level is still recorded after one without). Players of the
+-- other faction are skipped: the census counts a sighting under the observer's faction, which
+-- only holds for your own faction's players (chat, groups, guilds).
+--
+-- Debug: a city can bring dozens of nameplates in seconds, so nearby sightings print at most one
+-- line per 5 seconds: the sighting itself when it is the only one, else a count (with the names
+-- when there are 5 or fewer) and how many were skipped.
+local SUMMARY_SECONDS = 5
+local burst = { seen = 0, skipped = 0, names = {}, line = nil, printedAt = nil, pending = false }
+
+local function flushBurst()
+  burst.pending = false
+  local total = burst.seen + burst.skipped
+  if total == 0 then return end
+  burst.printedAt = GetTime()
+  if total == 1 then
+    ns.Debug("%s", burst.line)
+  else
+    local line = string.format("census: %d nearby players seen", burst.seen)
+    if burst.seen > 0 and burst.seen <= 5 then line = line .. ": " .. table.concat(burst.names, ", ") end
+    if burst.skipped > 0 then
+      line = line .. string.format(", %d skipped (already seen in the last 10 minutes)", burst.skipped)
+    end
+    ns.Debug("%s", line)
+  end
+  burst.seen, burst.skipped, burst.names, burst.line = 0, 0, {}, nil
+end
+
+local function noteNearby(line, name)
+  if name then
+    burst.seen = burst.seen + 1
+    if #burst.names < 6 then burst.names[#burst.names + 1] = name end
+  else
+    burst.skipped = burst.skipped + 1
+  end
+  burst.line = line
+  if burst.pending then return end
+  local wait = burst.printedAt and (burst.printedAt + SUMMARY_SECONDS - GetTime()) or 0
+  if wait <= 0 then
+    flushBurst()
+  else
+    burst.pending = true
+    ns.After(wait, "census nearby", flushBurst)
+  end
+end
+
+local function levelOf(unit)
+  local level = ns.Try(UnitLevel, unit)
+  if type(level) ~= "number" or ns.IsSecret(level) or level <= 0 then return nil end
+  return level
+end
+
+local function seeUnit(unit, source)
+  local rec = ns.rec
+  if not rec then return end
+  if not (ns.Setting("census") and ns.Setting("nearbyPlayers")) then
+    if ns.Debugging() then
+      ns.DebugChanged("nearby", "%s: not recording nearby players",
+        ns.Setting("census") and "nearby players off" or "census off")
+    end
+    return
+  end
+  if not ns.Try(UnitIsPlayer, unit) or ns.Try(UnitIsUnit, unit, "player") then return end
+  local visible = ns.Fn("UnitIsVisible")
+  if visible and not ns.Try(visible, unit) then return end
+  local guid = ns.Try(UnitGUID, unit)
+  if ns.IsSecret(guid) or type(guid) ~= "string" or not guid:find("^Player%-") or guid == ns.playerGuid then
+    return
+  end
+  local faction = NonEmpty(ns.Try(UnitFactionGroup, unit))
+  if faction and rec.faction and faction ~= rec.faction then return end
+
+  local now = GetTime()
+  local earlier = recent(guid, now)
+  local level = (not (earlier and earlier.level)) and levelOf(unit) or nil
+  if earlier and not level then
+    if ns.Debugging() and noteSkip(guid, now) then
+      noteNearby(string.format("census: %s already seen %s ago, skipped until 10 minutes have passed (%s)",
+        tostring(NonEmpty(ns.Try(UnitName, unit)) or guid), ns.DurationText(now - earlier.at), source))
+    end
+    return
+  end
+
+  local info = {
+    guid = guid, fullName = ns.Character.Names(unit).fullName, level = level,
+    class = NonEmpty(select(2, ns.Try(UnitClass, unit))),
+    race = NonEmpty(select(2, ns.Try(UnitRace, unit))),
+    guild = NonEmpty(ns.Try(ns.Fn("GetGuildInfo"), unit)),
+    zone = rec.zone,
+  }
+  if S.Seen(source, info, true) and ns.Debugging() then
+    local name = tostring(info.fullName or guid)
+    noteNearby(string.format("census: seen %s level %s %s nearby (%s)%s", name, tostring(level or "?"),
+      tostring(info.class or "?"), source, earlier and ", now with a level" or ""), name)
+  end
+end
+
+-- Registered from the UI-ready login handler (Init.lua), so login itself stays cheap.
+function S.RegisterNearby()
+  if S.nearbyRegistered then return end
+  S.nearbyRegistered = true
+  ns.On("NAME_PLATE_UNIT_ADDED", function(_, unit)
+    if type(unit) == "string" then seeUnit(unit, "nameplate") end
+  end)
+  ns.On("PLAYER_TARGET_CHANGED", function() seeUnit("target", "target") end)
+  ns.On("UPDATE_MOUSEOVER_UNIT", function() seeUnit("mouseover", "mouseover") end)
+end

@@ -32,14 +32,29 @@ app first uploads, and the journal has to hold several days of heavy play until 
 logins and logouts, zone changes, quests accepted and turned in, level-ups, deaths, gold changes of a
 gold or more, group changes, and **sightings** of other players (see the census settings below).
 
-A sighting records only *who*: the other player's GUID, name, and level, class, race, guild and zone
-where the client gives them. Sightings come from your group, from your guild roster (online
-members), and from chat.
+A sighting records only *who* and *where*: the other player's GUID, name, and level, class, race,
+guild and zone where the client gives them. Sightings come from your group, from your guild roster
+(online members), from players near you, and from chat.
+
+**Nearby** (source `nameplate`, `target` or `mouseover`): a player whose nameplate appears, whom you
+target, or whom you mouse over gives their level, class, race and guild as the client shows them,
+with your own current zone. Players of the other faction are skipped (the census counts a sighting
+under your faction). Nameplates only appear for players the game already shows you; the addon asks
+the client nothing extra.
 
 **Chat**: a chat message yields only a sighting of its sender (GUID and name, plus class and race
-from the client's cache), at most one per player per 10 minutes. The addon never reads the message
-text, the channel or the recipient into anything: it doesn't store them, buffer them, log them or
-print them. The handler takes the sender and the GUID from the event and discards the rest.
+from the client's cache) and, for chat that is only heard nearby or in your zone, where: say, yell,
+emotes and the zone's General channel get your own current zone. Trade, LocalDefense and
+LookingForGroup get no zone (that would need a list of cities, which the addon doesn't keep), and
+neither do whispers, guild, party, raid or instance chat. Nothing from chat beyond who spoke and
+that zone is kept: the addon never reads the message text or the recipient into anything, and reads
+the channel's id and base name only to decide whether the zone applies; it doesn't store any of
+them, buffer them, log them or print them.
+
+**At most one sighting per player per 10 minutes**, shared by chat and nearby players, so someone
+who talks in chat and walks past isn't counted twice. The one exception: a sighting that has a level
+is recorded after an earlier one in the window that didn't (a chat line has no level; the nameplate
+does). Group and guild-roster sightings are always recorded and count towards the window.
 
 `RynaDB.client` holds the client's version and Interface number and how it returned your character's
 name parts, overwritten each login, so the format can be checked against a real client.
@@ -74,10 +89,11 @@ companion app, never in the game: an addon can't reach the network.
 |---|---|---|
 | Turn on the game's combat log | In dungeons and raids only | When the addon turns combat logging on (see below). Same as `/ryna combatlog`. |
 | Record who I see in chat | on | A `seen` event for who speaks in chat (only who, never what). Off: chat isn't looked at. |
-| Take part in the census | on | Records the other players you see. Off: **no** `seen` events at all, from chat, your group or your guild roster; the addon records only your own characters (and still your guild's roster, which is your guild's own list). |
+| Take part in the census | on | Records the other players you see. Off: **no** `seen` events at all, from chat, players nearby, your group or your guild roster; the addon records only your own characters (and still your guild's roster, which is your guild's own list). |
 | Record other players in my group | on | Part of the census. Off: no `seen` events for group members, and `group` events say only that you joined, changed or left a group, without the member list. |
+| Record players I see nearby | on | Part of the census. Players whose nameplates, target or mouseover you see: their level, class and guild, and where. Off: those three sources are ignored. |
 | Show the minimap button | on | Hides or shows the button. `/ryna` still opens the panel. |
-| Debug messages | off | Prints what Ryna is doing to the chat window, one dimmed `Ryna debug:` line each: scans as they run (played time, gear, professions, reputations, bags and bank, quest log, group, guild roster), every journal event, every sighting and every sighting skipped (by the 10-minute chat window or a census setting), combat-log decisions and settings changes. For checking that it works. Same as `/ryna debug`. |
+| Debug messages | off | Prints what Ryna is doing to the chat window, one dimmed `Ryna debug:` line each: scans as they run (played time, gear, professions, reputations, bags and bank, quest log, group, guild roster), every journal event, every sighting and every sighting skipped (by the 10-minute window or a census setting; nearby players print at most one line per 5 seconds, a count with the names when there are 5 or fewer), combat-log decisions and settings changes. For checking that it works. Same as `/ryna debug`. |
 
 The settings are for the whole game account (`RynaDB` is account-wide), not per character.
 
@@ -133,7 +149,7 @@ positions and health in the log, turn on **Advanced Combat Logging** in the game
 - `/ryna debug on|off|toggle`: turns the debug messages on or off; `/ryna debug` alone says which.
   Busy scans print once per scan, not per game event, and a quest-log, reputation or profession
   line that hasn't changed isn't repeated within five minutes. Group and guild-roster sightings
-  print as one summary line per scan.
+  print as one summary line per scan, and nearby players at most one line per 5 seconds.
 - `/ryna help`: the commands.
 
 ## Installing by hand

@@ -167,11 +167,15 @@ local function build()
   P.chat = checkbox(content, "Record who I see in chat",
     "Only who spoke, never what they said or in which channel.")
   P.census = checkbox(content, "Take part in the census",
-    "Records other players you see (in chat, your group and your guild). Off: Ryna records only your own characters.")
+    "Records other players you see (nearby, in chat, your group and your guild). "
+    .. "Off: Ryna records only your own characters.")
   P.group = checkbox(content, "Record other players in my group",
     "Who was in your groups.")
+  P.nearby = checkbox(content, "Record players I see nearby",
+    "Players whose nameplates, target or mouseover you see: their level, class and guild, and where.")
   P.acl = checkbox(content, "Advanced combat logging",
-    "Sets the game's advanced combat logging on, so fights are logged with positions and health. Needed for Ryna's timelines and deaths.")
+    "Sets the game's advanced combat logging on, so fights are logged with positions and health. "
+    .. "Needed for Ryna's timelines and deaths.")
   P.minimap = checkbox(content, "Show the minimap button", "Drag it around the minimap to move it.")
   P.debug = checkbox(content, "Debug messages",
     "Prints what Ryna is doing to the chat window: scans, journal events, sightings. For checking that it works.")
@@ -188,6 +192,7 @@ local function build()
   toggle(P.chat, "chatSightings")
   toggle(P.census, "census")
   toggle(P.group, "groupMembers")
+  toggle(P.nearby, "nearbyPlayers")
   P.acl:SetScript("OnClick", function(self)
     ns.Run("setting advancedCombatLog", function()
       ns.db.settings.advancedCombatLog = self:GetChecked() and true or false
@@ -291,14 +296,17 @@ function P.Refresh()
   P.chat:SetChecked(settings.chatSightings)
   P.census:SetChecked(settings.census)
   P.group:SetChecked(settings.groupMembers)
+  P.nearby:SetChecked(settings.nearbyPlayers)
   P.acl:SetChecked(settings.advancedCombatLog)
   P.minimap:SetChecked(settings.minimap.shown)
   P.debug:SetChecked(settings.debug)
   P.chat.setActive(settings.census)
   P.group.setActive(settings.census)
+  P.nearby.setActive(settings.census)
   P.census.place(s, 4)
   P.chat.place(s, 30)
   P.group.place(s, 30)
+  P.nearby.place(s, 30)
   P.acl.place(s, 4)
   P.minimap.place(s, 4)
   P.debug.place(s, 4)

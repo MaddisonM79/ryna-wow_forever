@@ -30,6 +30,7 @@ ns.On("PLAYER_LOGIN", function()
   if not ns.db then ns.InitDB() end
   ns.Run("panel", ns.Panel.Register)
   ns.Run("minimap", ns.Minimap.Create)
+  ns.Run("nearby sightings", ns.Sightings.RegisterNearby)
 end)
 
 local deferred = false

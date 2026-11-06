@@ -41,7 +41,10 @@ function J.StartSession(guid)
 end
 
 -- One debug line per appended event: "journal: questDone 123 "Title"", "census: seen <name> in chat".
-local SEEN_WHERE = { chat = "in chat", group = "in your group", roster = "on the guild roster" }
+local SEEN_WHERE = {
+  chat = "in chat", group = "in your group", roster = "on the guild roster",
+  nameplate = "nearby (nameplate)", target = "nearby (target)", mouseover = "nearby (mouseover)",
+}
 
 local function quoted(s)
   return s and (' "' .. tostring(s) .. '"') or ""
@@ -50,8 +53,8 @@ end
 local function describe(e)
   local t = e.type
   if t == "seen" then
-    return string.format("census: seen %s %s", tostring(e.fullName or e.guid),
-      SEEN_WHERE[e.source] or ("from " .. tostring(e.source)))
+    return string.format("census: seen %s %s%s", tostring(e.fullName or e.guid),
+      SEEN_WHERE[e.source] or ("from " .. tostring(e.source)), e.zone and (" in " .. e.zone) or "")
   elseif t == "questAccept" then
     return string.format("journal: questAccept %s%s%s", tostring(e.questId), quoted(e.title),
       e.level and (" (level " .. tostring(e.level) .. ")") or "")

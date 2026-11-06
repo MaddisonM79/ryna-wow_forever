@@ -28,6 +28,8 @@ read_globals = {
   "UnitClass",
   "UnitFactionGroup",
   "UnitGUID",
+  "UnitIsPlayer",
+  "UnitIsUnit",
   "UnitLevel",
   "UnitName",
   "UnitRace",
