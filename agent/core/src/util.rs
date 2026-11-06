@@ -3,11 +3,22 @@
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use crate::cancel::CancelToken;
+
 /// The time and the means to wait, so retries and polling can be tested without waiting.
 pub trait Clock {
     /// Unix seconds.
     fn now(&self) -> i64;
     fn sleep(&self, d: Duration);
+    /// Sleep up to `d`, or until `cancel` fires; true if it has. The real clock wakes at once on
+    /// a cancel; this default (the tests' clock) sleeps the whole time and checks before and after.
+    fn sleep_unless_cancelled(&self, d: Duration, cancel: &CancelToken) -> bool {
+        if cancel.is_cancelled() {
+            return true;
+        }
+        self.sleep(d);
+        cancel.is_cancelled()
+    }
 }
 
 /// The real clock.
@@ -19,6 +30,9 @@ impl Clock for SystemClock {
     }
     fn sleep(&self, d: Duration) {
         std::thread::sleep(d);
+    }
+    fn sleep_unless_cancelled(&self, d: Duration, cancel: &CancelToken) -> bool {
+        cancel.wait(d)
     }
 }
 

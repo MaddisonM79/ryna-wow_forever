@@ -1,0 +1,266 @@
+//! What a front end shows, read fresh from the keychain, the disk and the agent's state: the
+//! installs (with the addon version in each), the accounts (with their last save and push), the
+//! sign-in and the last run. `ryna-wow status` prints it; the app's window shows it.
+
+use std::path::Path;
+
+use serde::Serialize;
+
+use crate::addon_install;
+use crate::auth::{identity_from_jwt, KeyringStore, TokenStore};
+use crate::config::Config;
+use crate::discovery::{self, Discovery};
+use crate::fix::Fix;
+use crate::snapshot::{account_key, default_label};
+use crate::state::{self, State};
+use crate::util::mtime;
+
+/// The flavor World of Warcraft: Forever's `.flavor.info` names.
+pub const FOREVER_FLAVOR: &str = "wowf";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallStatus {
+    pub path: String,
+    pub flavor: Option<String>,
+    /// Forever (`wowf`): the addon is installed only into these unless a folder was chosen.
+    pub forever: bool,
+    /// `Interface/AddOns/Ryna` is there.
+    pub has_addon: bool,
+    /// Its `Ryna.toc`'s `## Version:`, when it's there and says.
+    pub addon_version: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountStatus {
+    /// The account's `Ryna.lua`.
+    pub path: String,
+    /// The product folder it's under.
+    pub install: String,
+    /// What the API knows it by (the first 16 hex digits of the folder name's sha256).
+    pub key: String,
+    pub label: String,
+    /// When the game last wrote the file (unix seconds): the file's own time, else the last run's.
+    pub saved_at: Option<i64>,
+    pub pushed_at: Option<i64>,
+    pub characters: Option<usize>,
+    pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LastRunStatus {
+    pub at: i64,
+    pub ok: bool,
+    pub error: Option<String>,
+    pub fix: Option<Fix>,
+    /// The words to show for the failure (`Fix::message`), when it failed.
+    pub advice: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Status {
+    pub agent_version: String,
+    pub api: String,
+    pub issuer: String,
+    pub client_id_issued: bool,
+    /// A refresh token is kept on this computer.
+    pub signed_in: bool,
+    /// Who as: from the kept access token's claims, for display only.
+    pub signed_in_as: Option<String>,
+    /// The keychain couldn't be read (so `signed_in` is unknown and false).
+    pub keychain_error: Option<String>,
+    pub installs: Vec<InstallStatus>,
+    pub accounts: Vec<AccountStatus>,
+    /// The last run's error, if it failed.
+    pub last_error: Option<String>,
+    pub last_run: Option<LastRunStatus>,
+    pub state_dir: Option<String>,
+}
+
+fn display(p: &Path) -> String {
+    p.to_string_lossy().into_owned()
+}
+
+/// The status with the real keychain, discovery (`install` in place of the OS defaults) and
+/// state folder.
+pub fn status(config: &Config, install: Option<&Path>) -> Status {
+    let store = KeyringStore::for_issuer(&config.issuer);
+    let found = discovery::discover(install);
+    status_with(config, &store, &found, state::state_dir().as_deref())
+}
+
+/// `status` over any token store, discovery and state folder (tests; another front end).
+pub fn status_with(
+    config: &Config,
+    store: &dyn TokenStore,
+    found: &Discovery,
+    state_dir: Option<&Path>,
+) -> Status {
+    let (signed_in, keychain_error) = match store.refresh_token() {
+        Ok(t) => (t.is_some(), None),
+        Err(e) => (false, Some(e)),
+    };
+    let signed_in_as = if signed_in {
+        store
+            .access_token()
+            .and_then(|a| identity_from_jwt(&a.token))
+    } else {
+        None
+    };
+    let st = state_dir.map(State::load).unwrap_or_default();
+    let installs = found
+        .installs
+        .iter()
+        .map(|i| InstallStatus {
+            path: display(&i.path),
+            flavor: i.flavor.clone(),
+            forever: i.flavor.as_deref() == Some(FOREVER_FLAVOR),
+            has_addon: addon_install::has_addon(i),
+            addon_version: addon_install::installed_addon_version(i),
+        })
+        .collect();
+    let accounts = found
+        .accounts
+        .iter()
+        .map(|a| {
+            let path = display(&a.path);
+            let s = st.accounts.get(&path);
+            AccountStatus {
+                install: display(&a.install),
+                key: s.map_or_else(|| account_key(&a.account), |s| s.key.clone()),
+                label: s.map_or_else(|| default_label(&a.account), |s| s.label.clone()),
+                saved_at: mtime(&a.path)
+                    .ok()
+                    .map(|m| m.secs)
+                    .or_else(|| s.and_then(|s| s.saved_at)),
+                pushed_at: s.and_then(|s| s.pushed_at),
+                characters: s.and_then(|s| s.characters),
+                last_error: s.and_then(|s| s.last_error.clone()),
+                path,
+            }
+        })
+        .collect();
+    let last_run = st.last_run.map(|r| {
+        let advice = match (&r.error, r.ok) {
+            (Some(e), false) => Some(r.fix.unwrap_or(Fix::Other).message(e)),
+            _ => None,
+        };
+        LastRunStatus {
+            at: r.at,
+            ok: r.ok,
+            error: r.error,
+            fix: r.fix,
+            advice,
+        }
+    });
+    Status {
+        agent_version: crate::AGENT_VERSION.to_string(),
+        api: config.api.clone(),
+        issuer: config.issuer.clone(),
+        client_id_issued: config.client_id_issued(),
+        signed_in,
+        signed_in_as,
+        keychain_error,
+        installs,
+        accounts,
+        last_error: last_run
+            .as_ref()
+            .filter(|r| !r.ok)
+            .and_then(|r| r.error.clone()),
+        last_run,
+        state_dir: state_dir.map(display),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::testing::MemoryStore;
+    use crate::config::test_config;
+    use crate::discovery::{discover, testing::product};
+    use crate::state::{AccountState, LastRun};
+    use serde_json::json;
+
+    #[test]
+    fn installs_accounts_sign_in_and_the_last_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("World of Warcraft");
+        let forever = product(
+            &root,
+            "_forever_",
+            "wowf",
+            &[("FAKEACCOUNT1", "RynaDB = {}")],
+        );
+        product(&root, "_retail_", "wow", &[]);
+        let addon = forever.join("Interface/AddOns/Ryna");
+        std::fs::create_dir_all(&addon).unwrap();
+        std::fs::write(
+            addon.join("Ryna.toc"),
+            "## Title: Ryna\n## Version: 0.1.0\n",
+        )
+        .unwrap();
+        let found = discover(Some(&root));
+
+        let state_dir = dir.path().join("state");
+        let mut st = State::default();
+        st.accounts.insert(
+            display(&found.accounts[0].path),
+            AccountState {
+                key: "k1".into(),
+                label: "Main".into(),
+                pushed_at: Some(20),
+                characters: Some(2),
+                ..Default::default()
+            },
+        );
+        st.last_run = Some(LastRun {
+            at: 30,
+            ok: false,
+            error: Some("the API is unreachable or failing after 3 tries: x".into()),
+            fix: Some(Fix::Network),
+        });
+        st.save(&state_dir).unwrap();
+
+        // {"sub":"x","email":"aerin@example.test"}
+        let store = MemoryStore::with_access(
+            "h.eyJzdWIiOiJ4IiwiZW1haWwiOiJhZXJpbkBleGFtcGxlLnRlc3QifQ.s",
+            i64::MAX,
+        );
+        let s = status_with(&test_config(), &store, &found, Some(&state_dir));
+        assert!(s.signed_in && s.client_id_issued);
+        assert_eq!(s.signed_in_as.as_deref(), Some("aerin"));
+        assert_eq!(s.installs.len(), 2);
+        assert!(s.installs[0].forever && s.installs[0].has_addon);
+        assert_eq!(s.installs[0].addon_version.as_deref(), Some("0.1.0"));
+        assert!(!s.installs[1].forever && !s.installs[1].has_addon);
+        assert_eq!(s.installs[1].addon_version, None);
+        let a = &s.accounts[0];
+        assert_eq!((a.key.as_str(), a.label.as_str()), ("k1", "Main"));
+        assert_eq!((a.pushed_at, a.characters), (Some(20), Some(2)));
+        assert!(a.saved_at.is_some());
+        assert_eq!(
+            s.last_error.as_deref(),
+            Some("the API is unreachable or failing after 3 tries: x")
+        );
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["installs"][0]["addonVersion"], json!("0.1.0"));
+        assert_eq!(v["lastRun"]["fix"], json!("network"));
+        assert_eq!(v["lastRun"]["advice"], json!("Couldn't reach the API"));
+        assert_eq!(v["signedInAs"], json!("aerin"));
+
+        // Signed out, nothing found, no state.
+        let s = status_with(
+            &test_config(),
+            &MemoryStore::default(),
+            &Discovery::default(),
+            None,
+        );
+        assert!(!s.signed_in);
+        assert_eq!(s.signed_in_as, None);
+        assert!(s.installs.is_empty() && s.accounts.is_empty());
+        assert_eq!((s.last_run, s.last_error, s.state_dir), (None, None, None));
+    }
+}

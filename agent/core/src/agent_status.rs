@@ -17,7 +17,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use crate::discovery::Discovery;
-use crate::runner::Failure;
+use crate::fix::Fix;
 use crate::snapshot::{account_key, default_label};
 use crate::state::State;
 
@@ -132,18 +132,9 @@ impl AgentStatus {
     }
 }
 
-/// The message the addon shows for a run's failure.
-pub fn message_for(failure: Failure, error: &str) -> String {
-    match failure {
-        Failure::SignIn => "Sign in again: the agent's sign-in has lapsed".to_string(),
-        Failure::Update => {
-            "Update the agent: the server no longer accepts this snapshot format".to_string()
-        }
-        Failure::Other if error.contains("unreachable") || error.contains("failing after") => {
-            "Couldn't reach the API".to_string()
-        }
-        Failure::Other => error.chars().take(200).collect(),
-    }
+/// The message the addon shows for a run's failure: the fix's neutral words (`Fix::message`).
+pub fn message_for(failure: Fix, error: &str) -> String {
+    failure.message(error)
 }
 
 /// The status for one install: its accounts as `state` knows them.
@@ -153,7 +144,7 @@ pub fn for_install(
     state: &State,
     signed_in: bool,
     signed_in_as: Option<String>,
-    failure: Option<(Failure, &str)>,
+    failure: Option<(Fix, &str)>,
     now: i64,
 ) -> AgentStatus {
     let accounts: Vec<StatusAccount> = discovery
@@ -205,17 +196,13 @@ pub fn write_all(
     state: &State,
     signed_in: bool,
     signed_in_as: Option<String>,
-    failure: Option<(Failure, &str)>,
+    failure: Option<(Fix, &str)>,
     now: i64,
 ) -> (Vec<PathBuf>, Vec<(PathBuf, std::io::Error)>) {
     let mut written = Vec::new();
     let mut failed = Vec::new();
     for i in &discovery.installs {
-        let addon = i
-            .path
-            .join("Interface")
-            .join("AddOns")
-            .join(crate::addon_install::ADDON_NAME);
+        let addon = crate::addon_install::addon_dir(i);
         if !addon.is_dir() {
             continue;
         }
@@ -318,14 +305,15 @@ mod tests {
     fn messages() {
         assert_eq!(
             message_for(
-                Failure::Other,
+                Fix::Network,
                 "the API is unreachable or failing after 3 tries: x"
             ),
             "Couldn't reach the API"
         );
-        assert!(message_for(Failure::Update, "").starts_with("Update the agent"));
+        assert_eq!(message_for(Fix::SignIn, ""), "Sign in again");
+        assert!(message_for(Fix::Update, "").starts_with("Update the agent"));
         assert_eq!(
-            message_for(Failure::Other, "line 3, column 1: bad"),
+            message_for(Fix::Other, "line 3, column 1: bad"),
             "line 3, column 1: bad"
         );
     }
@@ -355,7 +343,7 @@ mod tests {
             &st,
             true,
             Some("aerin".into()),
-            Some((Failure::Other, "unreachable")),
+            Some((Fix::Network, "unreachable")),
             30,
         );
         assert!(failed.is_empty());

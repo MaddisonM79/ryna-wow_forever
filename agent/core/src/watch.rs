@@ -20,11 +20,14 @@
 //! worker.join().unwrap().unwrap();
 //! ```
 //!
+//! An owner that wants a pass now, without restarting the loop, runs it with a [`WatchControl`]
+//! (`watch_with_control`) and calls `request_pass()`: the wait between passes ends at once, or,
+//! when a pass is running, the next one starts as soon as it finishes.
+//!
 //! Every event is `Serialize` (`{"event": "pushed", ...}`), so an app can forward it to its
 //! webview unchanged.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -32,9 +35,10 @@ use serde::Serialize;
 use crate::auth::{Auth, KeyringStore};
 use crate::config::Config;
 use crate::discovery::{self, Discovery};
+use crate::fix::Fix;
 use crate::http::{HttpTransport, Transport};
 use crate::push::Api;
-use crate::runner::{run_once_observed, Failure, RunError, RunOptions};
+use crate::runner::{run_once_observed, RunError, RunOptions};
 use crate::state;
 use crate::util::{Clock, SystemClock};
 
@@ -73,13 +77,15 @@ pub enum WatchEvent {
         characters: usize,
         result: serde_json::Value,
     },
-    /// An account (or, with no label, the whole pass) failed; `failure` says what fixes it.
+    /// An account (or, with no label, the whole pass) failed. `message` is the error itself;
+    /// `fix` says what fixes it and `advice` is the words to show for it (`Fix::message`).
     #[serde(rename_all = "camelCase")]
     Error {
         label: Option<String>,
         path: Option<String>,
         message: String,
-        failure: Failure,
+        fix: Fix,
+        advice: String,
     },
     Heartbeat {
         ok: bool,
@@ -93,33 +99,56 @@ pub enum WatchEvent {
     },
 }
 
-/// Stops a watch loop from another thread. Cloning shares it.
-#[derive(Debug, Clone, Default)]
-pub struct CancelToken(Arc<(Mutex<bool>, Condvar)>);
+pub use crate::cancel::CancelToken;
 
-impl CancelToken {
+impl WatchEvent {
+    /// An `Error`, with `advice` from its fix.
+    pub fn error(label: Option<String>, path: Option<String>, message: String, fix: Fix) -> Self {
+        WatchEvent::Error {
+            label,
+            path,
+            advice: fix.message(&message),
+            message,
+            fix,
+        }
+    }
+}
+
+/// The owner's handle on a running loop: ask for a pass now, or stop it. Cloning shares it.
+#[derive(Debug, Clone, Default)]
+pub struct WatchControl {
+    token: CancelToken,
+}
+
+impl WatchControl {
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Start a pass now: the loop's wait ends at once; a pass in progress is followed straight
+    /// away by another. Requests before the next wait count as one.
+    pub fn request_pass(&self) {
+        self.token.wake();
+    }
+
+    /// Stop the loop: at once while it waits, or at the end of the pass it's in.
     pub fn cancel(&self) {
-        let (flag, cv) = &*self.0;
-        *flag.lock().unwrap_or_else(|e| e.into_inner()) = true;
-        cv.notify_all();
+        self.token.cancel();
     }
 
     pub fn is_cancelled(&self) -> bool {
-        *self.0 .0.lock().unwrap_or_else(|e| e.into_inner())
+        self.token.is_cancelled()
     }
 
-    /// Wait up to `d`; true if cancelled meanwhile (returns at once when it is).
-    pub fn wait(&self, d: Duration) -> bool {
-        let (flag, cv) = &*self.0;
-        let guard = flag.lock().unwrap_or_else(|e| e.into_inner());
-        let (guard, _) = cv
-            .wait_timeout_while(guard, d, |cancelled| !*cancelled)
-            .unwrap_or_else(|e| e.into_inner());
-        *guard
+    /// The token under it (`watch` and `watch_with` take one).
+    pub fn token(&self) -> &CancelToken {
+        &self.token
+    }
+}
+
+impl From<CancelToken> for WatchControl {
+    fn from(token: CancelToken) -> Self {
+        WatchControl { token }
     }
 }
 
@@ -164,7 +193,18 @@ pub fn watch(
     )
 }
 
-/// `watch` over any transport, token store and discovery (tests; another front end).
+/// `watch`, driven by a `WatchControl` the owner keeps a clone of (for `request_pass`).
+pub fn watch_with_control(
+    config: &Config,
+    opts: &WatchOptions,
+    control: &WatchControl,
+    on_event: &mut dyn FnMut(WatchEvent),
+) -> Result<(), RunError> {
+    watch(config, opts, control.token(), on_event)
+}
+
+/// `watch` over any transport, token store and discovery (tests; another front end). A
+/// `cancel.wake()` (`WatchControl::request_pass`) ends the wait between passes early.
 #[allow(clippy::too_many_arguments)]
 pub fn watch_with(
     config: &Config,
@@ -204,12 +244,12 @@ pub fn watch_with(
         ) {
             Ok(report) => report.ok(),
             Err(RunError::Busy) => {
-                on_event(WatchEvent::Error {
-                    label: None,
-                    path: None,
-                    message: RunError::Busy.to_string(),
-                    failure: Failure::Other,
-                });
+                on_event(WatchEvent::error(
+                    None,
+                    None,
+                    RunError::Busy.to_string(),
+                    Fix::Other,
+                ));
                 false
             }
             Err(e) => return Err(e),
@@ -218,7 +258,7 @@ pub fn watch_with(
             ok,
             next_in_secs: opts.interval.as_secs(),
         });
-        if cancel.wait(opts.interval) {
+        if cancel.wait_or_wake(opts.interval) {
             break;
         }
     }
@@ -239,19 +279,48 @@ mod tests {
     const NOW: i64 = 1_800_000_000;
 
     #[test]
-    fn cancel_wakes_a_wait_at_once() {
-        let c = CancelToken::new();
-        let other = c.clone();
-        let t = std::thread::spawn(move || {
-            let start = Instant::now();
-            let cancelled = other.wait(Duration::from_secs(30));
-            (cancelled, start.elapsed())
-        });
-        std::thread::sleep(Duration::from_millis(50));
-        c.cancel();
-        let (cancelled, took) = t.join().unwrap();
-        assert!(cancelled && took < Duration::from_secs(5));
-        assert!(!CancelToken::new().wait(Duration::from_millis(1)));
+    fn a_requested_pass_runs_without_waiting_out_the_interval() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("World of Warcraft");
+        product(&root, "_forever_", "wowf", &[]);
+        let http = ScriptedTransport::new();
+        http.json(200, json!({ "ok": true, "data": {} }))
+            .json(200, json!({ "ok": true, "data": {} }));
+        let store = MemoryStore::with_access("tok", NOW + 3600);
+        let clock = FakeClock::at(NOW);
+        let opts = WatchOptions {
+            install: Some(root),
+            state_dir: dir.path().join("state"),
+            // Far longer than the test may take: only a requested pass ends the first wait.
+            interval: Duration::from_secs(600),
+        };
+        let control = WatchControl::new();
+        let mut passes = 0;
+        let start = Instant::now();
+        watch_with(
+            &test_config(),
+            &http,
+            &store,
+            &clock,
+            &opts,
+            control.token(),
+            &discovery::discover,
+            &mut |e| {
+                if matches!(e, WatchEvent::PassFinished { .. }) {
+                    passes += 1;
+                    if passes == 1 {
+                        control.request_pass();
+                    } else {
+                        control.cancel();
+                    }
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(passes, 2);
+        assert!(start.elapsed() < Duration::from_secs(60));
+        assert!(control.is_cancelled());
+        assert_eq!(http.remaining(), 0);
     }
 
     #[test]
@@ -375,7 +444,8 @@ mod tests {
             .find(|e| matches!(e, WatchEvent::Error { .. }))
             .unwrap();
         let v = serde_json::to_value(err).unwrap();
-        assert_eq!(v["failure"], json!("signIn"));
-        assert!(v["message"].as_str().unwrap().contains("ryna-wow login"));
+        assert_eq!(v["fix"], json!("signIn"));
+        assert_eq!(v["advice"], json!("Sign in again"));
+        assert!(!v["message"].as_str().unwrap().contains("ryna-wow"), "{v}");
     }
 }

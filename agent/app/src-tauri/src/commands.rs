@@ -44,10 +44,16 @@ pub async fn get_status(app: AppHandle) -> Result<StatusWithSettings, String> {
 }
 
 /// Begins the device grant: the code to show and the page to check it on. Polling carries on
-/// in the background; `login-finished` says how it ended.
+/// in the background until it ends or `cancel_login`; `login-finished` says how it ended.
 #[tauri::command]
 pub async fn start_login(app: AppHandle) -> Result<LoginCode, String> {
     blocking(move || agent::start_login(&app)).await
+}
+
+/// Stops a sign-in that is starting or polling (its `login-finished` says `cancelled`).
+#[tauri::command]
+pub fn cancel_login(app: AppHandle) {
+    agent::cancel_login(&app);
 }
 
 /// Opens the pending sign-in's page in the browser.
@@ -74,6 +80,7 @@ pub fn stop_watch(app: AppHandle) {
     agent::stop_watch(&app);
 }
 
+/// A pass now: wakes the running loop rather than restarting it (or starts one).
 #[tauri::command]
 pub fn sync_now(app: AppHandle) {
     agent::sync_now(&app);

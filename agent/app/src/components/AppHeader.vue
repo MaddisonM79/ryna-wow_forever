@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { api } from "../api";
-import { login, loginBusy, loginError, signIn, signOut, status } from "../store";
+import { cancelSignIn, login, loginBusy, loginError, signIn, signOut, status } from "../store";
 
 const who = computed(() => status.value?.signedInAs ?? "you");
 const syncLabel = computed(() => (status.value?.watching ? "Syncing while open" : "Not syncing"));
@@ -40,6 +40,7 @@ const syncLabel = computed(() => (status.value?.watching ? "Syncing while open" 
     </p>
     <p>
       <button type="button" class="primary" @click="api.openSignInPage()">Open sign-in page</button>
+      <button type="button" class="quiet" @click="cancelSignIn()">Cancel</button>
       <span class="muted">Waiting for you to allow it…</span>
     </p>
   </section>

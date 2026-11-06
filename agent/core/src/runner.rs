@@ -1,10 +1,11 @@
 //! One run (docs/wow.md section 7): for each account file whose mtime differs from the one last
 //! pushed, parse it, build the snapshot and post it; then one heartbeat. A failed push keeps the
-//! file unpushed, so the next run tries it again. `ryna-wow run` is one of these, `ryna-wow watch`
-//! a loop of them, and stage 3's app will call the same.
+//! file unpushed, so the next run tries it again. `ryna-wow run` is one of these, and the watch
+//! loop (`ryna-wow watch`, the desktop app) a loop of them.
 
 use std::path::{Path, PathBuf};
 
+use crate::addon_install;
 use crate::agent_status;
 use crate::discovery::{AccountFile, Discovery};
 use crate::push::{Api, CombatLog, Heartbeat, HeartbeatAccount, HeartbeatInstall, PushError};
@@ -39,34 +40,17 @@ pub struct AccountReport {
     pub warnings: Vec<String>,
 }
 
-/// Why a run failed, most serious first: what the person has to do about it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Failure {
-    /// Run `ryna-wow login`.
-    SignIn,
-    /// Update the agent and the addon.
-    Update,
-    /// Anything else (offline, a file that doesn't parse, a refusal).
-    Other,
-}
+pub use crate::fix::Fix;
 
-impl Failure {
-    /// The process exit code for it: 3 sign in, 4 update, 1 anything else.
-    pub fn exit_code(self) -> i32 {
-        match self {
-            Failure::SignIn => 3,
-            Failure::Update => 4,
-            Failure::Other => 1,
-        }
-    }
-}
+/// The old name for [`Fix`]: why a run failed, most serious first.
+pub type Failure = Fix;
 
 #[derive(Debug, Clone)]
 pub struct RunReport {
     pub accounts: Vec<AccountReport>,
     pub heartbeat: Result<(), String>,
-    pub failure: Option<Failure>,
+    /// The most serious failure's fix.
+    pub failure: Option<Fix>,
     pub first_error: Option<String>,
 }
 
@@ -86,14 +70,8 @@ pub enum RunError {
     Io(#[from] std::io::Error),
 }
 
-fn classify(e: &PushError) -> Failure {
-    if e.needs_login() {
-        Failure::SignIn
-    } else if e.needs_update() {
-        Failure::Update
-    } else {
-        Failure::Other
-    }
+fn classify(e: &PushError) -> Fix {
+    e.fix()
 }
 
 fn path_key(p: &Path) -> String {
@@ -124,14 +102,9 @@ pub fn run_once_observed(
     let _lock = state::try_lock(state_dir)?.ok_or(RunError::Busy)?;
     let mut st = State::load(state_dir);
     let mut reports = Vec::new();
-    let mut failure: Option<Failure> = None;
+    let mut failure: Option<Fix> = None;
     let mut first_error: Option<String> = None;
-    fn note(
-        f: Failure,
-        msg: &str,
-        failure: &mut Option<Failure>,
-        first_error: &mut Option<String>,
-    ) {
+    fn note(f: Fix, msg: &str, failure: &mut Option<Fix>, first_error: &mut Option<String>) {
         *failure = Some(failure.map_or(f, |old| old.min(f)));
         first_error.get_or_insert_with(|| msg.to_string());
     }
@@ -154,13 +127,13 @@ pub fn run_once_observed(
         match (&outcome, failed) {
             (Outcome::Failed(msg), Some(f)) => {
                 note(f, msg, &mut failure, &mut first_error);
-                signed_out |= f == Failure::SignIn;
-                on_event(WatchEvent::Error {
-                    label: Some(label.clone()),
-                    path: Some(path),
-                    message: msg.clone(),
-                    failure: f,
-                });
+                signed_out |= f == Fix::SignIn;
+                on_event(WatchEvent::error(
+                    Some(label.clone()),
+                    Some(path),
+                    msg.clone(),
+                    f,
+                ));
             }
             (Outcome::Pushed { characters, data }, _) => on_event(WatchEvent::Pushed {
                 label: label.clone(),
@@ -198,6 +171,7 @@ pub fn run_once_observed(
         at: clock.now(),
         ok: failure.is_none(),
         error: first_error.clone(),
+        fix: failure,
     });
     st.save(state_dir)?;
 
@@ -230,13 +204,13 @@ fn push_account(
     clock: &dyn Clock,
     opts: &RunOptions,
     on_event: &mut dyn FnMut(WatchEvent),
-) -> (Outcome, Vec<String>, Option<Failure>) {
+) -> (Outcome, Vec<String>, Option<Fix>) {
     let mtime = match util::mtime(&acct.path) {
         Ok(m) => m,
         Err(e) => {
             let msg = format!("{}: {e}", acct.path.display());
             entry.last_error = Some(msg.clone());
-            return (Outcome::Failed(msg), Vec::new(), Some(Failure::Other));
+            return (Outcome::Failed(msg), Vec::new(), Some(Fix::Other));
         }
     };
     entry.saved_at = Some(mtime.secs);
@@ -259,9 +233,9 @@ fn push_account(
         Ok(b) => b,
         Err(e) => {
             let failure = if e.is_schema_unsupported() {
-                Failure::Update
+                Fix::Update
             } else {
-                Failure::Other
+                Fix::Other
             };
             let msg = e.to_string();
             entry.last_error = Some(msg.clone());
@@ -300,6 +274,7 @@ pub fn heartbeat_body(discovery: &Discovery, st: &State, last_error: Option<Stri
             .map(|i| HeartbeatInstall {
                 path: i.path.to_string_lossy().into_owned(),
                 flavor: i.flavor.clone(),
+                addon: addon_install::installed_addon_version(i),
             })
             .collect(),
         accounts: discovery
@@ -410,6 +385,7 @@ mod tests {
         assert_eq!(hb["accounts"][0]["pushedAt"], json!(NOW));
         assert_eq!(hb["accounts"][0]["characters"], json!(2));
         assert_eq!(hb["installs"][0]["flavor"], json!("wowf"));
+        assert_eq!(hb["installs"][0]["addon"], json!(null));
         assert_eq!(hb["lastError"], json!(null));
 
         // Nothing changed: only the heartbeat.
@@ -450,13 +426,15 @@ mod tests {
             .fail("offline")
             .fail("offline");
         let r = run(&e, &http, false);
-        assert_eq!(r.failure, Some(Failure::Other));
+        assert_eq!(r.failure, Some(Fix::Network));
         assert!(r.heartbeat.is_err());
         let st = State::load(&e.state);
         let a = st.accounts.values().next().unwrap();
         assert_eq!(a.pushed_mtime_ns, None);
         assert!(a.last_error.as_deref().unwrap().contains("offline"));
-        assert!(!st.last_run.unwrap().ok);
+        let last = st.last_run.unwrap();
+        assert!(!last.ok);
+        assert_eq!(last.fix, Some(Fix::Network));
 
         // Back online: it is pushed.
         let http = ScriptedTransport::new();
@@ -478,7 +456,7 @@ mod tests {
         e.store = MemoryStore::default();
         let http = ScriptedTransport::new();
         let r = run(&e, &http, false);
-        assert_eq!(r.failure.map(Failure::exit_code), Some(3));
+        assert_eq!(r.failure.map(Fix::exit_code), Some(3));
         assert_eq!(r.accounts[1].outcome, Outcome::Skipped);
         assert!(http.requests.borrow().is_empty());
     }
@@ -489,7 +467,7 @@ mod tests {
         let http = ScriptedTransport::new();
         http.json(200, ingested()).json(200, ok());
         let r = run(&e, &http, false);
-        assert_eq!(r.failure, Some(Failure::Other));
+        assert_eq!(r.failure, Some(Fix::Other));
         assert!(
             matches!(&r.accounts[0].outcome, Outcome::Failed(m) if m.contains("unfinished table"))
         );
@@ -508,14 +486,14 @@ mod tests {
         let http = ScriptedTransport::new();
         http.json(200, ok());
         let r = run(&e, &http, false);
-        assert_eq!(r.failure.map(Failure::exit_code), Some(4));
+        assert_eq!(r.failure.map(Fix::exit_code), Some(4));
 
         let e = env(&[("FAKEACCOUNT1", FIXTURE)]);
         let http = ScriptedTransport::new();
         http.json(200, json!({ "ok": false, "error": { "code": "SCHEMA_UNSUPPORTED", "message": "x", "detail": { "accepted": [2] } } }))
             .json(200, ok());
         let r = run(&e, &http, false);
-        assert_eq!(r.failure.map(Failure::exit_code), Some(4));
+        assert_eq!(r.failure.map(Fix::exit_code), Some(4));
         assert_eq!(
             State::load(&e.state)
                 .accounts

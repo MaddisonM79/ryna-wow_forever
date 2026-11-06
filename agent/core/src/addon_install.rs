@@ -3,6 +3,9 @@
 //! The release puts the addon beside the binary (`<dir>/addon/Ryna` or `<dir>/Ryna`); `--from`
 //! names another. The copy is made next to the old one and swapped in, so a failed copy leaves
 //! the installed addon as it was. Symbolic links in the source are skipped.
+//!
+//! `installed_addon_version` reads the installed copy's `## Version:` from its `Ryna.toc`, for the
+//! app's install row and the heartbeat.
 
 use std::path::{Path, PathBuf};
 
@@ -11,6 +14,41 @@ use anyhow::{bail, Context, Result};
 use crate::discovery::Install;
 
 pub const ADDON_NAME: &str = "Ryna";
+
+/// `<install>/Interface/AddOns/Ryna`, whether or not it's there.
+pub fn addon_dir(install: &Install) -> PathBuf {
+    install
+        .path
+        .join("Interface")
+        .join("AddOns")
+        .join(ADDON_NAME)
+}
+
+/// Whether the addon's folder is in this install.
+pub fn has_addon(install: &Install) -> bool {
+    addon_dir(install).is_dir()
+}
+
+/// The `## Version:` line of a `.toc`, trimmed; None when there's none or it's empty.
+pub fn parse_toc_version(toc: &str) -> Option<String> {
+    toc.trim_start_matches('\u{feff}').lines().find_map(|line| {
+        let rest = line.trim().strip_prefix("##")?;
+        let (key, value) = rest.split_once(':')?;
+        if !key.trim().eq_ignore_ascii_case("version") {
+            return None;
+        }
+        let value = value.trim();
+        (!value.is_empty()).then(|| value.to_string())
+    })
+}
+
+/// The installed addon's version, from `Interface/AddOns/Ryna/Ryna.toc`; None when the addon
+/// isn't installed, the file can't be read, or it names no version.
+pub fn installed_addon_version(install: &Install) -> Option<String> {
+    let toc = addon_dir(install).join(format!("{ADDON_NAME}.toc"));
+    let bytes = std::fs::read(toc).ok()?;
+    parse_toc_version(&String::from_utf8_lossy(&bytes))
+}
 
 fn has_toc(dir: &Path) -> bool {
     std::fs::read_dir(dir)
@@ -122,6 +160,38 @@ mod tests {
         );
         assert_eq!(resolve_source(&a).unwrap(), a);
         assert!(resolve_source(dir.path()).is_err());
+    }
+
+    #[test]
+    fn reads_the_installed_version() {
+        assert_eq!(
+            parse_toc_version("## Interface: 16001\n## Title: Ryna\n## Version: 0.1.0\n")
+                .as_deref(),
+            Some("0.1.0")
+        );
+        assert_eq!(
+            parse_toc_version("\u{feff}##version:  1.2.3 \r\n").as_deref(),
+            Some("1.2.3")
+        );
+        assert_eq!(parse_toc_version("## Version:\n## Title: x"), None);
+        assert_eq!(parse_toc_version("Core.lua"), None);
+
+        let dir = tempfile::tempdir().unwrap();
+        let inst = Install {
+            path: dir.path().join("_forever_"),
+            flavor: Some("wowf".into()),
+        };
+        assert!(!has_addon(&inst));
+        assert_eq!(installed_addon_version(&inst), None);
+        let a = addon(dir.path());
+        std::fs::write(
+            a.join("Ryna.toc"),
+            "## Interface: 16001\n## Version: 0.1.0\n",
+        )
+        .unwrap();
+        install(&a, &inst).unwrap();
+        assert!(has_addon(&inst));
+        assert_eq!(installed_addon_version(&inst).as_deref(), Some("0.1.0"));
     }
 
     #[test]

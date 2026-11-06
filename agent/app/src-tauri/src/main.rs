@@ -22,7 +22,7 @@ fn show_main(app: &AppHandle) {
 }
 
 fn quit(app: &AppHandle) {
-    agent::cancel(app);
+    agent::shutdown(app);
     app.exit(0);
 }
 
@@ -49,7 +49,7 @@ fn build_tray(app: &App) -> tauri::Result<()> {
 
 fn on_run_event(app: &AppHandle, event: &RunEvent) {
     if matches!(event, RunEvent::Exit) {
-        agent::cancel(app);
+        agent::shutdown(app);
     }
     // macOS: clicking the Dock icon while the window is hidden brings it back.
     #[cfg(target_os = "macos")]
@@ -91,6 +91,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::get_status,
             commands::start_login,
+            commands::cancel_login,
             commands::open_sign_in_page,
             commands::logout,
             commands::start_watch,

@@ -7,7 +7,7 @@ device grant, so it never sees your password.
 
 - `core/` (crate `ryna-wow-core`): the library. A reader for the Lua the game writes (no Lua VM),
   the snapshot builder, install and account discovery, the sign-in and token refresh, the pusher,
-  the per-file state, and the addon installer.
+  the per-file state, the addon installer, and the status every front end shows.
 - `cli/` (crate `ryna-wow`, binary `ryna-wow`): a command line over it, **for developers and
   debugging**. People install the desktop app (`app/`), which runs the same core.
 - `app/` (crate `ryna-wow-app` in `app/src-tauri`, product "Ryna"): the desktop app, Tauri 2
@@ -34,23 +34,49 @@ Nothing runs in the background. The agent syncs only while the companion app is 
 calls the core's watch loop in-process and stops it on quit. There are no launchd jobs, scheduled
 tasks or run-at-login entries, and the CLI doesn't install any.
 
-The loop, for the app (or any front end):
+The core's API for a front end (the app uses all of it; the CLI is a thin printer over it):
 
 ```rust
-use ryna_wow_core::watch::{watch, CancelToken, WatchEvent, WatchOptions};
+use std::time::Duration;
+use ryna_wow_core::{auth, cancel::CancelToken, config::Config, status};
+use ryna_wow_core::watch::{watch_with_control, WatchControl, WatchEvent, WatchOptions};
 
-let cancel = CancelToken::new();          // clone it; cancel() on quit stops the loop at once
-let opts = WatchOptions::new(None, std::time::Duration::from_secs(60)).unwrap();
-let config = ryna_wow_core::config::Config::resolve(None, None);
-std::thread::spawn(move || watch(&config, &opts, &cancel, &mut |event: WatchEvent| {
+let config = Config::resolve(None, None);
+
+// Sign in, in two halves so it can be cancelled.
+let login = auth::start_device_login(&config)?;      // DeviceLogin: user_code, verification_uri(_complete),
+                                                      // expires_at, interval (device_code is never serialised)
+let cancel = CancelToken::new();                      // cancel() from another thread: Err(Cancelled) at once
+let session = auth::poll_device_login(&config, &login, &cancel, &mut |s| {
+    // LoginStatus: pending, slowDown { interval }, approved
+})?;                                                  // Session { signed_in_as }; tokens stored as `login` does
+
+// What to show: installs (flavor, path, has_addon, addon_version), accounts (label, key, savedAt,
+// pushedAt, characters, last error), signed in and as whom, the last run. Serialize.
+let s = status::status(&config, None);
+
+// The loop: one at a time, on its own thread.
+let control = WatchControl::new();                    // keep a clone
+let opts = WatchOptions::new(None, Duration::from_secs(60)).unwrap();
+let handle = control.clone();
+std::thread::spawn(move || watch_with_control(&config, &opts, &handle, &mut |event: WatchEvent| {
     // signedIn, installFound, accountFileChanged, pushing, pushed (with the API's counts),
-    // error (with what fixes it: signIn, update, other), heartbeat, passFinished.
-    // Every event is Serialize ({"event": "pushed", ...}): forward it to the webview as is.
+    // error, heartbeat, passFinished. Every event is Serialize ({"event": "pushed", ...}).
 }));
+control.request_pass();                               // a pass now: wakes the wait, no restart
+control.cancel();                                     // on quit: at once while waiting
 ```
 
-`watch_with` is the same over any transport, token store and discovery (the tests use it).
-`runner::run_once` is one pass, for `ryna-wow run`.
+`auth::Auth::login` is still the two halves in one call, and `watch::watch` takes a bare
+`CancelToken`; `watch_with` is the loop over any transport, token store and discovery (the tests
+use it). `runner::run_once` is one pass, for `ryna-wow run`.
+
+Errors name no command. Each carries a `Fix` (`signIn`, `update`, `network`, `other`) with neutral
+words for it (`Fix::message`: "Sign in again", "Update the agent and addon", "Couldn't reach the
+API", or for `other` the error itself); an `error` event has both, as `fix` and `advice`, beside the
+raw `message`. The CLI appends its own hints (`run ryna-wow login`); the app shows the words.
+`addon_install::installed_addon_version` reads `## Version:` from the installed `Ryna.toc`; the
+heartbeat sends it as each install's `addon`.
 
 After every pass, successful or not, the agent rewrites `Interface/AddOns/Ryna/AgentStatus.lua`
 in each install that has the addon (`RynaAgentStatus`: version, signed in and as whom, last push,
@@ -61,8 +87,14 @@ that install's accounts, and the last error as a message), so the addon can show
 `app/` is the product: the only thing a person installs (a `.dmg` on macOS, an NSIS installer on
 Windows). It signs in with the device grant (it shows the code and opens the sign-in page), finds
 the game, installs the bundled addon (`addon/Ryna`, carried as a resource), and runs the core's
-watch loop on its own thread, showing each account's last save and push and a log of what the
-loop did. It shows status, not charts: those live on the portal.
+watch loop on its own thread, showing each install's addon version, each account's last save and
+push, and a log of what the loop did. It shows status, not charts: those live on the portal.
+
+It holds no logic of its own over the core's: `get_status` is the core's `status` plus the loop's
+live state; `start_login` returns the core's `DeviceLogin` (and the link to open) and polls on a
+thread with a cancel token it keeps, `cancel_login` fires it, and `login-finished` says how it
+ended (`ok`, `cancelled`, `error`, `fix`); `sync_now` wakes the running loop
+(`WatchControl::request_pass`) rather than restarting it. Errors show the core's words.
 
 **Nothing runs when it's closed.** Closing the window hides it to the tray (menu bar on macOS),
 where it keeps syncing; Quit, in the tray menu, stops the loop and exits. There is no service,

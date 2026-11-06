@@ -1,11 +1,12 @@
 //! Signing the agent in as its person: the OAuth device grant (RFC 8628) at the IdP, the same
 //! flow as palworld-agent's signin.ts, for this agent's client and resource.
 //!
-//! `login` asks for a code, shows the link and code, and polls while the person allows it. The
-//! refresh token goes into the OS keychain (service `ryna-wow`), never a file. A run trades it
-//! for a short-lived access token (aud the resource, sub the person). Refresh tokens rotate and are
-//! good for one use, and the IdP revokes the whole chain if a spent one comes back after its
-//! replay window (30 s), so:
+//! `start_device_login` asks for a code (a `DeviceLogin` to show), and `poll_device_login` polls
+//! while the person allows it, until it's approved, refused, expired or cancelled; `login` is the
+//! two in one call. The refresh token goes into the OS keychain (service `ryna-wow`), never a
+//! file. A run trades it for a short-lived access token (aud the resource, sub the person).
+//! Refresh tokens rotate and are good for one use, and the IdP revokes the whole chain if a spent
+//! one comes back after its replay window (30 s), so:
 //! - the rotated token is stored at once, with retries;
 //! - the access token is kept in the keychain too, so runs minutes apart refresh once per token
 //!   lifetime rather than every run;
@@ -15,12 +16,14 @@
 use std::cell::{Cell, RefCell};
 use std::time::Duration;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::cancel::CancelToken;
 use crate::config::{Config, INGEST_SCOPE};
-use crate::http::{form_encode, Request, Transport};
-use crate::util::Clock;
+use crate::fix::Fix;
+use crate::http::{form_encode, HttpTransport, Request, Transport};
+use crate::util::{Clock, SystemClock};
 
 pub const KEYRING_SERVICE: &str = "ryna-wow";
 const DEVICE_CODE_PATH: &str = "/api/auth/device/code";
@@ -46,10 +49,12 @@ pub enum AuthError {
     NoClientId,
     #[error("sign-in was declined")]
     Declined,
-    #[error("the sign-in code expired: run `ryna-wow login` again")]
+    #[error("the sign-in code expired")]
     Expired,
-    #[error("the sign-in no longer refreshes ({0}): run `ryna-wow login` again")]
+    #[error("the sign-in no longer refreshes ({0})")]
     Lapsed(String),
+    #[error("the sign-in was cancelled")]
+    Cancelled,
     #[error("the sign-in provider is unavailable: {0}")]
     Unavailable(String),
     #[error("sign-in failed: {0}")]
@@ -58,13 +63,24 @@ pub enum AuthError {
     Store(String),
 }
 
+/// What `poll_device_login` fails with (`Cancelled` when its token fired).
+pub type LoginError = AuthError;
+
 impl AuthError {
-    /// Only a new `ryna-wow login` (or a client id) fixes this one.
+    /// Only a new sign-in (or a client id) fixes this one.
     pub fn needs_login(&self) -> bool {
         matches!(
             self,
             AuthError::NoClientId | AuthError::Declined | AuthError::Expired | AuthError::Lapsed(_)
         )
+    }
+
+    pub fn fix(&self) -> Fix {
+        match self {
+            e if e.needs_login() => Fix::SignIn,
+            AuthError::Unavailable(_) => Fix::Network,
+            _ => Fix::Other,
+        }
     }
 }
 
@@ -188,6 +204,73 @@ impl DeviceCode {
             .as_deref()
             .unwrap_or(&self.verification_uri)
     }
+}
+
+/// A started device grant: what to show the person, and what `poll_device_login` needs. The
+/// device code is the poller's secret, so it is never serialised.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceLogin {
+    pub user_code: String,
+    pub verification_uri: String,
+    pub verification_uri_complete: Option<String>,
+    /// When the code stops working (unix seconds).
+    pub expires_at: i64,
+    /// Seconds between polls, as the provider asked.
+    pub interval: u64,
+    #[serde(skip)]
+    pub device_code: String,
+}
+
+impl DeviceLogin {
+    /// The link to open: the one with the code in it when the IdP gives one.
+    pub fn link(&self) -> &str {
+        self.verification_uri_complete
+            .as_deref()
+            .unwrap_or(&self.verification_uri)
+    }
+}
+
+/// How the polling is going, for a front end that shows it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum LoginStatus {
+    /// The person hasn't allowed it yet.
+    Pending,
+    /// The provider asked for slower polling; `interval` is the new gap in seconds.
+    #[serde(rename_all = "camelCase")]
+    SlowDown { interval: u64 },
+    /// Allowed; the tokens are stored.
+    Approved,
+}
+
+/// A finished sign-in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Session {
+    /// Who it's for, from the new access token's claims (display only; see `Auth::identity`).
+    pub signed_in_as: Option<String>,
+}
+
+/// `Auth::start_device_login` with the real network and keychain.
+pub fn start_device_login(config: &Config) -> Result<DeviceLogin, LoginError> {
+    let http = HttpTransport::new().map_err(AuthError::Unavailable)?;
+    let store = KeyringStore::for_issuer(&config.issuer);
+    Auth::new(config, &http, &store, &SystemClock).start_device_login()
+}
+
+/// `Auth::poll_device_login` with the real network and keychain: polls until the person allows
+/// or refuses it, the code expires, or `cancel` fires (then `Cancelled`, at once while waiting
+/// between polls, or as soon as a poll in flight answers).
+pub fn poll_device_login(
+    config: &Config,
+    login: &DeviceLogin,
+    cancel: &CancelToken,
+    on_status: &mut dyn FnMut(LoginStatus),
+) -> Result<Session, LoginError> {
+    let http = HttpTransport::new().map_err(AuthError::Unavailable)?;
+    let store = KeyringStore::for_issuer(&config.issuer);
+    Auth::new(config, &http, &store, &SystemClock).poll_device_login(login, cancel, on_status)
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -317,8 +400,23 @@ impl<'a> Auth<'a> {
         )))
     }
 
-    /// Run the device flow: `show` is called once with the link and code to show the person.
+    /// Run the device flow in one call: `show` is called once with the link and code to show
+    /// the person, then it polls until the end. `start_device_login` and `poll_device_login` are
+    /// the two halves, for a front end that wants to cancel.
     pub fn login(&self, show: &mut dyn FnMut(&DeviceCode)) -> Result<(), AuthError> {
+        let login = self.start_device_login()?;
+        show(&DeviceCode {
+            user_code: login.user_code.clone(),
+            verification_uri: login.verification_uri.clone(),
+            verification_uri_complete: login.verification_uri_complete.clone(),
+            expires_in: login.expires_at - self.clock.now(),
+        });
+        self.poll_device_login(&login, &CancelToken::new(), &mut |_| {})
+            .map(|_| ())
+    }
+
+    /// Ask the provider for a device code. Nothing is stored until the poll succeeds.
+    pub fn start_device_login(&self) -> Result<DeviceLogin, AuthError> {
         if !self.config.client_id_issued() {
             return Err(AuthError::NoClientId);
         }
@@ -350,23 +448,42 @@ impl<'a> Auth<'a> {
                 "couldn't get a sign-in code: {why}"
             )));
         };
-        let code = DeviceCode {
+        let expires_in = answer.expires_in.unwrap_or(600);
+        Ok(DeviceLogin {
             user_code,
             verification_uri,
             verification_uri_complete: answer.verification_uri_complete,
-            expires_in: answer.expires_in.unwrap_or(600),
-        };
-        show(&code);
+            expires_at: self.clock.now() + expires_in,
+            interval: answer.interval.unwrap_or(10).max(1) as u64,
+            device_code,
+        })
+    }
 
-        let mut interval = answer.interval.unwrap_or(10).max(1);
-        let deadline = self.clock.now() + code.expires_in;
-        while self.clock.now() < deadline {
-            self.clock.sleep(Duration::from_secs(interval as u64));
-            let t = match self.token_call(&[
+    /// Poll for the person's answer to `login`, telling `on_status` after each poll, and store
+    /// the tokens once it's allowed. The wait between polls ends at once when `cancel` fires.
+    pub fn poll_device_login(
+        &self,
+        login: &DeviceLogin,
+        cancel: &CancelToken,
+        on_status: &mut dyn FnMut(LoginStatus),
+    ) -> Result<Session, AuthError> {
+        let mut interval = login.interval.max(1);
+        while self.clock.now() < login.expires_at {
+            if self
+                .clock
+                .sleep_unless_cancelled(Duration::from_secs(interval), cancel)
+            {
+                return Err(AuthError::Cancelled);
+            }
+            let answer = self.token_call(&[
                 ("grant_type", DEVICE_GRANT),
                 ("client_id", &self.config.client_id),
-                ("device_code", &device_code),
-            ]) {
+                ("device_code", &login.device_code),
+            ]);
+            if cancel.is_cancelled() {
+                return Err(AuthError::Cancelled);
+            }
+            let t = match answer {
                 Ok(t) => t,
                 // A blip while polling: keep polling until the code expires.
                 Err(_) => continue,
@@ -378,11 +495,17 @@ impl<'a> Auth<'a> {
                     )
                 })?;
                 let exp = self.clock.now() + t.expires_in.unwrap_or(900);
-                return self.keep(AccessToken { token: access, exp }, &refresh);
+                let signed_in_as = identity_from_jwt(&access);
+                self.keep(AccessToken { token: access, exp }, &refresh)?;
+                on_status(LoginStatus::Approved);
+                return Ok(Session { signed_in_as });
             }
             match t.error.as_deref() {
-                Some("authorization_pending") => {}
-                Some("slow_down") => interval += 5,
+                Some("authorization_pending") => on_status(LoginStatus::Pending),
+                Some("slow_down") => {
+                    interval += 5;
+                    on_status(LoginStatus::SlowDown { interval });
+                }
                 Some("access_denied") => return Err(AuthError::Declined),
                 Some("expired_token") => return Err(AuthError::Expired),
                 other => {
@@ -448,7 +571,7 @@ impl<'a> Auth<'a> {
         let token = access.clone();
         if let Err(e) = self.keep(AccessToken { token: access, exp }, &new_refresh) {
             // The old refresh token is spent; this run can still push with the access token.
-            eprintln!("{e}: the sign-in is lost once this run ends; run `ryna-wow login` again");
+            eprintln!("{e}: the sign-in is lost once this run ends; sign in again");
         }
         Ok(Some(token))
     }
@@ -846,6 +969,103 @@ mod tests {
                 .as_deref(),
             Some("aerin")
         );
+    }
+
+    #[test]
+    fn start_then_poll_reports_each_answer() {
+        let config = test_config();
+        let http = ScriptedTransport::new();
+        http.json(200, device_answer())
+            .json(400, json!({ "error": "authorization_pending" }))
+            .json(400, json!({ "error": "slow_down" }))
+            .json(
+                200,
+                // {"name":"Aerin S","email":"a@b"}
+                json!({ "access_token": "h.eyJuYW1lIjoiQWVyaW4gUyIsImVtYWlsIjoiYUBiIn0.s", "refresh_token": "rt-1" }),
+            );
+        let store = MemoryStore::default();
+        let clock = FakeClock::at(NOW);
+        let auth = Auth::new(&config, &http, &store, &clock);
+        let login = auth.start_device_login().unwrap();
+        assert_eq!(login.expires_at, NOW + 600);
+        assert_eq!(login.interval, 5);
+        assert_eq!(login.device_code, "dev-1");
+        assert_eq!(login.link(), "https://idp.test/device?user_code=ABCD-EFGH");
+        let shown = serde_json::to_value(&login).unwrap();
+        assert_eq!(shown["userCode"], json!("ABCD-EFGH"));
+        assert!(shown.get("deviceCode").is_none(), "{shown}");
+        assert!(store.refresh.borrow().is_none());
+
+        let mut seen = Vec::new();
+        let session = auth
+            .poll_device_login(&login, &CancelToken::new(), &mut |s| seen.push(s))
+            .unwrap();
+        assert_eq!(session.signed_in_as.as_deref(), Some("Aerin S"));
+        assert_eq!(
+            seen,
+            vec![
+                LoginStatus::Pending,
+                LoginStatus::SlowDown { interval: 10 },
+                LoginStatus::Approved
+            ]
+        );
+        assert_eq!(store.refresh.borrow().as_deref(), Some("rt-1"));
+    }
+
+    #[test]
+    fn a_cancelled_poll_stops_and_stores_nothing() {
+        let config = test_config();
+        let http = ScriptedTransport::new();
+        http.json(200, device_answer())
+            .json(400, json!({ "error": "authorization_pending" }));
+        let store = MemoryStore::default();
+        let clock = FakeClock::at(NOW);
+        let auth = Auth::new(&config, &http, &store, &clock);
+        let login = auth.start_device_login().unwrap();
+        let cancel = CancelToken::new();
+        let e = auth
+            .poll_device_login(&login, &cancel, &mut |_| cancel.cancel())
+            .unwrap_err();
+        assert!(matches!(e, AuthError::Cancelled), "{e}");
+        assert_eq!(e.fix(), Fix::Other);
+        // One poll, then the cancel ended it before the next.
+        assert_eq!(http.requests.borrow().len(), 2);
+        assert!(store.refresh.borrow().is_none());
+        // Already cancelled: no poll at all.
+        let e = auth
+            .poll_device_login(&login, &cancel, &mut |_| {})
+            .unwrap_err();
+        assert!(matches!(e, AuthError::Cancelled));
+        assert_eq!(http.requests.borrow().len(), 2);
+    }
+
+    #[test]
+    fn the_real_clock_wakes_a_poll_wait_on_cancel() {
+        let cancel = CancelToken::new();
+        let other = cancel.clone();
+        let t = std::thread::spawn(move || {
+            let start = std::time::Instant::now();
+            let cancelled = SystemClock.sleep_unless_cancelled(Duration::from_secs(30), &other);
+            (cancelled, start.elapsed())
+        });
+        std::thread::sleep(Duration::from_millis(50));
+        cancel.cancel();
+        let (cancelled, took) = t.join().unwrap();
+        assert!(cancelled && took < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn errors_name_no_command_and_carry_their_fix() {
+        for e in [
+            AuthError::Expired,
+            AuthError::Lapsed("invalid_grant".into()),
+            AuthError::Declined,
+        ] {
+            assert!(!e.to_string().contains("ryna-wow login"), "{e}");
+            assert_eq!(e.fix(), Fix::SignIn);
+        }
+        assert_eq!(AuthError::Unavailable("x".into()).fix(), Fix::Network);
+        assert_eq!(AuthError::Store("x".into()).fix(), Fix::Other);
     }
 
     #[test]

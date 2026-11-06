@@ -1,5 +1,5 @@
-//! The World of Warcraft: Forever companion agent's library: everything the command line (and,
-//! in stage 3, the desktop app) does, without a terminal or a window.
+//! The World of Warcraft: Forever companion agent's library: everything the command line (and the
+//! desktop app) does, without a terminal or a window.
 //!
 //! - [`discovery`]: the game's install folders and each account's `Ryna.lua`.
 //! - [`lua`]: a reader for the Lua the game writes to SavedVariables.
@@ -9,19 +9,25 @@
 //! - [`state`] and [`runner`]: what was pushed, and one run over every account.
 //! - [`watch`]: the loop the desktop app runs while it is open, with status events and a cancel handle.
 //! - [`agent_status`]: `AgentStatus.lua`, what the agent tells the addon after every run.
-//! - [`addon_install`]: copying the addon into the game.
+//! - [`addon_install`]: copying the addon into the game, and reading the installed one's version.
+//! - [`status`]: what a front end shows (installs, accounts, the sign-in, the last run).
+//! - [`fix`]: what fixes a failure, in words with no command in them.
+//! - [`cancel`]: the cancel (and wake) handle the watch loop and the sign-in share.
 
 pub mod addon_install;
 pub mod agent_status;
 pub mod auth;
+pub mod cancel;
 pub mod config;
 pub mod discovery;
+pub mod fix;
 pub mod http;
 pub mod lua;
 pub mod push;
 pub mod runner;
 pub mod snapshot;
 pub mod state;
+pub mod status;
 pub mod util;
 pub mod watch;
 

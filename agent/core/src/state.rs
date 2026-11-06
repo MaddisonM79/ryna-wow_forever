@@ -61,6 +61,9 @@ pub struct LastRun {
     pub ok: bool,
     #[serde(default)]
     pub error: Option<String>,
+    /// What fixes `error` (absent in state written before it was kept).
+    #[serde(default)]
+    pub fix: Option<crate::fix::Fix>,
 }
 
 impl State {

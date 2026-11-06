@@ -14,6 +14,7 @@ use thiserror::Error;
 
 use crate::auth::{Auth, AuthError};
 use crate::config::INGEST_SCOPE;
+use crate::fix::Fix;
 use crate::http::{Request, Response, Transport};
 use crate::snapshot::Snapshot;
 use crate::util::Clock;
@@ -27,11 +28,11 @@ pub const HEARTBEAT_LIMIT: usize = 64 * 1024;
 
 #[derive(Debug, Error)]
 pub enum PushError {
-    #[error("this agent isn't signed in: run `ryna-wow login`")]
+    #[error("this agent isn't signed in")]
     NotSignedIn,
     #[error("{0}")]
     Auth(AuthError),
-    #[error("this agent's sign-in wasn't granted {INGEST_SCOPE}: run `ryna-wow login` again")]
+    #[error("this agent's sign-in wasn't granted {INGEST_SCOPE}")]
     MissingScope,
     #[error("the API doesn't accept this snapshot schema (it accepts {accepted:?}): update the agent and the addon")]
     SchemaUnsupported { accepted: Vec<i64> },
@@ -48,7 +49,7 @@ pub enum PushError {
 }
 
 impl PushError {
-    /// Only `ryna-wow login` fixes it; pushing the other accounts would fail the same way.
+    /// Only a new sign-in fixes it; pushing the other accounts would fail the same way.
     pub fn needs_login(&self) -> bool {
         match self {
             PushError::NotSignedIn | PushError::MissingScope => true,
@@ -60,6 +61,21 @@ impl PushError {
     /// Only a newer agent and addon fix it.
     pub fn needs_update(&self) -> bool {
         matches!(self, PushError::SchemaUnsupported { .. })
+    }
+
+    /// What fixes it.
+    pub fn fix(&self) -> Fix {
+        if self.needs_login() {
+            Fix::SignIn
+        } else if self.needs_update() {
+            Fix::Update
+        } else {
+            match self {
+                PushError::Unavailable(_) => Fix::Network,
+                PushError::Auth(e) => e.fix(),
+                _ => Fix::Other,
+            }
+        }
     }
 }
 
@@ -85,6 +101,8 @@ pub struct Heartbeat {
 pub struct HeartbeatInstall {
     pub path: String,
     pub flavor: Option<String>,
+    /// The installed addon's `## Version:` (null when it isn't installed or doesn't say).
+    pub addon: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -291,6 +309,7 @@ mod tests {
             installs: vec![HeartbeatInstall {
                 path: "/Applications/World of Warcraft/_forever_".into(),
                 flavor: Some("wowf".into()),
+                addon: Some("0.1.0".into()),
             }],
             accounts: vec![],
             combat_log: CombatLog::default(),
@@ -314,7 +333,7 @@ mod tests {
         assert_eq!(
             v,
             json!({ "agent": "0.1.0", "host": "test-host", "os": "macos",
-                    "installs": [ { "path": "/Applications/World of Warcraft/_forever_", "flavor": "wowf" } ],
+                    "installs": [ { "path": "/Applications/World of Warcraft/_forever_", "flavor": "wowf", "addon": "0.1.0" } ],
                     "accounts": [], "combatLog": { "active": false, "advanced": null }, "lastError": null })
         );
     }
@@ -353,6 +372,7 @@ mod tests {
         let clock = FakeClock::at(NOW);
         let e = run(&http, &store, &clock).unwrap_err();
         assert!(matches!(&e, PushError::Unavailable(m) if m == "c"), "{e}");
+        assert_eq!(e.fix(), Fix::Network);
         assert_eq!(http.requests.borrow().len(), 3);
     }
 
@@ -447,6 +467,8 @@ mod tests {
         let clock = FakeClock::at(NOW);
         let e = run(&http, &store, &clock).unwrap_err();
         assert!(matches!(e, PushError::NotSignedIn) && e.needs_login());
+        assert_eq!(e.fix(), Fix::SignIn);
+        assert!(!e.to_string().contains("ryna-wow"), "{e}");
         assert!(http.requests.borrow().is_empty());
     }
 
