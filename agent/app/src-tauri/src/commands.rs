@@ -7,7 +7,7 @@ use tauri::AppHandle;
 use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_opener::OpenerExt as _;
 
-use crate::agent::{self, Installed, LoginCode, Status};
+use crate::agent::{self, InstallResult, LoginCode, Status};
 
 /// The portal's page for this app.
 pub const PORTAL_URL: &str = "https://ryna.io/wow";
@@ -99,9 +99,11 @@ pub async fn set_install_override(app: AppHandle, path: Option<String>) -> Resul
     .await
 }
 
+/// Installs the bundled addon into the install at `path` (an install row's path), or into every
+/// install it belongs in when `path` is null.
 #[tauri::command]
-pub async fn install_addon(app: AppHandle) -> Result<Vec<Installed>, String> {
-    blocking(move || agent::install_addon(&app)).await
+pub async fn install_addon(app: AppHandle, path: Option<String>) -> Result<InstallResult, String> {
+    blocking(move || agent::install_addon(&app, path.as_deref())).await
 }
 
 /// Turns launch at login on or off; returns what the OS now says.

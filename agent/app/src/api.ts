@@ -6,6 +6,9 @@ export type Phase = "waiting" | "pushing" | "pushed" | "error";
 /** What fixes an error (the core's `Fix`). */
 export type Fix = "signIn" | "update" | "network" | "other";
 
+/** How an install's addon compares with the bundled one (the core's `AddonState`). */
+export type AddonState = "notInstalled" | "current" | "older" | "newer" | "unknown";
+
 /** The core's `InstallStatus`. */
 export interface InstallView {
   path: string;
@@ -14,6 +17,8 @@ export interface InstallView {
   hasAddon: boolean;
   /** The installed addon's `## Version:`, when it's there and says. */
   addonVersion: string | null;
+  /** How that compares with `Status.addonBundled`. */
+  addon: AddonState;
 }
 
 /** The core's `AccountStatus`, plus where the loop has it. */
@@ -59,6 +64,8 @@ export interface Status {
   keychainError: string | null;
   watching: boolean;
   installs: InstallView[];
+  /** The bundled addon's version, when this build carries one that says. */
+  addonBundled: string | null;
   accounts: AccountView[];
   lastError: string | null;
   lastRun: LastRun | null;
@@ -103,7 +110,18 @@ export interface LoginFinished {
 }
 
 export interface Installed {
+  /** The install it went into (an `InstallView.path`). */
+  install: string;
+  /** The addon's folder there. */
   path: string;
+}
+
+/** What `install_addon` did. */
+export interface InstallResult {
+  version: string | null;
+  installed: Installed[];
+  /** The game was running, so it needs a /reload to load the new copy. */
+  gameRunning: boolean;
 }
 
 export const api = {
@@ -116,7 +134,8 @@ export const api = {
   stopWatch: () => invoke<void>("stop_watch"),
   syncNow: () => invoke<void>("sync_now"),
   setInstallOverride: (path: string | null) => invoke<void>("set_install_override", { path }),
-  installAddon: () => invoke<Installed[]>("install_addon"),
+  /** Into the install at `path`, or every install it belongs in when null. */
+  installAddon: (path: string | null = null) => invoke<InstallResult>("install_addon", { path }),
   setAutostart: (enabled: boolean) => invoke<boolean>("set_autostart", { enabled }),
   openPortal: () => invoke<void>("open_portal"),
 };

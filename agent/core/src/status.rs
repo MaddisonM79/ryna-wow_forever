@@ -1,12 +1,12 @@
 //! What a front end shows, read fresh from the keychain, the disk and the agent's state: the
-//! installs (with the addon version in each), the accounts (with their last save and push), the
+//! installs (with the addon version in each, and how it compares with the bundled one), the accounts (with their last save and push), the
 //! sign-in and the last run. `ryna-wow status` prints it; the app's window shows it.
 
 use std::path::Path;
 
 use serde::Serialize;
 
-use crate::addon_install;
+use crate::addon_install::{self, AddonState};
 use crate::auth::{identity_from_jwt, KeyringStore, TokenStore};
 use crate::config::Config;
 use crate::discovery::{self, Discovery};
@@ -29,6 +29,8 @@ pub struct InstallStatus {
     pub has_addon: bool,
     /// Its `Ryna.toc`'s `## Version:`, when it's there and says.
     pub addon_version: Option<String>,
+    /// How that compares with `Status::addon_bundled`.
+    pub addon: AddonState,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -73,6 +75,9 @@ pub struct Status {
     /// The keychain couldn't be read (so `signed_in` is unknown and false).
     pub keychain_error: Option<String>,
     pub installs: Vec<InstallStatus>,
+    /// The version of the addon this front end would install (the app's bundled copy, the CLI's
+    /// `--from`), when it has one and its `.toc` says.
+    pub addon_bundled: Option<String>,
     pub accounts: Vec<AccountStatus>,
     /// The last run's error, if it failed.
     pub last_error: Option<String>,
@@ -85,19 +90,29 @@ fn display(p: &Path) -> String {
 }
 
 /// The status with the real keychain, discovery (`install` in place of the OS defaults) and
-/// state folder.
-pub fn status(config: &Config, install: Option<&Path>) -> Status {
+/// state folder. `addon_from` is the addon this front end would install (resolved as
+/// `addon_install::resolve_source` does), for `addon_bundled` and each install's `addon`.
+pub fn status(config: &Config, install: Option<&Path>, addon_from: Option<&Path>) -> Status {
     let store = KeyringStore::for_issuer(&config.issuer);
     let found = discovery::discover(install);
-    status_with(config, &store, &found, state::state_dir().as_deref())
+    let bundled = addon_from.and_then(addon_install::bundled_addon_version);
+    status_with(
+        config,
+        &store,
+        &found,
+        state::state_dir().as_deref(),
+        bundled,
+    )
 }
 
-/// `status` over any token store, discovery and state folder (tests; another front end).
+/// `status` over any token store, discovery, state folder and bundled addon version (tests;
+/// another front end).
 pub fn status_with(
     config: &Config,
     store: &dyn TokenStore,
     found: &Discovery,
     state_dir: Option<&Path>,
+    addon_bundled: Option<String>,
 ) -> Status {
     let (signed_in, keychain_error) = match store.refresh_token() {
         Ok(t) => (t.is_some(), None),
@@ -114,12 +129,21 @@ pub fn status_with(
     let installs = found
         .installs
         .iter()
-        .map(|i| InstallStatus {
-            path: display(&i.path),
-            flavor: i.flavor.clone(),
-            forever: i.flavor.as_deref() == Some(FOREVER_FLAVOR),
-            has_addon: addon_install::has_addon(i),
-            addon_version: addon_install::installed_addon_version(i),
+        .map(|i| {
+            let has_addon = addon_install::has_addon(i);
+            let addon_version = addon_install::installed_addon_version(i);
+            InstallStatus {
+                path: display(&i.path),
+                flavor: i.flavor.clone(),
+                forever: i.flavor.as_deref() == Some(FOREVER_FLAVOR),
+                has_addon,
+                addon: addon_install::addon_state(
+                    has_addon,
+                    addon_version.as_deref(),
+                    addon_bundled.as_deref(),
+                ),
+                addon_version,
+            }
         })
         .collect();
     let accounts = found
@@ -165,6 +189,7 @@ pub fn status_with(
         signed_in_as,
         keychain_error,
         installs,
+        addon_bundled,
         accounts,
         last_error: last_run
             .as_ref()
@@ -229,14 +254,23 @@ mod tests {
             "h.eyJzdWIiOiJ4IiwiZW1haWwiOiJhZXJpbkBleGFtcGxlLnRlc3QifQ.s",
             i64::MAX,
         );
-        let s = status_with(&test_config(), &store, &found, Some(&state_dir));
+        let s = status_with(
+            &test_config(),
+            &store,
+            &found,
+            Some(&state_dir),
+            Some("0.2.0".into()),
+        );
         assert!(s.signed_in && s.client_id_issued);
         assert_eq!(s.signed_in_as.as_deref(), Some("aerin"));
         assert_eq!(s.installs.len(), 2);
         assert!(s.installs[0].forever && s.installs[0].has_addon);
         assert_eq!(s.installs[0].addon_version.as_deref(), Some("0.1.0"));
+        assert_eq!(s.installs[0].addon, AddonState::Older);
+        assert_eq!(s.addon_bundled.as_deref(), Some("0.2.0"));
         assert!(!s.installs[1].forever && !s.installs[1].has_addon);
         assert_eq!(s.installs[1].addon_version, None);
+        assert_eq!(s.installs[1].addon, AddonState::NotInstalled);
         let a = &s.accounts[0];
         assert_eq!((a.key.as_str(), a.label.as_str()), ("k1", "Main"));
         assert_eq!((a.pushed_at, a.characters), (Some(20), Some(2)));
@@ -247,6 +281,8 @@ mod tests {
         );
         let v = serde_json::to_value(&s).unwrap();
         assert_eq!(v["installs"][0]["addonVersion"], json!("0.1.0"));
+        assert_eq!(v["installs"][0]["addon"], json!("older"));
+        assert_eq!(v["addonBundled"], json!("0.2.0"));
         assert_eq!(v["lastRun"]["fix"], json!("network"));
         assert_eq!(v["lastRun"]["advice"], json!("Couldn't reach the API"));
         assert_eq!(v["signedInAs"], json!("aerin"));
@@ -257,10 +293,12 @@ mod tests {
             &MemoryStore::default(),
             &Discovery::default(),
             None,
+            None,
         );
         assert!(!s.signed_in);
         assert_eq!(s.signed_in_as, None);
         assert!(s.installs.is_empty() && s.accounts.is_empty());
+        assert_eq!(s.addon_bundled, None);
         assert_eq!((s.last_run, s.last_error, s.state_dir), (None, None, None));
     }
 }

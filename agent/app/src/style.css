@@ -15,6 +15,8 @@
   --wait-text: #50535b;
   --err-bg: #fbe6e6;
   --err-text: #a12626;
+  --warn-bg: #fdf0d5;
+  --warn-text: #8a5300;
   color-scheme: light;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
@@ -38,6 +40,8 @@
     --wait-text: #b4b7bf;
     --err-bg: #431d1d;
     --err-text: #f3a5a5;
+    --warn-bg: #3d2e10;
+    --warn-text: #f2c66d;
     color-scheme: dark;
   }
 }
@@ -183,6 +187,11 @@ button.link {
   color: var(--ok-text);
 }
 
+.chip.update {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
 .chip.error {
   background: var(--err-bg);
   color: var(--err-text);
@@ -232,6 +241,23 @@ section .banner {
   gap: 12px;
   padding: 6px 0;
   border-bottom: 1px solid var(--border);
+}
+
+.rows li.install {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+
+.install-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.install-row > div:first-child {
+  flex: 1;
+  min-width: 0;
 }
 
 .rows li:last-child {

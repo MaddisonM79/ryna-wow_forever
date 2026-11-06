@@ -6,6 +6,7 @@
 
 mod agent;
 mod commands;
+mod game;
 mod settings;
 
 use tauri::menu::{Menu, MenuItem};

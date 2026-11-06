@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
+use ryna_wow_core::addon_install::AddonState;
 use ryna_wow_core::auth::{self, Auth, AuthError, KeyringStore, LoginStatus};
 use ryna_wow_core::config::Config;
 use ryna_wow_core::discovery::{self, Discovery};
@@ -50,7 +51,12 @@ enum Command {
     /// Forget the sign-in on this computer.
     Logout,
     /// Installs and accounts found, their files, the last pushes, and whether you're signed in.
-    Status,
+    Status {
+        /// The addon to compare each install's with (as for install-addon). Default: beside this
+        /// binary.
+        #[arg(long, value_name = "DIR")]
+        from: Option<PathBuf>,
+    },
     /// Push every account whose file changed since its last push, then report in. Exit codes:
     /// 0 fine, 1 failed, 3 sign in again, 4 update the agent and addon.
     Run {
@@ -98,7 +104,7 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
     match cli.command {
         Command::Login => login(&config),
         Command::Logout => logout(&config),
-        Command::Status => status(&config, cli.install.as_deref()),
+        Command::Status { from } => status(&config, cli.install.as_deref(), from.as_deref()),
         Command::Run { force } => {
             let code = run(&config, cli.install.as_deref(), &RunOptions { force })?;
             Ok(ExitCode::from(code))
@@ -162,13 +168,19 @@ fn when(secs: Option<i64>) -> String {
     secs.map_or_else(|| "never".to_string(), iso_utc)
 }
 
-fn status(config: &Config, install: Option<&Path>) -> Result<ExitCode> {
+fn status(config: &Config, install: Option<&Path>, from: Option<&Path>) -> Result<ExitCode> {
     println!("ryna-wow {AGENT_VERSION}");
     println!("API {}  sign-in {}", config.api, config.issuer);
     if !config.client_id_issued() {
         println!("Device client: not issued yet (set RYNA_WOW_CLIENT_ID); `login` can't run until it is.");
     }
-    let s = ryna_wow_core::status::status(config, install);
+    let beside = addon_install::beside_binary();
+    let s = ryna_wow_core::status::status(config, install, from.or(beside.as_deref()));
+    match &s.addon_bundled {
+        Some(v) => println!("Addon to install: {v}"),
+        None if from.is_some() => println!("No versioned addon in the --from folder."),
+        None => {}
+    }
     match (&s.keychain_error, s.signed_in, &s.signed_in_as) {
         (Some(e), _, _) => println!("Couldn't read the keychain: {e}"),
         (None, true, Some(who)) => println!("Signed in as {who}."),
@@ -181,11 +193,20 @@ fn status(config: &Config, install: Option<&Path>) -> Result<ExitCode> {
     } else {
         println!("\nInstalls:");
         for i in &s.installs {
-            let addon = match (&i.addon_version, i.has_addon) {
+            let mut addon = match (&i.addon_version, i.has_addon) {
                 (Some(v), _) => format!("addon {v}"),
                 (None, true) => "addon installed (no version)".to_string(),
                 (None, false) => "addon not installed".to_string(),
             };
+            if let Some(b) = &s.addon_bundled {
+                match i.addon {
+                    AddonState::Older | AddonState::Unknown => {
+                        addon.push_str(&format!(" ({b} available: `ryna-wow install-addon`)"))
+                    }
+                    AddonState::Newer => addon.push_str(&format!(" (newer than {b})")),
+                    AddonState::NotInstalled | AddonState::Current => {}
+                }
+            }
             println!(
                 "  {}  flavor {}  {addon}",
                 i.path,
@@ -372,9 +393,13 @@ fn install_addon(install: Option<&Path>, from: Option<&Path>) -> Result<ExitCode
     if targets.is_empty() {
         bail!("no Forever install found: point at the game with --install <folder>");
     }
+    let version = addon_install::bundled_addon_version(&source);
     for i in targets {
         let to = addon_install::install(&source, i)?;
-        println!("Installed the addon in {}", to.display());
+        match &version {
+            Some(v) => println!("Installed addon {v} into {}", to.display()),
+            None => println!("Installed the addon in {}", to.display()),
+        }
     }
     println!("Restart the game (or /reload) to load it.");
     Ok(ExitCode::SUCCESS)

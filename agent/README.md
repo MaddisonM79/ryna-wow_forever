@@ -37,7 +37,7 @@ tasks or run-at-login entries, and the CLI doesn't install any.
 The core's API for a front end (the app uses all of it; the CLI is a thin printer over it):
 
 ```rust
-use std::time::Duration;
+use std::{path::Path, time::Duration};
 use ryna_wow_core::{auth, cancel::CancelToken, config::Config, status};
 use ryna_wow_core::watch::{watch_with_control, WatchControl, WatchEvent, WatchOptions};
 
@@ -51,9 +51,10 @@ let session = auth::poll_device_login(&config, &login, &cancel, &mut |s| {
     // LoginStatus: pending, slowDown { interval }, approved
 })?;                                                  // Session { signed_in_as }; tokens stored as `login` does
 
-// What to show: installs (flavor, path, has_addon, addon_version), accounts (label, key, savedAt,
-// pushedAt, characters, last error), signed in and as whom, the last run. Serialize.
-let s = status::status(&config, None);
+// What to show: installs (flavor, path, has_addon, addon_version, and `addon`: how it compares
+// with the addon this front end would install), that addon's version (`addon_bundled`), accounts
+// (label, key, savedAt, pushedAt, characters, last error), signed in and as whom, the last run.
+let s = status::status(&config, None, Some(Path::new("addon")));
 
 // The loop: one at a time, on its own thread.
 let control = WatchControl::new();                    // keep a clone
@@ -76,7 +77,9 @@ words for it (`Fix::message`: "Sign in again", "Update the agent and addon", "Co
 API", or for `other` the error itself); an `error` event has both, as `fix` and `advice`, beside the
 raw `message`. The CLI appends its own hints (`run ryna-wow login`); the app shows the words.
 `addon_install::installed_addon_version` reads `## Version:` from the installed `Ryna.toc`; the
-heartbeat sends it as each install's `addon`.
+heartbeat sends it as each install's `addon`. `bundled_addon_version` reads the same line from the
+copy a front end would install (the app's resources, the CLI's `--from`), and `addon_state`
+compares the two as dotted integers (`notInstalled`, `current`, `older`, `newer`, `unknown`).
 
 After every pass, successful or not, the agent rewrites `Interface/AddOns/Ryna/AgentStatus.lua`
 in each install that has the addon (`RynaAgentStatus`: version, signed in and as whom, last push,
@@ -133,6 +136,7 @@ ryna-wow install-addon --from addon    # copies addon/Ryna into each Forever ins
 ryna-wow login                         # prints a link and a code; open it, check the code, allow it
 ryna-wow run                           # pushes every account whose Ryna.lua changed, then reports in
 ryna-wow status                        # installs, accounts, last pushes, signed in or not
+                                       # (--from addon: say which installs need the addon updated)
 ryna-wow watch --interval 60           # `run` every minute until stopped
 ryna-wow parse path/to/Ryna.lua        # the snapshot JSON for one file, sent nowhere (--raw: the Lua as JSON)
 ```

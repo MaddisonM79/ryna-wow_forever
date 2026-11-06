@@ -5,8 +5,11 @@
 //! the installed addon as it was. Symbolic links in the source are skipped.
 //!
 //! `installed_addon_version` reads the installed copy's `## Version:` from its `Ryna.toc`, for the
-//! app's install row and the heartbeat.
+//! app's install row and the heartbeat; `bundled_addon_version` reads the same line from the copy
+//! a front end would install (the app's resources, the CLI's `--from`), and `addon_state` says
+//! how the two compare (`compare_versions`: dotted integers).
 
+use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -42,12 +45,77 @@ pub fn parse_toc_version(toc: &str) -> Option<String> {
     })
 }
 
+/// The `## Version:` of the `Ryna.toc` in the addon folder `dir`; None when it can't be read or
+/// names no version.
+fn folder_version(dir: &Path) -> Option<String> {
+    let bytes = std::fs::read(dir.join(format!("{ADDON_NAME}.toc"))).ok()?;
+    parse_toc_version(&String::from_utf8_lossy(&bytes))
+}
+
 /// The installed addon's version, from `Interface/AddOns/Ryna/Ryna.toc`; None when the addon
 /// isn't installed, the file can't be read, or it names no version.
 pub fn installed_addon_version(install: &Install) -> Option<String> {
-    let toc = addon_dir(install).join(format!("{ADDON_NAME}.toc"));
-    let bytes = std::fs::read(toc).ok()?;
-    parse_toc_version(&String::from_utf8_lossy(&bytes))
+    folder_version(&addon_dir(install))
+}
+
+/// The version of the addon `from` names (resolved as `resolve_source` does: the folder itself,
+/// `Ryna/` or `addon/Ryna/` inside it); None when there's no addon there or its `.toc` names no
+/// version.
+pub fn bundled_addon_version(from: &Path) -> Option<String> {
+    folder_version(&resolve_source(from).ok()?)
+}
+
+/// Two versions as dotted integers: `0.10.0` is after `0.9.1`, and `0.1` equals `0.1.0`. A part
+/// that isn't a number counts its leading digits (`2-beta` as 2, `x` as 0).
+pub fn compare_versions(a: &str, b: &str) -> Ordering {
+    fn parts(v: &str) -> Vec<u64> {
+        let mut parts: Vec<u64> = v
+            .trim()
+            .trim_start_matches(['v', 'V'])
+            .split('.')
+            .map(|p| {
+                let digits: String = p.trim().chars().take_while(char::is_ascii_digit).collect();
+                digits.parse().unwrap_or(0)
+            })
+            .collect();
+        while parts.last() == Some(&0) {
+            parts.pop();
+        }
+        parts
+    }
+    parts(a).cmp(&parts(b))
+}
+
+/// How an install's addon compares with the one a front end would install.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AddonState {
+    /// `Interface/AddOns/Ryna` isn't there.
+    NotInstalled,
+    /// The same version as the bundled one.
+    Current,
+    /// Older than the bundled one: an update is available.
+    Older,
+    /// Newer than the bundled one (installed from elsewhere).
+    Newer,
+    /// Installed, but one side names no version (or nothing is bundled), so they can't be
+    /// compared.
+    Unknown,
+}
+
+/// `installed` (`None` with `has_addon` false: not there) against `bundled`.
+pub fn addon_state(has_addon: bool, installed: Option<&str>, bundled: Option<&str>) -> AddonState {
+    if !has_addon {
+        return AddonState::NotInstalled;
+    }
+    match (installed, bundled) {
+        (Some(i), Some(b)) => match compare_versions(i, b) {
+            Ordering::Equal => AddonState::Current,
+            Ordering::Less => AddonState::Older,
+            Ordering::Greater => AddonState::Newer,
+        },
+        _ => AddonState::Unknown,
+    }
 }
 
 fn has_toc(dir: &Path) -> bool {
@@ -192,6 +260,60 @@ mod tests {
         install(&a, &inst).unwrap();
         assert!(has_addon(&inst));
         assert_eq!(installed_addon_version(&inst).as_deref(), Some("0.1.0"));
+    }
+
+    #[test]
+    fn compares_versions_as_dotted_integers() {
+        use std::cmp::Ordering::*;
+        assert_eq!(compare_versions("0.1.0", "0.1.0"), Equal);
+        assert_eq!(compare_versions("0.1", "0.1.0"), Equal);
+        assert_eq!(compare_versions("v1.2.0", "1.2"), Equal);
+        assert_eq!(compare_versions("0.1.0", "0.2.0"), Less);
+        assert_eq!(
+            compare_versions("0.10.0", "0.9.1"),
+            Greater,
+            "not as strings"
+        );
+        assert_eq!(compare_versions("1.0.0", "0.99.99"), Greater);
+        assert_eq!(compare_versions("0.2-beta", "0.2"), Equal);
+        assert_eq!(compare_versions("0.1.1", "0.1"), Greater);
+    }
+
+    #[test]
+    fn says_how_the_installed_addon_compares() {
+        use AddonState::*;
+        assert_eq!(addon_state(false, None, Some("0.2.0")), NotInstalled);
+        assert_eq!(addon_state(false, None, None), NotInstalled);
+        assert_eq!(addon_state(true, Some("0.2.0"), Some("0.2.0")), Current);
+        assert_eq!(addon_state(true, Some("0.1.0"), Some("0.2.0")), Older);
+        assert_eq!(addon_state(true, Some("0.3.0"), Some("0.2.0")), Newer);
+        assert_eq!(addon_state(true, None, Some("0.2.0")), Unknown);
+        assert_eq!(addon_state(true, Some("0.2.0"), None), Unknown);
+        assert_eq!(serde_json::to_value(NotInstalled).unwrap(), "notInstalled");
+    }
+
+    #[test]
+    fn reads_the_bundled_version() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(bundled_addon_version(dir.path()), None, "no addon there");
+        let a = addon(dir.path());
+        assert_eq!(
+            bundled_addon_version(&dir.path().join("release")),
+            None,
+            "a toc with no version"
+        );
+        std::fs::write(
+            a.join("Ryna.toc"),
+            "## Interface: 16001\n## Version: 0.2.0\nCore.lua\n",
+        )
+        .unwrap();
+        for from in ["release", "release/addon", "release/addon/Ryna"] {
+            assert_eq!(
+                bundled_addon_version(&dir.path().join(from)).as_deref(),
+                Some("0.2.0"),
+                "{from}"
+            );
+        }
     }
 
     #[test]

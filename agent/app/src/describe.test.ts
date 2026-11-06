@@ -1,5 +1,10 @@
 import { describe as group, expect, it } from "vitest";
-import { ago, describe } from "./describe";
+import type { AddonState, InstallView } from "./api";
+import { addonRow, ago, describe, installedLines, installedMessage } from "./describe";
+
+function install(addon: AddonState, addonVersion: string | null): InstallView {
+  return { path: "/wow/_forever_", flavor: "wowf", forever: true, hasAddon: addon !== "notInstalled", addonVersion, addon };
+}
 
 group("the activity log's words", () => {
   it("counts a push's characters and journal", () => {
@@ -44,5 +49,65 @@ group("the activity log's words", () => {
     expect(ago(1000, 1010)).toBe("just now");
     expect(ago(1000, 1000 + 180)).toBe("3 minutes ago");
     expect(ago(1000, 1000 + 7200)).toBe("2 hours ago");
+  });
+});
+
+group("the addon's row", () => {
+  it("offers an install when it isn't there", () => {
+    expect(addonRow(install("notInstalled", null), "0.1.0")).toEqual({
+      text: "Addon not installed",
+      chip: "waiting",
+      action: "Install addon 0.1.0",
+      primary: true,
+    });
+  });
+
+  it("offers a reinstall when it's current", () => {
+    expect(addonRow(install("current", "0.1.0"), "0.1.0")).toEqual({
+      text: "Addon 0.1.0 installed",
+      chip: "pushed",
+      action: "Reinstall",
+      primary: false,
+    });
+  });
+
+  it("offers an update when it's older", () => {
+    expect(addonRow(install("older", "0.1.0"), "0.2.0")).toEqual({
+      text: "Addon 0.1.0 installed, 0.2.0 available",
+      chip: "update",
+      action: "Update to 0.2.0",
+      primary: true,
+    });
+  });
+
+  it("says so when it's newer than the bundled one", () => {
+    expect(addonRow(install("newer", "0.3.0"), "0.2.0")).toEqual({
+      text: "Addon 0.3.0 installed (this app bundles 0.2.0)",
+      chip: "pushed",
+      action: "Reinstall 0.2.0",
+      primary: false,
+    });
+  });
+
+  it("treats an unversioned copy as needing the update, and offers nothing without a bundle", () => {
+    expect(addonRow(install("unknown", null), "0.2.0")).toMatchObject({
+      text: "Addon installed (version unknown), 0.2.0 available",
+      action: "Update to 0.2.0",
+    });
+    expect(addonRow(install("notInstalled", null), null).action).toBeNull();
+    expect(addonRow(install("unknown", "0.1.0"), null)).toMatchObject({ text: "Addon 0.1.0 installed", action: null });
+  });
+
+  it("says what went in and how the game loads it", () => {
+    const done = {
+      version: "0.2.0",
+      installed: [{ install: "/wow/_forever_", path: "/wow/_forever_/Interface/AddOns/Ryna" }],
+      gameRunning: false,
+    };
+    expect(installedLines(done)).toEqual(["Installed addon 0.2.0 into /wow/_forever_/Interface/AddOns/Ryna"]);
+    expect(installedMessage(done)).toEqual(["Installed 0.2.0. The game loads it at the next login or /reload."]);
+    expect(installedMessage({ ...done, gameRunning: true })[1]).toBe(
+      "The game is running: /reload or log out and in to load it.",
+    );
   });
 });

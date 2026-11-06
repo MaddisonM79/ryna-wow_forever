@@ -466,6 +466,8 @@ pub struct Status {
     pub keychain_error: Option<String>,
     pub watching: bool,
     pub installs: Vec<InstallStatus>,
+    /// The bundled addon's version (its `Ryna.toc`), when this build carries one that says.
+    pub addon_bundled: Option<String>,
     pub accounts: Vec<AccountView>,
     /// What to show for the last failure: this session's, else the last run's.
     pub last_error: Option<String>,
@@ -501,11 +503,16 @@ pub fn status(app: &AppHandle) -> Status {
         signed_in_as,
         keychain_error,
         installs,
+        addon_bundled,
         accounts,
         last_error: _,
         last_run,
         state_dir,
-    } = core_status::status(&agent.config, install_override.as_deref());
+    } = core_status::status(
+        &agent.config,
+        install_override.as_deref(),
+        bundled_addon(app).ok().as_deref(),
+    );
     let accounts = accounts
         .into_iter()
         .map(|account| AccountView {
@@ -525,6 +532,7 @@ pub fn status(app: &AppHandle) -> Status {
         keychain_error,
         watching,
         installs,
+        addon_bundled,
         accounts,
         last_error,
         last_run,
@@ -558,34 +566,75 @@ fn bundled_addon(app: &AppHandle) -> Result<PathBuf, String> {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Installed {
+    /// The install it went into (as `InstallStatus::path` has it).
+    pub install: String,
+    /// The addon's folder there.
     pub path: String,
 }
 
-/// Copy the bundled addon into each Forever install (or, when a folder was chosen, every
-/// install found there), as `ryna-wow install-addon` does.
-pub fn install_addon(app: &AppHandle) -> Result<Vec<Installed>, String> {
+/// What `install_addon` did.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallResult {
+    /// The version installed (the bundled `Ryna.toc`'s), when it says.
+    pub version: Option<String>,
+    pub installed: Vec<Installed>,
+    /// The game was running when it finished, so it needs a /reload (or a log out and in).
+    pub game_running: bool,
+}
+
+/// The installs `install_addon` may write to: Forever installs, or every install found when a
+/// folder was chosen; only the one at `only` (an `InstallStatus::path`) when it's given.
+fn targets<'a>(
+    installs: &'a [Install],
+    chosen: bool,
+    only: Option<&str>,
+) -> Result<Vec<&'a Install>, String> {
+    let allowed: Vec<&Install> = installs
+        .iter()
+        .filter(|i| chosen || i.flavor.as_deref() == Some(core_status::FOREVER_FLAVOR))
+        .collect();
+    let picked: Vec<&Install> = match only {
+        Some(path) => allowed
+            .into_iter()
+            .filter(|i| display(&i.path) == path)
+            .collect(),
+        None => allowed,
+    };
+    if picked.is_empty() {
+        return Err(match only {
+            Some(path) => format!("{path} isn't a World of Warcraft: Forever install."),
+            None => "No World of Warcraft: Forever install found. Choose the game's folder first."
+                .to_string(),
+        });
+    }
+    Ok(picked)
+}
+
+/// Copy the bundled addon into one install (`only`, an `InstallStatus::path`) or into each
+/// Forever install (or, when a folder was chosen, every install found there), as
+/// `ryna-wow install-addon` does.
+pub fn install_addon(app: &AppHandle, only: Option<&str>) -> Result<InstallResult, String> {
     let source = bundled_addon(app)?;
+    let version = addon_install::bundled_addon_version(&source);
     let chosen = install_override(app);
     let found = discovery::discover(chosen.as_deref());
-    let targets: Vec<&Install> = found
-        .installs
-        .iter()
-        .filter(|i| chosen.is_some() || i.flavor.as_deref() == Some(core_status::FOREVER_FLAVOR))
-        .collect();
-    if targets.is_empty() {
-        return Err(
-            "No World of Warcraft: Forever install found. Choose the game's folder first."
-                .to_string(),
-        );
-    }
-    targets
+    let installed = targets(&found.installs, chosen.is_some(), only)?
         .into_iter()
         .map(|i| {
             addon_install::install(&source, i)
-                .map(|p| Installed { path: display(&p) })
+                .map(|p| Installed {
+                    install: display(&i.path),
+                    path: display(&p),
+                })
                 .map_err(|e| format!("{e:#}"))
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(InstallResult {
+        version,
+        installed,
+        game_running: crate::game::game_running(),
+    })
 }
 
 #[cfg(test)]
@@ -672,6 +721,35 @@ mod tests {
         assert_eq!(v["userCode"], json!("ABCD-EFGH"));
         assert_eq!(v["expiresAt"], json!(1_800_000_600));
         assert!(!v.to_string().contains("secret"));
+    }
+
+    #[test]
+    fn installs_into_forever_unless_a_folder_was_chosen() {
+        let forever = Install {
+            path: PathBuf::from("/wow/_forever_"),
+            flavor: Some("wowf".into()),
+        };
+        let retail = Install {
+            path: PathBuf::from("/wow/_retail_"),
+            flavor: Some("wow".into()),
+        };
+        let both = [forever.clone(), retail.clone()];
+        let paths = |t: Vec<&Install>| t.iter().map(|i| display(&i.path)).collect::<Vec<_>>();
+        assert_eq!(
+            paths(targets(&both, false, None).unwrap()),
+            ["/wow/_forever_"]
+        );
+        assert_eq!(
+            paths(targets(&both, false, Some("/wow/_forever_")).unwrap()),
+            ["/wow/_forever_"]
+        );
+        assert!(targets(&both, false, Some("/wow/_retail_")).is_err());
+        assert_eq!(
+            paths(targets(&both, true, Some("/wow/_retail_")).unwrap()),
+            ["/wow/_retail_"]
+        );
+        assert_eq!(targets(&both, true, None).unwrap().len(), 2);
+        assert!(targets(&[retail], false, None).is_err());
     }
 
     #[test]
