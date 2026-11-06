@@ -145,9 +145,10 @@ function St.Counts()
   return c
 end
 
--- "on", "off", or "unavailable" when this client has no LoggingCombat.
+-- What the addon did about logging: it never asks the client (Zone.lua), so "on" means Ryna
+-- turned it on, and "not turned on by Ryna" covers both off and a /combatlog typed by hand.
 function St.LoggingText()
   local on = ns.Zone.IsLogging()
   if on == nil then return "unavailable on this client" end
-  return on and "on" or "off"
+  return on and "on (turned on by Ryna)" or "not turned on by Ryna"
 end

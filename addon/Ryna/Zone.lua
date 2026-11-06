@@ -9,24 +9,29 @@ ns.Zone = Z
 
 local NonEmpty = ns.NonEmpty
 
+-- What the addon knows about logging. It never asks the client: on this client
+-- `LoggingCombat()` with no argument reported "off" while a log file was being written
+-- (2026-11-06), and a query that might also be a `LoggingCombat(false)` isn't worth the risk.
+-- So the state is what the addon last set, or nil when it set nothing.
 local function loggingState()
   local fn = ns.Fn("LoggingCombat")
   if not fn then return nil, nil end
-  return ns.Try(fn) and true or false, fn
+  return Z.addonTurnedOn and true or false, fn
 end
 
 -- Turns logging on or off for the current place and setting. The addon only turns logging off
 -- when it is the reason it's on (it turned it on, or the player just left an instance in
--- "instances" mode), so a /combatlog typed in the open world is left alone.
+-- "instances" mode), so a /combatlog typed in the open world is left alone. Turning it on when
+-- it already is costs nothing, so "on" is asked for every time it's wanted.
 function Z.ApplyCombatLog(inInstance)
   local on, fn = loggingState()
   if not fn then return end
   local mode = ns.db.settings.combatLog
   local wanted = mode == "always" or (mode == "instances" and inInstance)
   if wanted then
-    if not on and pcall(fn, true) then
+    if pcall(fn, true) then
+      if not on then ns.Print("combat logging on" .. (inInstance and " (instance)" or "")) end
       Z.addonTurnedOn = true
-      ns.Print("combat logging on" .. (inInstance and " (instance)" or ""))
     end
   elseif on and (Z.addonTurnedOn or (mode == "instances" and Z.wasInInstance)) then
     if pcall(fn, false) then
