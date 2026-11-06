@@ -79,6 +79,30 @@ function Z.SetMode(mode)
   Z.ApplyCombatLog(Z.wasInInstance and true or false)
 end
 
+-- Advanced combat logging is a client variable the addon may set. On, the log carries positions
+-- and health (what the companion app's fight timelines and deaths want); the setting defaults to on
+-- and the variable is set at login and whenever the setting changes.
+function Z.ApplyAdvancedLogging()
+  local get = ns.Fn("GetCVar") or (C_CVar and C_CVar.GetCVar)
+  local set = ns.Fn("SetCVar") or (C_CVar and C_CVar.SetCVar)
+  if not set then
+    ns.Debug("advanced combat logging: this client has no SetCVar")
+    return
+  end
+  local wanted = ns.Setting("advancedCombatLog") and "1" or "0"
+  local current = get and ns.Try(get, "advancedCombatLogging")
+  if current ~= nil then current = tostring(current) end
+  if current == wanted then
+    ns.Debug("advanced combat logging: already %s", wanted == "1" and "on" or "off")
+    return
+  end
+  if pcall(set, "advancedCombatLogging", wanted) then
+    ns.Debug("advanced combat logging: set %s (was %s)", wanted == "1" and "on" or "off", tostring(current))
+  else
+    ns.Debug("advanced combat logging: the client refused to set it")
+  end
+end
+
 function Z.IsLogging()
   return (loggingState())
 end

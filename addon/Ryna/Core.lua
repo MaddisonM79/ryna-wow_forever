@@ -228,7 +228,7 @@ end)
 --   groupMembers    record the other players in my group (needs census)
 --   debug           print what the addon is doing to chat (ns.Debug)
 --   minimap         { shown = true, angle = <degrees> } for the minimap button
-ns.SETTING_DEFAULTS = { chatSightings = true, census = true, groupMembers = true, debug = false }
+ns.SETTING_DEFAULTS = { chatSightings = true, census = true, groupMembers = true, advancedCombatLog = true, debug = false }
 ns.MINIMAP_DEFAULT_ANGLE = 225
 
 function ns.ApplySettingDefaults(settings)

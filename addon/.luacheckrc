@@ -16,6 +16,7 @@ globals = {
 -- _G (ns.Fn) instead, so it doesn't need listing here.
 read_globals = {
   "_G",
+  "C_CVar",
   "C_Timer",
   "CreateFrame",
   "date",

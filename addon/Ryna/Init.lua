@@ -20,6 +20,7 @@ ns.On("PLAYER_LOGIN", function()
   ns.Debug("login: record built for %s, level %s %s, in %s", rec.fullName, rec.level, rec.class, rec.zone)
   if ns.Status.IsStale() then ns.Print("the companion app hasn't synced recently.") end
   ns.Debug("companion app file: %s", ns.Status.DebugLine())
+  ns.Run("advanced combat logging", ns.Zone.ApplyAdvancedLogging)
 end)
 
 -- The UI is a second PLAYER_LOGIN handler, after the one above, with each part under its own

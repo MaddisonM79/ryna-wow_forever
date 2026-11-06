@@ -166,3 +166,7 @@ world, and bag and quest updates are coalesced.
 ## Development
 
 `luacheck addon/` from the repository root uses `addon/.luacheckrc`.
+
+### Advanced combat logging
+
+On by default: the addon sets the game's `advancedCombatLogging` variable at login and whenever the setting changes, so fights are logged with positions and health.
