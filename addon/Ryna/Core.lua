@@ -246,6 +246,15 @@ function ns.ApplySettingDefaults(settings)
   if type(mm.angle) ~= "number" then mm.angle = ns.MINIMAP_DEFAULT_ANGLE end
 end
 
+-- One spelling for a character's full name wherever it came from: the client hands chat senders
+-- "First Last" and units "First-Last" (Forever names characters first and last); the companion
+-- app and the API key on the hyphen form. A name with neither stays as it is.
+function ns.CanonicalName(name)
+  if type(name) ~= "string" or name == "" then return nil end
+  if name:find("-", 1, true) then return name end
+  return (name:gsub("^(%S+)%s+", "%1-", 1))
+end
+
 -- A boolean setting, its default when RynaDB isn't set up yet.
 function ns.Setting(key)
   local settings = ns.db and ns.db.settings

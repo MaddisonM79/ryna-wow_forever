@@ -58,7 +58,7 @@ function S.Seen(source, info, quiet)
   if guid and guid == ns.playerGuid then return nil end
   if not guid and not NonEmpty(info.fullName) then return nil end
   local e = ns.Journal.Add("seen", {
-    guid = guid, fullName = NonEmpty(info.fullName), level = info.level, class = info.class,
+    guid = guid, fullName = ns.CanonicalName(NonEmpty(info.fullName)), level = info.level, class = info.class,
     race = info.race, guild = info.guild, zone = info.zone, source = source,
   }, quiet)
   if e and guid then remember(guid, info.level) end
