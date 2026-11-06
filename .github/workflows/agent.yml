@@ -31,15 +31,8 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: rustfmt, clippy
       - run: cargo fmt --all --check
-      # Until Cargo.lock is committed (the first one is generated here), these run unlocked and the
-      # ubuntu job hands the lockfile back as an artifact.
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test
-      - if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: Cargo.lock
-          path: Cargo.lock
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
 
   build:
     if: startsWith(github.ref, 'refs/tags/v')
