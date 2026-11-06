@@ -18,13 +18,17 @@ function G.Key(name)
 end
 
 function G.Request()
-  if not ns.Try(ns.Fn("IsInGuild")) then return end
+  if not ns.Try(ns.Fn("IsInGuild")) then
+    ns.Debug("guild roster: not in a guild, nothing to request")
+    return
+  end
   local modern = ns.Fn("C_GuildInfo", "GuildRoster")
   if modern then
     ns.Try(modern)
   else
     ns.Try(ns.Fn("GuildRoster"))
   end
+  ns.Debug("guild roster: requested")
 end
 
 local function canViewOfficerNote()
@@ -48,7 +52,10 @@ function G.ScanRoster()
   if not guild then return end
   local total = ns.Try(ns.Fn("GetNumGuildMembers"))
   local info = ns.Fn("GetGuildRosterInfo")
-  if type(total) ~= "number" or total < 1 or not info then return end
+  if type(total) ~= "number" or total < 1 or not info then
+    ns.Debug("guild roster: not loaded yet")
+    return
+  end
 
   local now = ns.Now()
   local officer = canViewOfficerNote()
@@ -75,17 +82,27 @@ function G.ScanRoster()
     guid = guild.guid, name = guild.name, realmId = rec.realmId, rosterAsOf = now, roster = roster,
   }
 
+  ns.Debug("guild roster: read %d members, %d online (%s)", #roster, #online, guild.name)
+
   -- Online members become `seen` events only while the census setting is on.
-  if ns.Setting("census") and (not G.rosterSeenAt or now - G.rosterSeenAt >= ROSTER_SEEN_SECONDS) then
+  if not ns.Setting("census") then
+    if #online > 0 then ns.Debug("census off: not recording the %d online guild members", #online) end
+  elseif G.rosterSeenAt and now - G.rosterSeenAt < ROSTER_SEEN_SECONDS then
+    ns.Debug("census: roster sightings skipped, last taken %s ago (at most every 9 minutes)",
+      ns.DurationText(now - G.rosterSeenAt))
+  else
     G.rosterSeenAt = now
+    local names = {}
     for _, row in ipairs(online) do
       local race
       if row.guid then race = select(4, ns.Try(ns.Fn("GetPlayerInfoByGUID"), row.guid)) end
-      ns.Sightings.Seen("roster", {
+      local e = ns.Sightings.Seen("roster", {
         guid = row.guid, fullName = row.fullName, level = row.level, class = row.class,
         race = NonEmpty(race), guild = guild.name, zone = row.zone,
-      })
+      }, true)
+      if e then names[#names + 1] = row.fullName end
     end
+    if #names > 0 then ns.Debug("census: seen %d online on the guild roster: %s", #names, ns.ListText(names)) end
   end
 end
 

@@ -65,6 +65,98 @@ function ns.PrintRaw(msg)
   if frame and frame.AddMessage then frame:AddMessage(tostring(msg)) end
 end
 
+-- Debug lines (RynaDB.settings.debug, off by default): one dimmed "Ryna debug: ..." line in chat
+-- for each thing the addon does. The format is applied under pcall with nil, boolean and table
+-- arguments passed through tostring, so a bad format or argument prints the raw format instead
+-- of raising an error.
+local function debugText(fmt, ...)
+  local n = select("#", ...)
+  if n == 0 then return tostring(fmt) end
+  local args = { ... }
+  for i = 1, n do
+    local t = type(args[i])
+    if t ~= "number" and t ~= "string" then args[i] = tostring(args[i]) end
+  end
+  return string.format(tostring(fmt), unpack(args, 1, n))
+end
+
+local function debugLine(fmt, ...)
+  local ok, msg = pcall(debugText, fmt, ...)
+  if ok then return msg end
+  ok, msg = pcall(tostring, fmt)
+  return ok and msg or "?"
+end
+
+local function debugEmit(msg)
+  ns.PrintRaw("|cff7fb2ffRyna debug|r: |cffa0a0a0" .. msg .. "|r")
+end
+
+function ns.Debugging()
+  return ns.Setting("debug") and true or false
+end
+
+function ns.Debug(fmt, ...)
+  if not ns.Setting("debug") then return end
+  debugEmit(debugLine(fmt, ...))
+end
+
+-- For scans that busy events re-run (quest log, reputations): a line identical to the last one
+-- under the same key within five minutes isn't printed again.
+local lastDebug = {}
+local REPEAT_SECONDS = 300
+function ns.DebugChanged(key, fmt, ...)
+  if not ns.Setting("debug") then return end
+  local msg = debugLine(fmt, ...)
+  local now = GetTime()
+  local last = lastDebug[key]
+  if last and last.msg == msg and now - last.at < REPEAT_SECONDS then return end
+  lastDebug[key] = { msg = msg, at = now }
+  debugEmit(msg)
+end
+
+-- The debug setting, from the panel or /ryna debug.
+function ns.SetDebug(on)
+  if not ns.db then return end
+  ns.db.settings.debug = on and true or false
+  if on then
+    ns.Debug("on")
+  else
+    ns.Print("debug messages off.")
+  end
+end
+
+-- Text helpers for debug lines: "1g 20s 5c", "3h 12m", "A, B, C and 4 more".
+function ns.MoneyText(copper)
+  if type(copper) ~= "number" then return "?" end
+  local sign = copper < 0 and "-" or ""
+  copper = math.abs(math.floor(copper))
+  local parts = {}
+  local g, s, c = math.floor(copper / 10000), math.floor(copper / 100) % 100, copper % 100
+  if g > 0 then parts[#parts + 1] = g .. "g" end
+  if s > 0 then parts[#parts + 1] = s .. "s" end
+  if c > 0 or #parts == 0 then parts[#parts + 1] = c .. "c" end
+  return sign .. table.concat(parts, " ")
+end
+
+function ns.DurationText(seconds)
+  if type(seconds) ~= "number" then return "unknown" end
+  local m = math.floor(seconds / 60)
+  if m < 1 then return "under a minute" end
+  local d, h = math.floor(m / 1440), math.floor(m / 60) % 24
+  if d > 0 then return string.format("%dd %dh", d, h) end
+  if h > 0 then return string.format("%dh %dm", h, m % 60) end
+  return m .. "m"
+end
+
+function ns.ListText(list, max)
+  max = max or 6
+  local shown = {}
+  for i = 1, math.min(#list, max) do shown[i] = tostring(list[i]) end
+  local out = table.concat(shown, ", ")
+  if #list > max then out = out .. " and " .. (#list - max) .. " more" end
+  return out
+end
+
 -- Errors: counted per label, printed once per label, the last few kept for /ryna status.
 ns.errors = { count = 0, seen = {}, last = nil }
 
@@ -134,8 +226,9 @@ end)
 --   chatSightings   record a `seen` event for who speaks in chat
 --   census          take part in the census at all: when off, no `seen` events from any source
 --   groupMembers    record the other players in my group (needs census)
+--   debug           print what the addon is doing to chat (ns.Debug)
 --   minimap         { shown = true, angle = <degrees> } for the minimap button
-ns.SETTING_DEFAULTS = { chatSightings = true, census = true, groupMembers = true }
+ns.SETTING_DEFAULTS = { chatSightings = true, census = true, groupMembers = true, debug = false }
 ns.MINIMAP_DEFAULT_ANGLE = 225
 
 function ns.ApplySettingDefaults(settings)

@@ -171,11 +171,14 @@ local function build()
   P.group = checkbox(content, "Record other players in my group",
     "Who was in your groups.")
   P.minimap = checkbox(content, "Show the minimap button", "Drag it around the minimap to move it.")
+  P.debug = checkbox(content, "Debug messages",
+    "Prints what Ryna is doing to the chat window: scans, journal events, sightings. For checking that it works.")
 
   local function toggle(cb, key)
     cb:SetScript("OnClick", function(self)
       ns.Run("setting " .. key, function()
         ns.db.settings[key] = self:GetChecked() and true or false
+        ns.Debug("setting %s: %s", key, ns.db.settings[key] and "on" or "off")
         P.Refresh()
       end)
     end)
@@ -186,7 +189,14 @@ local function build()
   P.minimap:SetScript("OnClick", function(self)
     ns.Run("setting minimap", function()
       ns.db.settings.minimap.shown = self:GetChecked() and true or false
+      ns.Debug("setting minimap button: %s", ns.db.settings.minimap.shown and "shown" or "hidden")
       if ns.Minimap then ns.Minimap.Update() end
+      P.Refresh()
+    end)
+  end)
+  P.debug:SetScript("OnClick", function(self)
+    ns.Run("setting debug", function()
+      ns.SetDebug(self:GetChecked() and true or false)
       P.Refresh()
     end)
   end)
@@ -204,9 +214,11 @@ local function build()
   panel.OnDefault = function()
     ns.Run("panel defaults", function()
       local mm = ns.db.settings.minimap
+      local wasDebug = ns.Debugging()
       ns.db.settings = { minimap = mm }
       ns.ApplySettingDefaults(ns.db.settings)
       mm.shown = true
+      if wasDebug then ns.Print("settings back to their defaults; debug messages off.") end
       ns.Zone.SetMode(ns.db.settings.combatLog)
       if ns.Minimap then ns.Minimap.Update() end
       P.Refresh()
@@ -270,12 +282,14 @@ function P.Refresh()
   P.census:SetChecked(settings.census)
   P.group:SetChecked(settings.groupMembers)
   P.minimap:SetChecked(settings.minimap.shown)
+  P.debug:SetChecked(settings.debug)
   P.chat.setActive(settings.census)
   P.group.setActive(settings.census)
   P.census.place(s, 4)
   P.chat.place(s, 30)
   P.group.place(s, 30)
   P.minimap.place(s, 4)
+  P.debug.place(s, 4)
   s.y = s.y - 6
   s.add(P.h3, 16)
   P.messages:SetText(messagesText())

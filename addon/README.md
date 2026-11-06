@@ -77,6 +77,7 @@ companion app, never in the game: an addon can't reach the network.
 | Take part in the census | on | Records the other players you see. Off: **no** `seen` events at all, from chat, your group or your guild roster; the addon records only your own characters (and still your guild's roster, which is your guild's own list). |
 | Record other players in my group | on | Part of the census. Off: no `seen` events for group members, and `group` events say only that you joined, changed or left a group, without the member list. |
 | Show the minimap button | on | Hides or shows the button. `/ryna` still opens the panel. |
+| Debug messages | off | Prints what Ryna is doing to the chat window, one dimmed `Ryna debug:` line each: scans as they run (played time, gear, professions, reputations, bags and bank, quest log, group, guild roster), every journal event, every sighting and every sighting skipped (by the 10-minute chat window or a census setting), combat-log decisions and settings changes. For checking that it works. Same as `/ryna debug`. |
 
 The settings are for the whole game account (`RynaDB` is account-wide), not per character.
 
@@ -129,6 +130,10 @@ positions and health in the log, turn on **Advanced Combat Logging** in the game
 - `/ryna`: opens the panel.
 - `/ryna status`: the same status in chat, plus the client's version and any errors the addon caught.
 - `/ryna combatlog instances|always|never`
+- `/ryna debug on|off|toggle`: turns the debug messages on or off; `/ryna debug` alone says which.
+  Busy scans print once per scan, not per game event, and a quest-log, reputation or profession
+  line that hasn't changed isn't repeated within five minutes. Group and guild-roster sightings
+  print as one summary line per scan.
 - `/ryna help`: the commands.
 
 ## Installing by hand

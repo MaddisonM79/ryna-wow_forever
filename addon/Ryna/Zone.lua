@@ -25,19 +25,29 @@ end
 -- it already is costs nothing, so "on" is asked for every time it's wanted.
 function Z.ApplyCombatLog(inInstance)
   local on, fn = loggingState()
-  if not fn then return end
+  if not fn then
+    ns.Debug("combat log: this client has no LoggingCombat, nothing to do")
+    return
+  end
   local mode = ns.db.settings.combatLog
+  local where = inInstance and "in an instance" or "outside instances"
   local wanted = mode == "always" or (mode == "instances" and inInstance)
   if wanted then
     if pcall(fn, true) then
       if not on then ns.Print("combat logging on" .. (inInstance and " (instance)" or "")) end
       Z.addonTurnedOn = true
+      ns.Debug("combat log: mode %s, %s: %s", mode, where, on and "kept on" or "turned on")
+    else
+      ns.Debug("combat log: mode %s, %s: the client refused to turn it on", mode, where)
     end
   elseif on and (Z.addonTurnedOn or (mode == "instances" and Z.wasInInstance)) then
     if pcall(fn, false) then
       Z.addonTurnedOn = false
       ns.Print("combat logging off")
+      ns.Debug("combat log: mode %s, %s: turned off", mode, where)
     end
+  else
+    ns.Debug("combat log: mode %s, %s: not wanted here, left alone", mode, where)
   end
   Z.wasInInstance = inInstance
 end
@@ -65,6 +75,7 @@ end
 
 function Z.SetMode(mode)
   ns.db.settings.combatLog = mode
+  ns.Debug("setting combatLog: %s", mode)
   Z.ApplyCombatLog(Z.wasInInstance and true or false)
 end
 

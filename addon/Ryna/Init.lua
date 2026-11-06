@@ -17,7 +17,9 @@ ns.On("PLAYER_LOGIN", function()
   ns.Journal.StartSession(rec.guid)
   ns.Journal.Add("session", { kind = "login", clock = time(), zone = rec.zone })
   ns.PrintRaw("|cff7fb2ffRyna " .. ns.VERSION .. "|r: recording. /ryna for settings.")
+  ns.Debug("login: record built for %s, level %s %s, in %s", rec.fullName, rec.level, rec.class, rec.zone)
   if ns.Status.IsStale() then ns.Print("the companion app hasn't synced recently.") end
+  ns.Debug("companion app file: %s", ns.Status.DebugLine())
 end)
 
 -- The UI is a second PLAYER_LOGIN handler, after the one above, with each part under its own
@@ -35,6 +37,7 @@ ns.On("PLAYER_ENTERING_WORLD", function()
   ns.Zone.Update()
   if deferred then return end
   deferred = true
+  ns.Debug("login: scans start in 2 to 8 seconds")
   ns.After(2, "played", function() ns.Character.RequestPlayed() end)
   ns.After(3, "character-scan", function()
     local C = ns.Character

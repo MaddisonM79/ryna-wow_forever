@@ -1,5 +1,6 @@
 -- Slash commands: /ryna (opens the panel), /ryna status, /ryna combatlog instances|always|never,
--- /ryna help. Status and help go to the default chat frame.
+-- /ryna debug on|off|toggle, /ryna help. Status and help go to the default chat frame.
+-- The chat frame reads "|" as the start of an escape code, so a literal one is written "||".
 
 local _, ns = ...
 
@@ -20,7 +21,33 @@ local function help()
   ns.Print("v" .. ns.VERSION .. ". Commands:")
   ns.Print("  /ryna: open the Ryna settings panel")
   ns.Print("  /ryna status: what is recorded, the journal's size, combat logging")
-  ns.Print("  /ryna combatlog instances|always|never: when the addon turns combat logging on")
+  ns.Print("  /ryna combatlog instances||always||never: when the addon turns combat logging on")
+  ns.Print("  /ryna debug on||off||toggle: print what Ryna is doing to chat (/ryna debug alone: which it is)")
+end
+
+local function debugCommand(arg)
+  local on = ns.Debugging()
+  if arg == "" then
+    ns.Print("debug messages are " .. (on and "on" or "off") .. ". /ryna debug on||off||toggle changes it.")
+    return
+  end
+  local want
+  if arg == "on" then
+    want = true
+  elseif arg == "off" then
+    want = false
+  elseif arg == "toggle" then
+    want = not on
+  else
+    ns.Print("usage: /ryna debug on||off||toggle (now " .. (on and "on" or "off") .. ")")
+    return
+  end
+  if want == on then
+    ns.Print("debug messages are already " .. (on and "on" or "off") .. ".")
+    return
+  end
+  ns.SetDebug(want)
+  ns.Run("panel", ns.Panel.Refresh)
 end
 
 local function status()
@@ -50,6 +77,7 @@ local function status()
   local logging = ns.Zone.IsLogging()
   ns.Print(string.format("combat log: setting %s, currently %s", db.settings.combatLog,
     logging == nil and "unavailable" or (logging and "on" or "off")))
+  ns.Print("debug messages: " .. (ns.Debugging() and "on" or "off"))
   ns.Print("companion app: " .. ns.Status.SyncLine())
   for _, line in ipairs(ns.Status.UpdateLines()) do ns.Print(line) end
   if ns.errors.count > 0 then
@@ -69,8 +97,10 @@ function ns.Slash(msg)
       ns.Print("combat logging: " .. arg)
       ns.Run("panel", ns.Panel.Refresh)
     else
-      ns.Print("usage: /ryna combatlog instances|always|never (now " .. ns.db.settings.combatLog .. ")")
+      ns.Print("usage: /ryna combatlog instances||always||never (now " .. ns.db.settings.combatLog .. ")")
     end
+  elseif cmd == "debug" then
+    debugCommand(arg)
   else
     help()
   end

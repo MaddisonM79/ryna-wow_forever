@@ -83,6 +83,19 @@ function St.SyncLine()
   return "Not synced yet. Sign in from the Ryna companion app."
 end
 
+-- What AgentStatus.lua held at login, for the debug line: when, as whom, signed in, messages.
+function St.DebugLine()
+  local a = St.Agent()
+  if not a then return "empty (nothing synced yet)" end
+  local lastPush = field(a, "lastPush", "number")
+  local signedIn = field(a, "signedIn", "boolean")
+  local list = field(a, "messages", "table")
+  return string.format("synced %s as %s, %s, %d messages, app %s",
+    lastPush and St.Ago(lastPush) or "never", St.Plain(field(a, "as", "string")) or "nobody",
+    signedIn == nil and "sign-in unknown" or (signedIn and "signed in" or "signed out"),
+    list and #list or 0, St.Plain(field(a, "agent", "string")) or "version unknown")
+end
+
 -- True when the app hasn't pushed in the last 24 hours (or never has, as far as the file says).
 function St.IsStale()
   local lastPush = field(St.Agent(), "lastPush", "number")

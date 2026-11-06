@@ -28,6 +28,8 @@ function J.Prune()
     if type(e) == "table" and type(e.at) == "number" and e.at >= cutoff then out[#out + 1] = e end
   end
   ns.db.journal = keepNewest(out, CAP)
+  ns.Debug("journal: %d events kept from earlier sessions, %d older than 30 days dropped",
+    #ns.db.journal, #old - #ns.db.journal)
 end
 
 function J.StartSession(guid)
@@ -38,7 +40,49 @@ function J.StartSession(guid)
   J.char = guid
 end
 
-function J.Add(eventType, fields)
+-- One debug line per appended event: "journal: questDone 123 "Title"", "census: seen <name> in chat".
+local SEEN_WHERE = { chat = "in chat", group = "in your group", roster = "on the guild roster" }
+
+local function quoted(s)
+  return s and (' "' .. tostring(s) .. '"') or ""
+end
+
+local function describe(e)
+  local t = e.type
+  if t == "seen" then
+    return string.format("census: seen %s %s", tostring(e.fullName or e.guid),
+      SEEN_WHERE[e.source] or ("from " .. tostring(e.source)))
+  elseif t == "questAccept" then
+    return string.format("journal: questAccept %s%s%s", tostring(e.questId), quoted(e.title),
+      e.level and (" (level " .. tostring(e.level) .. ")") or "")
+  elseif t == "questDone" then
+    local title = ns.NonEmpty(ns.Try(ns.Fn("C_QuestLog", "GetTitleForQuestID"), e.questId))
+    return string.format("journal: questDone %s%s, %s xp, %s", tostring(e.questId), quoted(title),
+      tostring(e.xp or 0), ns.MoneyText(e.gold or 0))
+  elseif t == "zone" then
+    local where = tostring(e.zone or "unknown zone") .. (e.subzone and (", " .. e.subzone) or "")
+    if e.instance then
+      where = where .. " (instance " .. e.instance .. (e.difficulty and (", " .. e.difficulty) or "") .. ")"
+    end
+    return "journal: zone " .. where
+  elseif t == "gold" then
+    return string.format("journal: gold %s%s, now %s", (e.delta or 0) > 0 and "+" or "",
+      ns.MoneyText(e.delta), ns.MoneyText(e.total))
+  elseif t == "level" then
+    return string.format("journal: level %s (played %s in all)", tostring(e.level), ns.DurationText(e.playedTotal))
+  elseif t == "group" then
+    return string.format("journal: group %s, %s", tostring(e.kind),
+      e.members and (#e.members .. " other members") or "members not recorded")
+  elseif t == "session" then
+    return "journal: session " .. tostring(e.kind) .. (e.zone and (" in " .. e.zone) or "")
+  elseif t == "death" then
+    return "journal: death" .. (e.zone and (" in " .. e.zone) or "")
+  end
+  return "journal: " .. tostring(t)
+end
+
+-- quiet: no debug line for this event (the caller prints one summary for a batch of them).
+function J.Add(eventType, fields, quiet)
   if not J.session then return nil end
   J.seq = J.seq + 1
   local e = { session = J.session, seq = J.seq, at = ns.Now(), char = J.char, type = eventType }
@@ -48,6 +92,10 @@ function J.Add(eventType, fields)
   local journal = ns.db.journal
   journal[#journal + 1] = e
   if #journal > CAP + SLACK then ns.db.journal = keepNewest(journal, CAP) end
+  if not quiet and ns.Debugging() then
+    local ok, line = pcall(describe, e)
+    if ok and line then ns.Debug("%s", line) end
+  end
   return e
 end
 

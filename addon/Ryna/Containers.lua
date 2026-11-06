@@ -98,6 +98,26 @@ function B.Scan()
     end
   end
   rec.containers = rows
+  if ns.Debugging() then
+    local items, slots = { bag = 0, keyring = 0, bank = 0 }, { bag = 0, keyring = 0, bank = 0 }
+    for _, row in ipairs(rows) do
+      local kind = row.container
+      if items[kind] then
+        items[kind] = items[kind] + (tonumber(row.count) or 1)
+        slots[kind] = slots[kind] + 1
+      end
+    end
+    local bank
+    if B.bankOpen then
+      bank = "read now"
+    elseif rec.bankAsOf then
+      bank = "kept from " .. date("%Y-%m-%d %H:%M", rec.bankAsOf)
+    else
+      bank = "never read (open your bank once)"
+    end
+    ns.Debug("bags: %d items in %d slots%s; bank: %d items in %d slots, %s", items.bag + items.keyring,
+      slots.bag + slots.keyring, slots.keyring > 0 and " (keyring included)" or "", items.bank, slots.bank, bank)
+  end
 end
 
 ns.On("BAG_UPDATE_DELAYED", function() ns.Debounce("containers", 1, B.Scan) end)

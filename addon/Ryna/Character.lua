@@ -159,6 +159,7 @@ function C.ScanGear()
     end
   end
   rec.gear = gear
+  ns.Debug("gear: %d items equipped", #gear)
 end
 
 -- Talents: "Elemental 5 / Enhancement 11 / Restoration 0". GetTalentTabInfo's returns differ by
@@ -183,6 +184,7 @@ function C.ScanTalents()
     end
   end
   if #parts > 0 then rec.talents = table.concat(parts, " / ") end
+  ns.Debug("talents: %s", #parts > 0 and rec.talents or "none readable")
 end
 
 local function professionRow(id, name, rank, max)
@@ -230,6 +232,14 @@ function C.ScanProfessions()
     end
   end
   if #rows > 0 then rec.professions = rows end
+  if ns.Debugging() then
+    local names = {}
+    for _, p in ipairs(rows) do
+      names[#names + 1] = string.format("%s %s/%s", p.name, tostring(p.rank), tostring(p.max))
+    end
+    -- Weapon skill-ups also fire SKILL_LINES_CHANGED, so an unchanged line isn't repeated.
+    ns.DebugChanged("professions", "professions: %d%s", #rows, #rows > 0 and (" (" .. ns.ListText(names) .. ")") or "")
+  end
 end
 
 local function sortedIds(set)
@@ -289,8 +299,12 @@ function C.ScanRecipes(window)
       end
     end
   end
-  if not name or not next(ids) then return end
+  if not name or not next(ids) then
+    ns.DebugChanged("recipes-" .. tostring(window), "recipes: nothing readable in the %s window yet", tostring(window))
+    return
+  end
   C.recipes[name] = sortedIds(ids)
+  ns.DebugChanged("recipes-" .. tostring(window), "recipes: %d known for %s", #C.recipes[name], name)
   for _, p in ipairs(ns.rec.professions) do
     if p.name == name then p.recipes = C.recipes[name] end
   end
@@ -334,6 +348,8 @@ function C.ScanReputations()
     end
   end
   if #rows > 0 then rec.reputations = rows end
+  -- UPDATE_FACTION comes with every reputation gain, so an unchanged line isn't repeated.
+  ns.DebugChanged("reputations", "reputations: %d factions", #rows)
 end
 
 function C.UpdateXp()
@@ -399,18 +415,24 @@ end
 
 function C.RequestPlayed()
   local request = ns.Fn("RequestTimePlayed")
-  if not request then return false end
+  if not request then
+    ns.Debug("played time: this client can't request it")
+    return false
+  end
   mutePlayedChat()
   if not pcall(request) then
     restorePlayedChat()
+    ns.Debug("played time: the request failed")
     return false
   end
   C.playedToken = C.playedToken + 1
   local token = C.playedToken
   C.playedPending = true
+  ns.Debug("played time: requested")
   ns.After(10, "played-timeout", function()
     if C.playedPending and token == C.playedToken then
       C.playedPending = false
+      ns.Debug("played time: no answer after 10 seconds")
       restorePlayedChat()
       writeLevelEvent() -- without played totals: the answer never came
     end
@@ -424,6 +446,7 @@ function C.OnTimePlayed(total, atLevel)
     rec.playedTotal = total
     rec.playedLevel = atLevel
     C.playedAt = GetTime()
+    ns.Debug("played time: received, %s in all, %s at this level", ns.DurationText(total), ns.DurationText(atLevel))
   end
   if C.playedPending then
     C.playedPending = false
@@ -460,6 +483,8 @@ function C.Logout()
   rec.gold = ns.Try(GetMoney) or rec.gold
   rec.lastSeen = ns.Now()
   ns.Journal.Add("session", { kind = "logout", clock = time(), playedTotal = rec.playedTotal })
+  ns.Debug("logout: record updated (played %s, gold %s); the game writes RynaDB now",
+    ns.DurationText(rec.playedTotal), ns.MoneyText(rec.gold))
 end
 
 ns.On("PLAYER_MONEY", function() C.UpdateMoney() end)

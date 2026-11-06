@@ -87,6 +87,8 @@ function Q.ScanLog()
     }
   end
   rec.quests.active = active
+  -- QUEST_LOG_UPDATE comes with every objective tick, so an unchanged line isn't repeated.
+  ns.DebugChanged("quest-log", "quests: log read, %d in the log, %d completed", #active, #rec.quests.completed)
   if Q.completedDirty then
     Q.completedDirty = false
     Q.RefreshCompleted()
@@ -111,6 +113,7 @@ function Q.RefreshCompleted()
       local set = {}
       for _, id in ipairs(ids) do set[id] = true end
       setCompleted(set)
+      ns.Debug("quests: completed set read, %d quests", #ns.rec.quests.completed)
       return
     end
   end
@@ -121,6 +124,7 @@ function Q.RefreshCompleted()
     local set = type(got) == "table" and got or passed
     if next(set) then
       setCompleted(set)
+      ns.Debug("quests: completed set read (classic API), %d quests", #ns.rec.quests.completed)
       return
     end
     -- Old clients answer only after QueryQuestsCompleted -> QUEST_QUERY_COMPLETE.
@@ -128,6 +132,7 @@ function Q.RefreshCompleted()
     if query and not Q.queried then
       Q.queried = true
       pcall(query)
+      ns.Debug("quests: asked the server for the completed set")
     end
   end
 end

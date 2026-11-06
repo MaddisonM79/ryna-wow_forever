@@ -17,15 +17,20 @@ local CHAT_WINDOW = 600 -- seconds: one chat sighting per player per 10 minutes
 
 -- info: { guid, fullName, level, class, race, guild, zone }
 -- Nothing is written while the census setting is off, whatever the source (chat, group, roster).
-function S.Seen(source, info)
-  if not info or not ns.Setting("census") then return end
+-- quiet: no debug line per sighting (group and roster print one summary). Returns the event.
+function S.Seen(source, info, quiet)
+  if not info then return nil end
+  if not ns.Setting("census") then
+    ns.Debug("census off: not recording %s", tostring(NonEmpty(info.fullName) or info.guid))
+    return nil
+  end
   local guid = NonEmpty(info.guid)
-  if guid and guid == ns.playerGuid then return end
-  if not guid and not NonEmpty(info.fullName) then return end
-  ns.Journal.Add("seen", {
+  if guid and guid == ns.playerGuid then return nil end
+  if not guid and not NonEmpty(info.fullName) then return nil end
+  return ns.Journal.Add("seen", {
     guid = guid, fullName = NonEmpty(info.fullName), level = info.level, class = info.class,
     race = info.race, guild = info.guild, zone = info.zone, source = source,
-  })
+  }, quiet)
 end
 
 local function guidInfo(guid)
@@ -36,15 +41,41 @@ end
 -- Chat: last-seen times per GUID in memory only (never saved), pruned as it grows.
 local lastChat, lastChatCount = {}, 0
 
+-- Debug only: a skipped chat sighting is noted once per sender per window, not per message.
+local skipNoted, skipNotedCount = {}, 0
+local function noteSkip(guid, now)
+  local t = skipNoted[guid]
+  if t and now - t < CHAT_WINDOW then return false end
+  if skipNotedCount > 2000 then skipNoted, skipNotedCount = {}, 0 end
+  if not t then skipNotedCount = skipNotedCount + 1 end
+  skipNoted[guid] = now
+  return true
+end
+
 local function onChat(_, ...)
-  if not ns.rec or not ns.Setting("census") or not ns.Setting("chatSightings") then return end
+  if not ns.rec then return end
+  local recording = ns.Setting("census") and ns.Setting("chatSightings")
+  if not recording and not ns.Debugging() then return end
   local sender = select(2, ...)
   local guid = select(12, ...)
   if ns.IsSecret(guid) or ns.IsSecret(sender) then return end
   if type(guid) ~= "string" or not guid:find("^Player%-") or guid == ns.playerGuid then return end
   local now = GetTime()
+  if not recording then
+    if noteSkip(guid, now) then
+      ns.Debug("%s: not recording %s from chat",
+        ns.Setting("census") and "chat sightings off" or "census off", tostring(NonEmpty(sender) or guid))
+    end
+    return
+  end
   local last = lastChat[guid]
-  if last and now - last < CHAT_WINDOW then return end
+  if last and now - last < CHAT_WINDOW then
+    if ns.Debugging() and noteSkip(guid, now) then
+      ns.Debug("census: %s already seen in chat %s, skipped until 10 minutes have passed",
+        tostring(NonEmpty(sender) or guid), ns.DurationText(now - last) .. " ago")
+    end
+    return
+  end
   if not last then lastChatCount = lastChatCount + 1 end
   lastChat[guid] = now
   if lastChatCount > 2000 then
@@ -128,7 +159,10 @@ function S.ScanGroup()
       end
     end
   end
-  if not changed then return end
+  if not changed then
+    ns.DebugChanged("group", "group: %d others in the group, no change", #members)
+    return
+  end
   S.groupMembers = members
 
   -- With census or "record other players in my group" off, the `group` event still says that
@@ -136,8 +170,18 @@ function S.ScanGroup()
   local kind = (#prev == 0 and "joined") or (#members == 0 and "left") or "changed"
   local others = ns.Setting("census") and ns.Setting("groupMembers")
   ns.Journal.Add("group", { kind = kind, members = others and members or nil })
-  if not others then return end
-  for _, info in ipairs(infos) do S.Seen("group", info) end
+  if not others then
+    if #members > 0 then
+      ns.Debug("%s: not recording the %d others in the group",
+        ns.Setting("census") and "group members off" or "census off", #members)
+    end
+    return
+  end
+  local names = {}
+  for _, info in ipairs(infos) do
+    if S.Seen("group", info, true) then names[#names + 1] = info.fullName or info.guid end
+  end
+  if #names > 0 then ns.Debug("census: seen %d in your group: %s", #names, ns.ListText(names)) end
 end
 
 ns.On("GROUP_ROSTER_UPDATE", function() ns.Debounce("group", 1, S.ScanGroup) end)
