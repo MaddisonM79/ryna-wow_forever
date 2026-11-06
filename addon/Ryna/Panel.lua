@@ -165,11 +165,11 @@ local function build()
     .. "file small. Logging you start yourself with /combatlog is left alone.")
 
   P.chat = checkbox(content, "Record who I see in chat",
-    "Only who spoke, never what they said or in which channel. Needs the census.")
+    "Only who spoke, never what they said or in which channel.")
   P.census = checkbox(content, "Take part in the census",
     "Records other players you see (in chat, your group and your guild). Off: Ryna records only your own characters.")
   P.group = checkbox(content, "Record other players in my group",
-    "Who was in your groups. Needs the census.")
+    "Who was in your groups.")
   P.minimap = checkbox(content, "Show the minimap button", "Drag it around the minimap to move it.")
 
   local function toggle(cb, key)
@@ -272,8 +272,8 @@ function P.Refresh()
   P.minimap:SetChecked(settings.minimap.shown)
   P.chat.setActive(settings.census)
   P.group.setActive(settings.census)
-  P.chat.place(s, 4)
   P.census.place(s, 4)
+  P.chat.place(s, 30)
   P.group.place(s, 30)
   P.minimap.place(s, 4)
   s.y = s.y - 6
