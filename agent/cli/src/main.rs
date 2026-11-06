@@ -10,14 +10,15 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use ryna_wow_core::auth::{Auth, KeyringStore};
+use ryna_wow_core::auth::{self, Auth, AuthError, KeyringStore, LoginStatus};
 use ryna_wow_core::config::Config;
 use ryna_wow_core::discovery::{self, Discovery};
+use ryna_wow_core::fix::Fix;
 use ryna_wow_core::http::HttpTransport;
 use ryna_wow_core::push::Api;
 use ryna_wow_core::runner::{self, Outcome, RunError, RunOptions, RunReport};
-use ryna_wow_core::state::{self, State};
-use ryna_wow_core::util::{iso_utc, mtime, now_secs, SystemClock};
+use ryna_wow_core::state;
+use ryna_wow_core::util::{iso_utc, now_secs, SystemClock};
 use ryna_wow_core::watch::{CancelToken, WatchEvent, WatchOptions};
 use ryna_wow_core::{addon_install, lua, snapshot, AGENT_VERSION};
 
@@ -108,18 +109,44 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
     }
 }
 
+/// The command that fixes a failure: the core's errors name none, so the CLI adds its own.
+fn hint(fix: Fix) -> Option<&'static str> {
+    match fix {
+        Fix::SignIn => Some("run `ryna-wow login`"),
+        Fix::Update => Some("update ryna-wow, then run `ryna-wow install-addon`"),
+        Fix::Network | Fix::Other => None,
+    }
+}
+
+/// `message`, with the command that fixes it when there is one.
+fn with_hint(message: &str, fix: Fix) -> String {
+    match hint(fix) {
+        Some(h) => format!("{message}: {h}"),
+        None => message.to_string(),
+    }
+}
+
+fn auth_error(e: AuthError) -> anyhow::Error {
+    anyhow::Error::msg(with_hint(&e.to_string(), e.fix()))
+}
+
 fn login(config: &Config) -> Result<ExitCode> {
-    let http = HttpTransport::new().map_err(anyhow::Error::msg)?;
-    let store = KeyringStore::for_issuer(&config.issuer);
-    let auth = Auth::new(config, &http, &store, &SystemClock);
-    auth.login(&mut |code| {
-        println!("To sign this agent in, open {}", code.link());
-        println!(
-            "and check the code there is {}, then allow it. Waiting…",
-            code.user_code
-        );
-    })?;
-    println!("Signed in. `ryna-wow run` now pushes your accounts as you.");
+    let login = auth::start_device_login(config).map_err(auth_error)?;
+    println!("To sign this agent in, open {}", login.link());
+    println!(
+        "and check the code there is {}, then allow it. Waiting…",
+        login.user_code
+    );
+    let session = auth::poll_device_login(config, &login, &CancelToken::new(), &mut |s| {
+        if let LoginStatus::SlowDown { interval } = s {
+            println!("The sign-in provider asked for slower polling: every {interval} s.");
+        }
+    })
+    .map_err(auth_error)?;
+    match session.signed_in_as {
+        Some(who) => println!("Signed in as {who}. `ryna-wow run` now pushes your accounts."),
+        None => println!("Signed in. `ryna-wow run` now pushes your accounts as you."),
+    }
     Ok(ExitCode::SUCCESS)
 }
 
@@ -141,49 +168,48 @@ fn status(config: &Config, install: Option<&Path>) -> Result<ExitCode> {
     if !config.client_id_issued() {
         println!("Device client: not issued yet (set RYNA_WOW_CLIENT_ID); `login` can't run until it is.");
     }
-    let store = KeyringStore::for_issuer(&config.issuer);
-    let http = HttpTransport::new().map_err(anyhow::Error::msg)?;
-    let auth = Auth::new(config, &http, &store, &SystemClock);
-    match auth.signed_in() {
-        Ok(true) => println!("Signed in (a refresh token is in the keychain)."),
-        Ok(false) => println!("Not signed in: run `ryna-wow login`."),
-        Err(e) => println!("Couldn't read the keychain: {e}"),
+    let s = ryna_wow_core::status::status(config, install);
+    match (&s.keychain_error, s.signed_in, &s.signed_in_as) {
+        (Some(e), _, _) => println!("Couldn't read the keychain: {e}"),
+        (None, true, Some(who)) => println!("Signed in as {who}."),
+        (None, true, None) => println!("Signed in (a refresh token is in the keychain)."),
+        (None, false, _) => println!("Not signed in: run `ryna-wow login`."),
     }
 
-    let found = discovery::discover(install);
-    if found.installs.is_empty() {
+    if s.installs.is_empty() {
         println!("\nNo installs found. Point at the game with --install <folder>.");
     } else {
         println!("\nInstalls:");
-        for i in &found.installs {
+        for i in &s.installs {
+            let addon = match (&i.addon_version, i.has_addon) {
+                (Some(v), _) => format!("addon {v}"),
+                (None, true) => "addon installed (no version)".to_string(),
+                (None, false) => "addon not installed".to_string(),
+            };
             println!(
-                "  {}  flavor {}",
-                i.path.display(),
+                "  {}  flavor {}  {addon}",
+                i.path,
                 i.flavor.as_deref().unwrap_or("unknown")
             );
         }
     }
-    let dir = state::state_dir();
-    let st = dir.as_deref().map(State::load).unwrap_or_default();
-    if found.accounts.is_empty() {
+    if s.accounts.is_empty() {
         println!("\nNo Ryna.lua yet: install the addon (`ryna-wow install-addon`), log in to the game, then /reload or log out.");
     } else {
         println!("\nAccounts:");
     }
-    for a in &found.accounts {
-        let s = st.accounts.get(&a.path.to_string_lossy().into_owned());
-        let label = s.map_or_else(|| snapshot::default_label(&a.account), |s| s.label.clone());
-        let written = mtime(&a.path).ok().map(|m| m.secs);
-        println!("  {label}  ({})", a.path.display());
+    for a in &s.accounts {
+        println!("  {}  ({})", a.label, a.path);
         println!(
-            "    file written {}  last pushed {}",
-            when(written),
-            when(s.and_then(|s| s.pushed_at))
+            "    key {}  file written {}  last pushed {}",
+            a.key,
+            when(a.saved_at),
+            when(a.pushed_at)
         );
-        if let Some(n) = s.and_then(|s| s.characters) {
+        if let Some(n) = a.characters {
             println!("    characters {n}");
         }
-        if let Some(e) = s.and_then(|s| s.last_error.as_deref()) {
+        if let Some(e) = &a.last_error {
             println!("    last error: {e}");
         }
         // What the client said about itself: how the real Interface number and name split are learned.
@@ -195,19 +221,17 @@ fn status(config: &Config, install: Option<&Path>) -> Result<ExitCode> {
             }
         }
     }
-    if let Some(r) = &st.last_run {
-        println!(
-            "\nLast run {}: {}",
-            iso_utc(r.at),
-            if r.ok {
-                "ok".to_string()
-            } else {
-                format!("failed: {}", r.error.as_deref().unwrap_or(""))
-            }
-        );
+    if let Some(r) = &s.last_run {
+        let outcome = if r.ok {
+            "ok".to_string()
+        } else {
+            let error = r.error.as_deref().unwrap_or("");
+            format!("failed: {}", with_hint(error, r.fix.unwrap_or(Fix::Other)))
+        };
+        println!("\nLast run {}: {outcome}", iso_utc(r.at));
     }
-    if let Some(d) = &dir {
-        println!("State: {}", d.display());
+    if let Some(d) = &s.state_dir {
+        println!("State: {d}");
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -256,6 +280,9 @@ fn run(config: &Config, install: Option<&Path>, opts: &RunOptions) -> Result<u8>
     match runner::run_once(&found, &dir, &api, &clock, opts) {
         Ok(report) => {
             print_report(&report);
+            if let Some(h) = report.failure.and_then(hint) {
+                eprintln!("To fix it: {h}");
+            }
             Ok(report.failure.map_or(0, |f| f.exit_code() as u8))
         }
         Err(RunError::Busy) => {
@@ -304,10 +331,16 @@ fn watch(config: &Config, install: Option<&Path>, interval: u64) -> Result<ExitC
                     .unwrap_or_default();
                 println!("{stamp} {label}: pushed {characters} character(s){journal}");
             }
-            WatchEvent::Error { label, message, .. } => {
+            WatchEvent::Error {
+                label,
+                message,
+                fix,
+                ..
+            } => {
                 println!(
-                    "{stamp} {}error: {message}",
-                    label.as_ref().map(|l| format!("{l}: ")).unwrap_or_default()
+                    "{stamp} {}error: {}",
+                    label.as_ref().map(|l| format!("{l}: ")).unwrap_or_default(),
+                    with_hint(message, *fix)
                 )
             }
             WatchEvent::Heartbeat { ok: true, .. } => {}

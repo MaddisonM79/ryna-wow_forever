@@ -1,5 +1,5 @@
 // Agent events in plain words, for the activity log. Null means "not worth a line".
-import type { AgentEvent, Failure } from "./api";
+import type { AgentEvent } from "./api";
 
 const FLAVORS: Record<string, string> = {
   wowf: "World of Warcraft: Forever",
@@ -19,16 +19,6 @@ function plural(n: number, one: string, many = `${one}s`): string {
 
 function num(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
-}
-
-/** What the person can do about an error, in their words. */
-export function errorWords(message: string, failure: Failure): string {
-  if (failure === "signIn") return "Sign in again: the app's sign-in has lapsed.";
-  if (failure === "update") return "Update the app and the addon: the server no longer takes this version.";
-  if (/unreachable|failing after/i.test(message)) {
-    return "Couldn't reach the API, retrying.";
-  }
-  return message;
 }
 
 export function describe(e: AgentEvent): string | null {
@@ -56,10 +46,9 @@ export function describe(e: AgentEvent): string | null {
       }
       return `Pushed ${e.label}: ${parts.join(", ")}`;
     }
-    case "error": {
-      const words = errorWords(e.message, e.failure);
-      return e.label ? `${e.label}: ${words}` : words;
-    }
+    case "error":
+      // The core's words for it (what fixes it, or the error itself).
+      return e.label ? `${e.label}: ${e.advice}` : e.advice;
     case "heartbeat":
       return e.ok ? null : `Couldn't report in to the API${e.error ? `: ${e.error}` : ""}.`;
     case "passFinished":

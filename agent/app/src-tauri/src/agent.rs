@@ -1,23 +1,21 @@
 //! The app's side of the core: one watch loop at a time on its own thread, the sign-in, and the
-//! status the window shows. Nothing here outlives the app: quitting cancels the loop, and there
-//! is no service, scheduled task or launchd job behind it.
+//! status the window shows. Nothing here outlives the app: quitting cancels the loop and any
+//! sign-in, and there is no service, scheduled task or launchd job behind it.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
 use std::sync::{Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use ryna_wow_core::auth::{identity_from_jwt, Auth, DeviceCode, KeyringStore, TokenStore};
+use ryna_wow_core::addon_install;
+use ryna_wow_core::auth::{self, AuthError, DeviceLogin, KeyringStore, TokenStore};
+use ryna_wow_core::cancel::CancelToken;
 use ryna_wow_core::config::Config;
 use ryna_wow_core::discovery::{self, Install};
-use ryna_wow_core::http::HttpTransport;
-use ryna_wow_core::runner::Failure;
-use ryna_wow_core::state::{self, State};
-use ryna_wow_core::util::{mtime, SystemClock};
-use ryna_wow_core::watch::{self, CancelToken, WatchEvent, WatchOptions};
-use ryna_wow_core::{addon_install, snapshot, AGENT_VERSION};
+use ryna_wow_core::fix::Fix;
+use ryna_wow_core::status::{self as core_status, AccountStatus, InstallStatus, LastRunStatus};
+use ryna_wow_core::watch::{self, WatchControl, WatchEvent, WatchOptions};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -29,10 +27,9 @@ pub const INTERVAL: Duration = Duration::from_secs(60);
 pub const AGENT_EVENT: &str = "agent-event";
 /// `true` or `false`: whether a watch loop is running.
 pub const WATCH_STATE: &str = "watch-state";
-/// A `LoginFinished`, once the device grant ends either way.
+/// A `LoginFinished`, once the device grant ends either way (approved, refused, expired or
+/// cancelled).
 pub const LOGIN_FINISHED: &str = "login-finished";
-/// How long `start_login` waits for the sign-in provider to hand out a code.
-const CODE_WAIT: Duration = Duration::from_secs(45);
 
 /// The device client id: `RYNA_WOW_CLIENT_ID` when it is set where the app runs, else one baked
 /// in at compile time (`RYNA_WOW_CLIENT_ID` in the build's environment), else the core's
@@ -58,24 +55,31 @@ pub enum Phase {
     Error,
 }
 
-/// The code to show the person, and where to check it.
+/// The code to show the person, and where to check it: the core's `DeviceLogin` (less the
+/// device code, which stays in Rust), plus the link to open.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoginCode {
     pub user_code: String,
     pub verification_uri: String,
+    pub verification_uri_complete: Option<String>,
     /// The link to open: the one with the code in it when the provider gives one.
     pub link: String,
-    pub expires_in: i64,
+    /// When the code stops working (unix seconds).
+    pub expires_at: i64,
+    /// Seconds between polls.
+    pub interval: u64,
 }
 
-impl From<&DeviceCode> for LoginCode {
-    fn from(code: &DeviceCode) -> Self {
+impl From<&DeviceLogin> for LoginCode {
+    fn from(login: &DeviceLogin) -> Self {
         LoginCode {
-            user_code: code.user_code.clone(),
-            verification_uri: code.verification_uri.clone(),
-            link: code.link().to_string(),
-            expires_in: code.expires_in,
+            user_code: login.user_code.clone(),
+            verification_uri: login.verification_uri.clone(),
+            verification_uri_complete: login.verification_uri_complete.clone(),
+            link: login.link().to_string(),
+            expires_at: login.expires_at,
+            interval: login.interval,
         }
     }
 }
@@ -84,28 +88,73 @@ impl From<&DeviceCode> for LoginCode {
 #[serde(rename_all = "camelCase")]
 pub struct LoginFinished {
     pub ok: bool,
+    /// Ended by `cancel_login` (no error to show).
+    pub cancelled: bool,
     pub error: Option<String>,
+    pub fix: Option<Fix>,
+}
+
+impl LoginFinished {
+    fn from_result<T>(result: &Result<T, AuthError>) -> LoginFinished {
+        match result {
+            Ok(_) => LoginFinished {
+                ok: true,
+                cancelled: false,
+                error: None,
+                fix: None,
+            },
+            Err(AuthError::Cancelled) => LoginFinished {
+                ok: false,
+                cancelled: true,
+                error: None,
+                fix: None,
+            },
+            Err(e) => LoginFinished {
+                ok: false,
+                cancelled: false,
+                error: Some(sentence(e)),
+                fix: Some(e.fix()),
+            },
+        }
+    }
+}
+
+/// An error as a sentence: a capital first letter and a full stop.
+fn sentence(e: &AuthError) -> String {
+    let text = e.to_string();
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => format!("{}{}.", first.to_uppercase(), chars.as_str()),
+        None => String::new(),
+    }
 }
 
 /// What changes while the app runs.
 #[derive(Default)]
 pub struct Live {
-    /// The running loop's token; None (or cancelled) when nothing is watching.
-    cancel: Option<CancelToken>,
+    /// The running loop's control; None (or cancelled) when nothing is watching.
+    control: Option<WatchControl>,
     /// The last loop's thread, joined by the next loop before it starts so two never overlap.
     worker: Option<JoinHandle<()>>,
     /// Each account's row state, by its `Ryna.lua` path.
     phases: BTreeMap<String, Phase>,
-    /// The last pass's whole-pass error, cleared by a pass that went through.
+    /// The last pass's whole-pass error (its neutral words), cleared by a pass that went through.
     last_error: Option<String>,
-    login_running: bool,
+    /// The sign-in's token while one is starting or polling; `cancel_login` fires it.
+    login_cancel: Option<CancelToken>,
     login: Option<LoginCode>,
     settings: Settings,
 }
 
 impl Live {
     fn watching(&self) -> bool {
-        self.cancel.as_ref().is_some_and(|c| !c.is_cancelled())
+        self.control.as_ref().is_some_and(|c| !c.is_cancelled())
+    }
+
+    fn login_running(&self) -> bool {
+        self.login_cancel
+            .as_ref()
+            .is_some_and(|t| !t.is_cancelled())
     }
 
     /// One event's effect on the rows and the last error.
@@ -122,17 +171,15 @@ impl Live {
             }
             WatchEvent::Error {
                 path: Some(path),
-                message,
+                advice,
                 ..
             } => {
                 self.phases.insert(path.clone(), Phase::Error);
-                self.last_error = Some(message.clone());
+                self.last_error = Some(advice.clone());
             }
             WatchEvent::Error {
-                path: None,
-                message,
-                ..
-            } => self.last_error = Some(message.clone()),
+                path: None, advice, ..
+            } => self.last_error = Some(advice.clone()),
             WatchEvent::PassFinished { ok: true, .. } => self.last_error = None,
             _ => {}
         }
@@ -189,8 +236,8 @@ pub fn start_watch(app: &AppHandle) {
         if live.watching() {
             return;
         }
-        let cancel = CancelToken::new();
-        live.cancel = Some(cancel.clone());
+        let control = WatchControl::new();
+        live.control = Some(control.clone());
         let previous = live.worker.take();
         let install = live.settings.install_override.clone();
         let config = agent.config.clone();
@@ -199,7 +246,7 @@ pub fn start_watch(app: &AppHandle) {
             if let Some(previous) = previous {
                 let _ = previous.join();
             }
-            run_loop(&handle, &config, install, &cancel);
+            run_loop(&handle, &config, install, &control);
         }));
     }
     let _ = app.emit(WATCH_STATE, true);
@@ -211,24 +258,40 @@ pub fn stop_watch(app: &AppHandle) {
     let _ = app.emit(WATCH_STATE, false);
 }
 
-/// Stop the loop without telling the window (on quit).
+/// Stop the loop without telling the window.
 pub fn cancel(app: &AppHandle) {
-    let token = app.state::<Agent>().live().cancel.take();
-    if let Some(token) = token {
-        token.cancel();
+    let control = app.state::<Agent>().live().control.take();
+    if let Some(control) = control {
+        control.cancel();
     }
 }
 
-/// A pass now: restart the loop, whose first pass starts straight away.
-pub fn sync_now(app: &AppHandle) {
+/// On quit: stop the loop and any sign-in that is polling.
+pub fn shutdown(app: &AppHandle) {
     cancel(app);
-    start_watch(app);
+    cancel_login(app);
 }
 
-/// Restart the loop if it's running (after a setting it reads changed).
+/// A pass now: wake the running loop (its wait ends, or the pass in progress is followed by
+/// another), or start one, whose first pass starts straight away.
+pub fn sync_now(app: &AppHandle) {
+    let running = app
+        .state::<Agent>()
+        .live()
+        .control
+        .clone()
+        .filter(|c| !c.is_cancelled());
+    match running {
+        Some(control) => control.request_pass(),
+        None => start_watch(app),
+    }
+}
+
+/// Restart the loop if it's running (after a setting it reads at start changed).
 fn restart_if_watching(app: &AppHandle) {
     if app.state::<Agent>().watching() {
-        sync_now(app);
+        cancel(app);
+        start_watch(app);
     }
 }
 
@@ -237,86 +300,94 @@ fn emit_event(app: &AppHandle, event: &WatchEvent) {
     let _ = app.emit(AGENT_EVENT, event);
 }
 
-fn run_loop(app: &AppHandle, config: &Config, install: Option<PathBuf>, cancel: &CancelToken) {
+fn run_loop(app: &AppHandle, config: &Config, install: Option<PathBuf>, control: &WatchControl) {
     let result = match WatchOptions::new(install, INTERVAL) {
-        Some(opts) => watch::watch(config, &opts, cancel, &mut |event: WatchEvent| {
-            emit_event(app, &event)
-        })
-        .map_err(|e| e.to_string()),
+        Some(opts) => {
+            watch::watch_with_control(config, &opts, control, &mut |event: WatchEvent| {
+                emit_event(app, &event)
+            })
+            .map_err(|e| e.to_string())
+        }
         None => Err("there's no folder to keep the agent's state in".to_string()),
     };
     if let Err(message) = result {
-        emit_event(
-            app,
-            &WatchEvent::Error {
-                label: None,
-                path: None,
-                message,
-                failure: Failure::Other,
-            },
-        );
+        emit_event(app, &WatchEvent::error(None, None, message, Fix::Other));
     }
-    // This loop has ended, whether asked to or not; a newer loop's token is left alone.
-    cancel.cancel();
+    // This loop has ended, whether asked to or not; a newer loop's control is left alone.
+    control.cancel();
     let watching = app.state::<Agent>().watching();
     let _ = app.emit(WATCH_STATE, watching);
 }
 
-fn sign_in(config: &Config, show: &mut dyn FnMut(&DeviceCode)) -> Result<(), String> {
-    let http = HttpTransport::new()?;
-    let store = keychain(config);
-    Auth::new(config, &http, &store, &SystemClock)
-        .login(show)
-        .map_err(|e| e.to_string())
+/// Forget the sign-in `token` belongs to, unless a newer one has replaced it.
+fn clear_login(app: &AppHandle, token: &CancelToken) {
+    let agent = app.state::<Agent>();
+    let mut live = agent.live();
+    if live.login_cancel.as_ref().is_some_and(|t| t.same(token)) {
+        live.login_cancel = None;
+        live.login = None;
+    }
 }
 
-/// Begin the device grant and return the code to show. The core's `login` is one call that
-/// shows the code and then polls, so the polling carries on here on its own thread: when it
-/// ends, `login-finished` is emitted, and on success the watch loop (re)starts.
+/// Begin the device grant and return the code to show (the core's `start_device_login`); the
+/// polling (`poll_device_login`) carries on on its own thread with a cancel token kept here, so
+/// `cancel_login` stops it. When it ends, `login-finished` is emitted, and on success a pass runs.
 pub fn start_login(app: &AppHandle) -> Result<LoginCode, String> {
     let agent = app.state::<Agent>();
-    {
+    let token = {
         let mut live = agent.live();
-        if live.login_running {
+        if live.login_running() {
             return live
                 .login
                 .clone()
                 .ok_or_else(|| "A sign-in is already starting.".to_string());
         }
-        live.login_running = true;
+        let token = CancelToken::new();
+        live.login_cancel = Some(token.clone());
         live.login = None;
-    }
+        token
+    };
     let config = agent.config.clone();
+    let login = match auth::start_device_login(&config) {
+        Ok(login) => login,
+        Err(e) => {
+            clear_login(app, &token);
+            return Err(sentence(&e));
+        }
+    };
+    let code = LoginCode::from(&login);
+    {
+        let mut live = agent.live();
+        let still_ours = live.login_cancel.as_ref().is_some_and(|t| t.same(&token));
+        if !still_ours || token.is_cancelled() {
+            return Err("The sign-in was cancelled.".to_string());
+        }
+        live.login = Some(code.clone());
+    }
     let handle = app.clone();
-    let (tx, rx) = mpsc::channel::<Result<LoginCode, String>>();
     std::thread::spawn(move || {
-        let result = sign_in(&config, &mut |code: &DeviceCode| {
-            let shown = LoginCode::from(code);
-            handle.state::<Agent>().live().login = Some(shown.clone());
-            let _ = tx.send(Ok(shown));
-        });
-        {
-            let agent = handle.state::<Agent>();
-            let mut live = agent.live();
-            live.login_running = false;
-            live.login = None;
-        }
-        let finished = LoginFinished {
-            ok: result.is_ok(),
-            error: result.err(),
-        };
-        if let Some(error) = &finished.error {
-            // Reaches start_login only if no code was shown yet; otherwise nobody is listening.
-            let _ = tx.send(Err(error.clone()));
-        }
+        let result = auth::poll_device_login(&config, &login, &token, &mut |_| {});
+        clear_login(&handle, &token);
+        let finished = LoginFinished::from_result(&result);
         let _ = handle.emit(LOGIN_FINISHED, &finished);
         if finished.ok {
             sync_now(&handle);
         }
     });
-    rx.recv_timeout(CODE_WAIT).unwrap_or_else(|_| {
-        Err("The sign-in provider didn't answer. Try again in a minute.".to_string())
-    })
+    Ok(code)
+}
+
+/// Stop a sign-in that is starting or polling; its `login-finished` says `cancelled`.
+pub fn cancel_login(app: &AppHandle) {
+    let agent = app.state::<Agent>();
+    let token = {
+        let mut live = agent.live();
+        live.login = None;
+        live.login_cancel.take()
+    };
+    if let Some(token) = token {
+        token.cancel();
+    }
 }
 
 /// The pending sign-in's link, for the "Open sign-in page" button.
@@ -371,39 +442,16 @@ pub fn set_install_override(app: &AppHandle, path: Option<PathBuf>) -> Result<()
     Ok(())
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InstallView {
-    pub path: String,
-    pub flavor: Option<String>,
-    /// Forever (`wowf`): the addon is installed only into these unless a folder was chosen.
-    pub forever: bool,
-    /// `Interface/AddOns/Ryna` is there.
-    pub has_addon: bool,
-}
-
+/// An account's row: the core's `AccountStatus` and where the loop has it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountView {
-    pub path: String,
-    pub install: String,
-    pub label: String,
-    /// When the game last wrote the file (unix seconds).
-    pub saved_at: Option<i64>,
-    pub pushed_at: Option<i64>,
-    pub characters: Option<usize>,
-    pub last_error: Option<String>,
+    #[serde(flatten)]
+    pub account: AccountStatus,
     pub phase: Phase,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LastRunView {
-    pub at: i64,
-    pub ok: bool,
-    pub error: Option<String>,
-}
-
+/// The core's `Status`, with what only the app knows (the loop, the rows, the sign-in code).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
@@ -417,33 +465,24 @@ pub struct Status {
     /// The keychain couldn't be read (so signed-in is unknown).
     pub keychain_error: Option<String>,
     pub watching: bool,
-    pub installs: Vec<InstallView>,
+    pub installs: Vec<InstallStatus>,
     pub accounts: Vec<AccountView>,
+    /// What to show for the last failure: this session's, else the last run's.
     pub last_error: Option<String>,
-    pub last_run: Option<LastRunView>,
+    pub last_run: Option<LastRunStatus>,
     pub install_override: Option<String>,
     pub login: Option<LoginCode>,
     pub state_dir: Option<String>,
-}
-
-fn has_addon(install: &Install) -> bool {
-    install
-        .path
-        .join("Interface")
-        .join("AddOns")
-        .join(addon_install::ADDON_NAME)
-        .is_dir()
 }
 
 fn display(p: &Path) -> String {
     p.to_string_lossy().into_owned()
 }
 
-/// Everything the window shows, read fresh from the keychain, the disk and the live state.
+/// Everything the window shows: the core's `status` (keychain, disk, state) and the live state.
 pub fn status(app: &AppHandle) -> Status {
     let agent = app.state::<Agent>();
-    let config = &agent.config;
-    let (watching, install_override, phases, last_error, login) = {
+    let (watching, install_override, phases, live_error, login) = {
         let live = agent.live();
         (
             live.watching(),
@@ -453,59 +492,34 @@ pub fn status(app: &AppHandle) -> Status {
             live.login.clone(),
         )
     };
-    let store = keychain(config);
-    let (signed_in, keychain_error) = match store.refresh_token() {
-        Ok(t) => (t.is_some(), None),
-        Err(e) => (false, Some(e)),
-    };
-    let signed_in_as = if signed_in {
-        store
-            .access_token()
-            .and_then(|a| identity_from_jwt(&a.token))
-    } else {
-        None
-    };
-
-    let found = discovery::discover(install_override.as_deref());
-    let dir = state::state_dir();
-    let st = dir.as_deref().map(State::load).unwrap_or_default();
-    let installs = found
-        .installs
-        .iter()
-        .map(|i| InstallView {
-            path: display(&i.path),
-            flavor: i.flavor.clone(),
-            forever: i.flavor.as_deref() == Some("wowf"),
-            has_addon: has_addon(i),
+    let core_status::Status {
+        agent_version,
+        api,
+        issuer,
+        client_id_issued,
+        signed_in,
+        signed_in_as,
+        keychain_error,
+        installs,
+        accounts,
+        last_error: _,
+        last_run,
+        state_dir,
+    } = core_status::status(&agent.config, install_override.as_deref());
+    let accounts = accounts
+        .into_iter()
+        .map(|account| AccountView {
+            phase: phases.get(&account.path).copied().unwrap_or(Phase::Waiting),
+            account,
         })
         .collect();
-    let accounts = found
-        .accounts
-        .iter()
-        .map(|a| {
-            let key = display(&a.path);
-            let s = st.accounts.get(&key);
-            AccountView {
-                install: display(&a.install),
-                label: s.map_or_else(|| snapshot::default_label(&a.account), |s| s.label.clone()),
-                saved_at: mtime(&a.path)
-                    .ok()
-                    .map(|m| m.secs)
-                    .or_else(|| s.and_then(|s| s.saved_at)),
-                pushed_at: s.and_then(|s| s.pushed_at),
-                characters: s.and_then(|s| s.characters),
-                last_error: s.and_then(|s| s.last_error.clone()),
-                phase: phases.get(&key).copied().unwrap_or(Phase::Waiting),
-                path: key,
-            }
-        })
-        .collect();
+    let last_error = live_error.or_else(|| last_run.as_ref().and_then(|r| r.advice.clone()));
     Status {
-        agent_version: AGENT_VERSION.to_string(),
+        agent_version,
         app_version: env!("CARGO_PKG_VERSION").to_string(),
-        api: config.api.clone(),
-        issuer: config.issuer.clone(),
-        client_id_issued: config.client_id_issued(),
+        api,
+        issuer,
+        client_id_issued,
         signed_in,
         signed_in_as,
         keychain_error,
@@ -513,14 +527,10 @@ pub fn status(app: &AppHandle) -> Status {
         installs,
         accounts,
         last_error,
-        last_run: st.last_run.map(|r| LastRunView {
-            at: r.at,
-            ok: r.ok,
-            error: r.error,
-        }),
+        last_run,
         install_override: install_override.as_deref().map(display),
         login,
-        state_dir: dir.as_deref().map(display),
+        state_dir,
     }
 }
 
@@ -560,7 +570,7 @@ pub fn install_addon(app: &AppHandle) -> Result<Vec<Installed>, String> {
     let targets: Vec<&Install> = found
         .installs
         .iter()
-        .filter(|i| chosen.is_some() || i.flavor.as_deref() == Some("wowf"))
+        .filter(|i| chosen.is_some() || i.flavor.as_deref() == Some(core_status::FOREVER_FLAVOR))
         .collect();
     if targets.is_empty() {
         return Err(
@@ -586,12 +596,7 @@ mod tests {
     const A: &str = "/wow/_forever_/WTF/Account/A/SavedVariables/Ryna.lua";
 
     fn failed(path: Option<&str>) -> WatchEvent {
-        WatchEvent::Error {
-            label: None,
-            path: path.map(str::to_string),
-            message: "offline".into(),
-            failure: Failure::Other,
-        }
+        WatchEvent::error(None, path.map(str::to_string), "offline".into(), Fix::Other)
     }
 
     #[test]
@@ -617,34 +622,65 @@ mod tests {
             next_in_secs: 60,
         });
         assert_eq!(live.last_error, None);
-        live.observe(&failed(None));
-        assert_eq!(live.last_error.as_deref(), Some("offline"));
+        // The neutral words, not the error itself.
+        live.observe(&WatchEvent::error(
+            None,
+            None,
+            "the API is unreachable or failing after 3 tries: x".into(),
+            Fix::Network,
+        ));
+        assert_eq!(live.last_error.as_deref(), Some("Couldn't reach the API"));
     }
 
     #[test]
-    fn a_loop_counts_as_watching_until_its_token_is_cancelled() {
+    fn a_loop_counts_as_watching_until_its_control_is_cancelled() {
         let mut live = Live::default();
         assert!(!live.watching());
-        let token = CancelToken::new();
-        live.cancel = Some(token.clone());
+        let control = WatchControl::new();
+        live.control = Some(control.clone());
         assert!(live.watching());
-        token.cancel();
+        control.request_pass();
+        assert!(live.watching());
+        control.cancel();
         assert!(!live.watching());
+    }
+
+    #[test]
+    fn a_sign_in_runs_until_its_token_is_cancelled() {
+        let mut live = Live::default();
+        assert!(!live.login_running());
+        let token = CancelToken::new();
+        live.login_cancel = Some(token.clone());
+        assert!(live.login_running());
+        token.cancel();
+        assert!(!live.login_running());
     }
 
     #[test]
     fn the_login_code_links_to_the_page_with_the_code_in_it() {
-        let code = DeviceCode {
+        let login = DeviceLogin {
             user_code: "ABCD-EFGH".into(),
             verification_uri: "https://idp.test/device".into(),
             verification_uri_complete: Some("https://idp.test/device?user_code=ABCD-EFGH".into()),
-            expires_in: 600,
+            expires_at: 1_800_000_600,
+            interval: 5,
+            device_code: "secret".into(),
         };
-        let shown = LoginCode::from(&code);
+        let shown = LoginCode::from(&login);
         assert_eq!(shown.link, "https://idp.test/device?user_code=ABCD-EFGH");
-        assert_eq!(
-            serde_json::to_value(&shown).unwrap()["userCode"],
-            json!("ABCD-EFGH")
-        );
+        let v = serde_json::to_value(&shown).unwrap();
+        assert_eq!(v["userCode"], json!("ABCD-EFGH"));
+        assert_eq!(v["expiresAt"], json!(1_800_000_600));
+        assert!(!v.to_string().contains("secret"));
+    }
+
+    #[test]
+    fn how_a_sign_in_ended() {
+        let cancelled = LoginFinished::from_result::<()>(&Err(AuthError::Cancelled));
+        assert!(cancelled.cancelled && !cancelled.ok && cancelled.error.is_none());
+        let expired = LoginFinished::from_result::<()>(&Err(AuthError::Expired));
+        assert_eq!(expired.error.as_deref(), Some("The sign-in code expired."));
+        assert_eq!(expired.fix, Some(Fix::SignIn));
+        assert!(LoginFinished::from_result(&Ok(())).ok);
     }
 }

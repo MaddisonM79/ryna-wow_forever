@@ -106,6 +106,17 @@ export async function signIn(): Promise<void> {
   }
 }
 
+/** Stop a sign-in that's waiting; `login-finished` (cancelled) tidies up after it. */
+export async function cancelSignIn(): Promise<void> {
+  try {
+    await api.cancelLogin();
+  } catch (e) {
+    log(`Couldn't cancel the sign-in: ${errorText(e)}`, "error");
+  }
+  login.value = null;
+  loginBusy.value = false;
+}
+
 export async function signOut(): Promise<void> {
   try {
     await api.logout();
@@ -129,6 +140,9 @@ export async function start(): Promise<void> {
       if (r.ok) {
         loginError.value = null;
         log("Signed in. Syncing starts now.");
+      } else if (r.cancelled) {
+        loginError.value = null;
+        log("Sign-in cancelled.");
       } else {
         loginError.value = r.error ?? "The sign-in didn't finish.";
         log(`Sign-in didn't finish: ${loginError.value}`, "error");

@@ -1,5 +1,5 @@
 import { describe as group, expect, it } from "vitest";
-import { ago, describe, errorWords } from "./describe";
+import { ago, describe } from "./describe";
 
 group("the activity log's words", () => {
   it("counts a push's characters and journal", () => {
@@ -17,11 +17,19 @@ group("the activity log's words", () => {
     ).toBe("Pushed WoW1: 1 character");
   });
 
-  it("says what fixes an error", () => {
-    expect(errorWords("sign-in provider unreachable: dns", "other")).toBe("Couldn't reach the API, retrying.");
-    expect(errorWords("anything", "signIn")).toMatch(/^Sign in again/);
+  it("shows the core's words for an error", () => {
     expect(
-      describe({ event: "error", label: "WoW1", path: "/x", message: "bad file", failure: "other" }),
+      describe({
+        event: "error",
+        label: null,
+        path: null,
+        message: "sign-in provider unreachable: dns",
+        fix: "network",
+        advice: "Couldn't reach the API",
+      }),
+    ).toBe("Couldn't reach the API");
+    expect(
+      describe({ event: "error", label: "WoW1", path: "/x", message: "bad file", fix: "other", advice: "bad file" }),
     ).toBe("WoW1: bad file");
   });
 

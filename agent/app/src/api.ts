@@ -3,19 +3,24 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export type Phase = "waiting" | "pushing" | "pushed" | "error";
-/** What fixes an error (the core's `Failure`). */
-export type Failure = "signIn" | "update" | "other";
+/** What fixes an error (the core's `Fix`). */
+export type Fix = "signIn" | "update" | "network" | "other";
 
+/** The core's `InstallStatus`. */
 export interface InstallView {
   path: string;
   flavor: string | null;
   forever: boolean;
   hasAddon: boolean;
+  /** The installed addon's `## Version:`, when it's there and says. */
+  addonVersion: string | null;
 }
 
+/** The core's `AccountStatus`, plus where the loop has it. */
 export interface AccountView {
   path: string;
   install: string;
+  key: string;
   label: string;
   savedAt: number | null;
   pushedAt: number | null;
@@ -27,8 +32,20 @@ export interface AccountView {
 export interface LoginCode {
   userCode: string;
   verificationUri: string;
+  verificationUriComplete: string | null;
   link: string;
-  expiresIn: number;
+  /** Unix seconds. */
+  expiresAt: number;
+  interval: number;
+}
+
+export interface LastRun {
+  at: number;
+  ok: boolean;
+  error: string | null;
+  fix: Fix | null;
+  /** The words to show for the failure. */
+  advice: string | null;
 }
 
 export interface Status {
@@ -44,7 +61,7 @@ export interface Status {
   installs: InstallView[];
   accounts: AccountView[];
   lastError: string | null;
-  lastRun: { at: number; ok: boolean; error: string | null } | null;
+  lastRun: LastRun | null;
   installOverride: string | null;
   login: LoginCode | null;
   stateDir: string | null;
@@ -68,15 +85,21 @@ export type AgentEvent =
       event: "error";
       label: string | null;
       path: string | null;
+      /** The error itself, for the curious. */
       message: string;
-      failure: Failure;
+      fix: Fix;
+      /** The words to show: what fixes it, or for "other" the error itself. */
+      advice: string;
     }
   | { event: "heartbeat"; ok: boolean; error: string | null }
   | { event: "passFinished"; ok: boolean; nextInSecs: number };
 
 export interface LoginFinished {
   ok: boolean;
+  /** Ended by `cancelLogin`. */
+  cancelled: boolean;
   error: string | null;
+  fix: Fix | null;
 }
 
 export interface Installed {
@@ -86,6 +109,7 @@ export interface Installed {
 export const api = {
   status: () => invoke<Status>("get_status"),
   startLogin: () => invoke<LoginCode>("start_login"),
+  cancelLogin: () => invoke<void>("cancel_login"),
   openSignInPage: () => invoke<void>("open_sign_in_page"),
   logout: () => invoke<void>("logout"),
   startWatch: () => invoke<void>("start_watch"),

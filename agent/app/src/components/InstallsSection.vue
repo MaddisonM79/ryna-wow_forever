@@ -34,8 +34,9 @@ async function installAddon(): Promise<void> {
           <strong>{{ flavorName(i.flavor) }}</strong>
           <div class="path">{{ i.path }}</div>
         </div>
-        <span v-if="i.hasAddon" class="chip pushed">Addon installed</span>
-        <span v-else-if="i.forever" class="chip waiting">No addon yet</span>
+        <span v-if="i.addonVersion" class="chip pushed">addon {{ i.addonVersion }}</span>
+        <span v-else-if="i.hasAddon" class="chip pushed">addon installed</span>
+        <span v-else class="chip waiting">addon not installed</span>
       </li>
     </ul>
     <p v-else class="muted">
