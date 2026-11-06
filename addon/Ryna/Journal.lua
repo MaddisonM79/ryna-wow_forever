@@ -54,8 +54,9 @@ end
 local function describe(e)
   local t = e.type
   if t == "seen" then
-    return string.format("census: seen %s %s%s", tostring(e.fullName or e.guid),
-      SEEN_WHERE[e.source] or ("from " .. tostring(e.source)), e.zone and (" in " .. e.zone) or "")
+    return string.format("census: seen %s%s %s%s", tostring(e.fullName or e.guid),
+      e.faction and (" (" .. e.faction .. ")") or "", SEEN_WHERE[e.source] or ("from " .. tostring(e.source)),
+      e.zone and (" in " .. e.zone) or "")
   elseif t == "questAccept" then
     return string.format("journal: questAccept %s%s%s", tostring(e.questId), quoted(e.title),
       e.level and (" (level " .. tostring(e.level) .. ")") or "")

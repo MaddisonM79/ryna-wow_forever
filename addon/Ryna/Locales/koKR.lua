@@ -26,7 +26,7 @@ L["debug messages off."] = nil
 L["an error in %s was caught (reported once): %s"] = nil
 
 -- Init.lua
--- The login line, after "Ryna 0.1.0: ".
+-- The login line, after "Ryna 0.2.0: ".
 L["recording. /ryna for settings."] = nil
 L["the companion app hasn't synced recently."] = nil
 
@@ -81,6 +81,12 @@ L["Record other players in my group"] = nil
 L["Who was in your groups."] = nil
 L["Record players I see nearby"] = nil
 L["Players whose nameplates, target or mouseover you see: their level, class and guild, and where."] = nil
+-- Under "Record players I see nearby"; Shift+V is the game's default key for friendly nameplates.
+L["The game shows nameplates for enemies only unless friendly nameplates are on "
+  .. "(Shift+V). Ryna only sees nameplates the game draws."] = nil
+-- A button that turns the game's friendly nameplates on, and its text once they are on.
+L["Turn friendly nameplates on"] = nil
+L["Friendly nameplates are on"] = nil
 L["Run a realm census while I'm in a city"] = nil
 L["Every 30 minutes while you're parked in a capital, Ryna asks the server who is online (/who), "
   .. "a few queries at a time, to count the realm's players by level, class and zone. "

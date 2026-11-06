@@ -17,7 +17,7 @@ L["debug messages off."] = true
 L["an error in %s was caught (reported once): %s"] = true
 
 -- Init.lua
--- The login line, after "Ryna 0.1.0: ".
+-- The login line, after "Ryna 0.2.0: ".
 L["recording. /ryna for settings."] = true
 L["the companion app hasn't synced recently."] = true
 
@@ -72,6 +72,12 @@ L["Record other players in my group"] = true
 L["Who was in your groups."] = true
 L["Record players I see nearby"] = true
 L["Players whose nameplates, target or mouseover you see: their level, class and guild, and where."] = true
+-- Under "Record players I see nearby"; Shift+V is the game's default key for friendly nameplates.
+L["The game shows nameplates for enemies only unless friendly nameplates are on "
+  .. "(Shift+V). Ryna only sees nameplates the game draws."] = true
+-- A button that turns the game's friendly nameplates on, and its text once they are on.
+L["Turn friendly nameplates on"] = true
+L["Friendly nameplates are on"] = true
 L["Run a realm census while I'm in a city"] = true
 L["Every 30 minutes while you're parked in a capital, Ryna asks the server who is online (/who), "
   .. "a few queries at a time, to count the realm's players by level, class and zone. "
