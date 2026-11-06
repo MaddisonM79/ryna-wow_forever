@@ -1,0 +1,31 @@
+# The agent's cargo workspace: the library every front end shares, and the command-line binary.
+# Stage 3 adds the desktop app (agent/app) as a third member over the same core.
+[workspace]
+resolver = "2"
+members = ["agent/core", "agent/cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/MaddisonM79/ryna-wow_forever"
+# std::fs::File::try_lock (the run lock) is 1.89.
+rust-version = "1.89"
+
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+directories = "6"
+# keyring 3: the OS keychain on each target (no D-Bus on Linux, so CI needs no system libraries).
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
+# Blocking, rustls with the webpki roots: no OpenSSL to link on any target.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tempfile = "3"
+thiserror = "2"
+
+[profile.release]
+strip = true
+lto = "thin"

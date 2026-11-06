@@ -1,0 +1,17 @@
+-- AgentStatus: written by the Ryna companion app, not by hand. The app rewrites this file after
+-- each sync, and the game loads it at login and /reload, so the panel can say when the app last
+-- synced, as whom, whether an update is out, and any messages. The addon reads it defensively:
+-- the table may be nil or hold any subset of its fields. Shape:
+--
+-- RynaAgentStatus = {
+--   agent = "0.1.0",              -- the companion app's version
+--   signedIn = true,
+--   as = "Name",                  -- who the app is signed in as
+--   lastPush = 1762464000,        -- unix seconds of the last upload
+--   accounts = { { key = "...", label = "...", savedAt = 0, pushedAt = 0, characters = 0 } },
+--   latest = { addon = "0.2.0", agent = "0.2.0" },
+--   messages = { { at = 1762464000, level = "info", text = "..." } },  -- level: info, warn, error
+-- }
+--
+-- As shipped: nothing synced yet.
+RynaAgentStatus = nil
