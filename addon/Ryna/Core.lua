@@ -227,11 +227,12 @@ end)
 --   census          take part in the census at all: when off, no `seen` events from any source
 --   groupMembers    record the other players in my group (needs census)
 --   nearbyPlayers   record players whose nameplate, target or mouseover I see (needs census)
+--   censusSweep     run a /who census sweep every 30 minutes while parked in a city (needs census)
 --   debug           print what the addon is doing to chat (ns.Debug)
 --   minimap         { shown = true, angle = <degrees> } for the minimap button
 ns.SETTING_DEFAULTS = {
   chatSightings = true, census = true, groupMembers = true, nearbyPlayers = true, advancedCombatLog = true,
-  debug = false,
+  censusSweep = true, debug = false,
 }
 ns.MINIMAP_DEFAULT_ANGLE = 225
 

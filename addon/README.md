@@ -34,7 +34,7 @@ gold or more, group changes, and **sightings** of other players (see the census 
 
 A sighting records only *who* and *where*: the other player's GUID, name, and level, class, race,
 guild and zone where the client gives them. Sightings come from your group, from your guild roster
-(online members), from players near you, and from chat.
+(online members), from players near you, from chat, and from the census sweep (`/who`, below).
 
 **Nearby** (source `nameplate`, `target` or `mouseover`): a player whose nameplate appears, whom you
 target, or whom you mouse over gives their level, class, race and guild as the client shows them,
@@ -54,7 +54,45 @@ them, buffer them, log them or print them.
 **At most one sighting per player per 10 minutes**, shared by chat and nearby players, so someone
 who talks in chat and walks past isn't counted twice. The one exception: a sighting that has a level
 is recorded after an earlier one in the window that didn't (a chat line has no level; the nameplate
-does). Group and guild-roster sightings are always recorded and count towards the window.
+does). Group and guild-roster sightings are always recorded and count towards the window. The
+window is kept by GUID and by name, since a `/who` row has no GUID: a player seen in chat or nearby
+isn't counted again by a sweep in the same 10 minutes, and the other way round.
+
+### The census sweep (`/who`)
+
+A sweep asks the server who is online, the way `/who` does, to count the realm's players by level,
+class and zone. **The queries are generic: level brackets, class names and zone names, never a
+person's name, and nothing about you is sent.**
+
+- **The plan**: one query per level bracket, `1-9`, `10-19`, `20-29`, `30-39`, `40-49`, `50-59` and
+  `60`. The server answers at most 50 players per query, so a bracket that comes back with 50 (or
+  says there are more) is asked again once per class (`20-29 c-"Warrior"`, and so on for the nine
+  classes), and a bracket-and-class that is still capped is asked once per zone its answer named
+  (`60 c-"Mage" z-"Orgrimmar"`, at most 10 zones). A sweep sends at most 80 queries.
+- **The pace**: the server throttles `/who`, so one query goes out every 4 seconds, and the next
+  waits 10 seconds after an empty, failed or unanswered one (8 seconds without an answer counts as
+  unanswered). An uncapped sweep is 7 queries, about half a minute. If the first two queries get no
+  answer, or the game refuses the call, the sweep stops, and after a refusal no sweep runs again
+  until `/reload`.
+- **What it records**: per answer, one `who` journal event `{ query, count, batch }` (`count` is how
+  many players the server returned); per player in it, a `seen` event (source `who`, with the same
+  `batch`, which names the sweep): name, level, class (the English token), race, guild and zone, no
+  GUID (`/who` gives none). A name that appears in two queries of one sweep is one sighting, and the
+  10-minute window applies by name.
+- **The Who window**: while a sweep runs the answers go to Ryna, not the Who window; the friends
+  frame stops listening for who results and gets them back, with the game's who-to-window setting,
+  as soon as the sweep ends or is stopped, so your own `/who` works as before.
+- **When it runs**: `/ryna census` or the panel's **Run census now** button runs one now; with the
+  setting "Run a realm census while I'm in a city" on, one runs every 30 minutes while you're in a
+  city (Orgrimmar, Thunder Bluff, Undercity, Stormwind City, Ironforge, Darnassus, Booty Bay,
+  Gadgetzan, Everlook, Ratchet) for at least a minute. Never in an instance, never in combat (combat
+  stops a running sweep, and it isn't resumed), never while you have the Who window open (opening
+  it stops one before its next query), and never with the census setting off. `/ryna census stop` stops one.
+- A sweep you start prints its progress ("census sweep: 8 of 12 queries, 214 players so far", every
+  fourth answer) and a summary ("census sweep done: 412 players, 380 new to this sweep's window, in
+  52s": the players it found, and how many of them weren't already seen in the last 10 minutes). An
+  automatic sweep prints only debug lines. The last sweep's summary is kept in `RynaDB.census` and
+  shown beside the panel's button ("Last sweep: 412 players, 20 minutes ago").
 
 `RynaDB.client` holds the client's version and Interface number and how it returned your character's
 name parts, overwritten each login, so the format can be checked against a real client.
@@ -92,8 +130,9 @@ companion app, never in the game: an addon can't reach the network.
 | Take part in the census | on | Records the other players you see. Off: **no** `seen` events at all, from chat, players nearby, your group or your guild roster; the addon records only your own characters (and still your guild's roster, which is your guild's own list). |
 | Record other players in my group | on | Part of the census. Off: no `seen` events for group members, and `group` events say only that you joined, changed or left a group, without the member list. |
 | Record players I see nearby | on | Part of the census. Players whose nameplates, target or mouseover you see: their level, class and guild, and where. Off: those three sources are ignored. |
+| Run a realm census while I'm in a city | on | Part of the census. Every 30 minutes while you're parked in a city, a `/who` sweep (see "The census sweep"). Off: sweeps run only when you start one. The **Run census now** button beside it runs one at once (greyed while one runs), with the last sweep's summary next to it. |
 | Show the minimap button | on | Hides or shows the button. `/ryna` still opens the panel. |
-| Debug messages | off | Prints what Ryna is doing to the chat window, one dimmed `Ryna debug:` line each: scans as they run (played time, gear, professions, reputations, bags and bank, quest log, group, guild roster), every journal event, every sighting and every sighting skipped (by the 10-minute window or a census setting; nearby players print at most one line per 5 seconds, a count with the names when there are 5 or fewer), combat-log decisions and settings changes. For checking that it works. Same as `/ryna debug`. |
+| Debug messages | off | Prints what Ryna is doing to the chat window, one dimmed `Ryna debug:` line each: scans as they run (played time, gear, professions, reputations, bags and bank, quest log, group, guild roster), every journal event, every sighting and every sighting skipped, each census-sweep query and answer (by the 10-minute window or a census setting; nearby players print at most one line per 5 seconds, a count with the names when there are 5 or fewer), combat-log decisions and settings changes. For checking that it works. Same as `/ryna debug`. |
 
 The settings are for the whole game account (`RynaDB` is account-wide), not per character.
 
@@ -150,6 +189,9 @@ positions and health in the log, turn on **Advanced Combat Logging** in the game
   Busy scans print once per scan, not per game event, and a quest-log, reputation or profession
   line that hasn't changed isn't repeated within five minutes. Group and guild-roster sightings
   print as one summary line per scan, and nearby players at most one line per 5 seconds.
+  A census sweep prints each query it sends and each answer (its count, how many were recorded,
+  skipped by the window or already in the sweep, and any split), and its summary.
+- `/ryna census`: runs a census sweep now; `/ryna census stop` stops it.
 - `/ryna help`: the commands.
 
 ## Installing by hand

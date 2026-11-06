@@ -13,6 +13,7 @@ Containers.lua
 Quests.lua
 Guild.lua
 Sightings.lua
+Census.lua
 Status.lua
 Panel.lua
 Minimap.lua

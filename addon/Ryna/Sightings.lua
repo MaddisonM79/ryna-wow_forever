@@ -17,9 +17,11 @@ ns.Sightings = S
 local NonEmpty = ns.NonEmpty
 local WINDOW = 600 -- seconds: one sighting per player per 10 minutes, whatever the source
 
--- The last sighting per GUID, shared by every source: { at = GetTime(), level = n or nil }. In
--- memory only (never saved), pruned as it grows. Chat and nearby sightings within the window are
--- skipped, except that one with a level is recorded after one without.
+-- The last sighting per player, shared by every source: { at = GetTime(), level = n or nil }, keyed
+-- by GUID and also by "name:<First-Last>" (a /who row has no GUID, so its key is the name; a
+-- sighting with both is remembered under both, so /who skips someone chat or a nameplate just
+-- saw). In memory only (never saved), pruned as it grows. Chat, nearby and /who sightings within
+-- the window are skipped, except that one with a level is recorded after one without.
 local last, lastCount = {}, 0
 
 local function remember(guid, level)
@@ -38,16 +40,34 @@ local function remember(guid, level)
   end
 end
 
--- The earlier sighting of guid within the window, or nil.
+-- The earlier sighting of guid (or a name key) within the window, or nil.
 local function recent(guid, now)
   local l = last[guid]
   if l and now - l.at < WINDOW then return l end
   return nil
 end
 
--- info: { guid, fullName, level, class, race, guild, zone }
+local function nameKey(fullName)
+  local name = ns.CanonicalName(NonEmpty(fullName))
+  return name and ("name:" .. name) or nil
+end
+
+-- The earlier sighting of a player by name (First-Last) within the window, or nil. For /who rows.
+function S.RecentByName(fullName)
+  local key = nameKey(fullName)
+  return key and recent(key, GetTime()) or nil
+end
+
+-- True when fullName is the player's own character (a /who answer lists you too).
+function S.IsSelf(fullName)
+  local mine = ns.rec and ns.CanonicalName(NonEmpty(ns.rec.fullName))
+  return mine ~= nil and ns.CanonicalName(NonEmpty(fullName)) == mine
+end
+
+-- info: { guid, fullName, level, class, race, guild, zone, batch }
 -- Nothing is written while the census setting is off, whatever the source (chat, group, roster).
 -- quiet: no debug line per sighting (group and roster print one summary). Returns the event.
+-- batch is the /who sweep's id, carried only by `who` sightings.
 function S.Seen(source, info, quiet)
   if not info then return nil end
   if not ns.Setting("census") then
@@ -57,11 +77,16 @@ function S.Seen(source, info, quiet)
   local guid = NonEmpty(info.guid)
   if guid and guid == ns.playerGuid then return nil end
   if not guid and not NonEmpty(info.fullName) then return nil end
+  if not guid and S.IsSelf(info.fullName) then return nil end
   local e = ns.Journal.Add("seen", {
     guid = guid, fullName = ns.CanonicalName(NonEmpty(info.fullName)), level = info.level, class = info.class,
-    race = info.race, guild = info.guild, zone = info.zone, source = source,
+    race = info.race, guild = info.guild, zone = info.zone, source = source, batch = info.batch,
   }, quiet)
-  if e and guid then remember(guid, info.level) end
+  if e then
+    if guid then remember(guid, info.level) end
+    local key = nameKey(info.fullName)
+    if key then remember(key, info.level) end
+  end
   return e
 end
 

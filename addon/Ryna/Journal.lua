@@ -44,6 +44,7 @@ end
 local SEEN_WHERE = {
   chat = "in chat", group = "in your group", roster = "on the guild roster",
   nameplate = "nearby (nameplate)", target = "nearby (target)", mouseover = "nearby (mouseover)",
+  who = "from /who",
 }
 
 local function quoted(s)
@@ -76,6 +77,9 @@ local function describe(e)
   elseif t == "group" then
     return string.format("journal: group %s, %s", tostring(e.kind),
       e.members and (#e.members .. " other members") or "members not recorded")
+  elseif t == "who" then
+    return string.format("census: /who %s answered %s (sweep %s)", tostring(e.query), tostring(e.count),
+      tostring(e.batch))
   elseif t == "session" then
     return "journal: session " .. tostring(e.kind) .. (e.zone and (" in " .. e.zone) or "")
   elseif t == "death" then

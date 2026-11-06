@@ -173,6 +173,30 @@ local function build()
     "Who was in your groups.")
   P.nearby = checkbox(content, "Record players I see nearby",
     "Players whose nameplates, target or mouseover you see: their level, class and guild, and where.")
+  P.sweep = checkbox(content, "Run a realm census while I'm in a city",
+    "Every 30 minutes while you're parked in a capital, Ryna asks the server who is online (/who), "
+    .. "a few queries at a time, to count the realm's players by level, class and zone. Nothing about you is sent.")
+  P.sweepButton = create("Button", content, { "UIPanelButtonTemplate" })
+  if P.sweepButton then
+    local b = P.sweepButton
+    b:SetSize(140, 22)
+    if not b:GetFontString() then
+      local fs = text(b, "GameFontNormal")
+      fs:SetAllPoints()
+      fs:SetJustifyH("CENTER")
+      b:SetFontString(fs)
+    end
+    b:SetText("Run census now")
+    b:SetScript("OnClick", function()
+      ns.Run("census sweep", function()
+        ns.Census.Start(true)
+        P.Refresh()
+      end)
+    end)
+    P.sweepText = text(content, "GameFontHighlightSmall", 11)
+    P.sweepText:SetWidth(WIDTH - 230)
+    P.sweepText:SetPoint("LEFT", b, "RIGHT", 8, 0)
+  end
   P.acl = checkbox(content, "Advanced combat logging",
     "Sets the game's advanced combat logging on, so fights are logged with positions and health. "
     .. "Needed for Ryna's timelines and deaths.")
@@ -193,6 +217,7 @@ local function build()
   toggle(P.census, "census")
   toggle(P.group, "groupMembers")
   toggle(P.nearby, "nearbyPlayers")
+  toggle(P.sweep, "censusSweep")
   P.acl:SetScript("OnClick", function(self)
     ns.Run("setting advancedCombatLog", function()
       ns.db.settings.advancedCombatLog = self:GetChecked() and true or false
@@ -297,16 +322,26 @@ function P.Refresh()
   P.census:SetChecked(settings.census)
   P.group:SetChecked(settings.groupMembers)
   P.nearby:SetChecked(settings.nearbyPlayers)
+  P.sweep:SetChecked(settings.censusSweep)
   P.acl:SetChecked(settings.advancedCombatLog)
   P.minimap:SetChecked(settings.minimap.shown)
   P.debug:SetChecked(settings.debug)
   P.chat.setActive(settings.census)
   P.group.setActive(settings.census)
   P.nearby.setActive(settings.census)
+  P.sweep.setActive(settings.census)
   P.census.place(s, 4)
   P.chat.place(s, 30)
   P.group.place(s, 30)
   P.nearby.place(s, 30)
+  P.sweep.place(s, 30)
+  if P.sweepButton then
+    local C = ns.Census
+    local usable = settings.census and C and not C.Running() and not C.blocked and C.Available()
+    if usable then P.sweepButton:Enable() else P.sweepButton:Disable() end
+    P.sweepText:SetText(C and C.StatusLine() or "")
+    s.add(P.sweepButton, 22, 34, 12)
+  end
   P.acl.place(s, 4)
   P.minimap.place(s, 4)
   P.debug.place(s, 4)

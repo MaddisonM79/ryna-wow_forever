@@ -1,5 +1,5 @@
 -- Slash commands: /ryna (opens the panel), /ryna status, /ryna combatlog instances|always|never,
--- /ryna debug on|off|toggle, /ryna help. Status and help go to the default chat frame.
+-- /ryna debug on|off|toggle, /ryna census [stop], /ryna help. Status and help go to the default chat frame.
 -- The chat frame reads "|" as the start of an escape code, so a literal one is written "||".
 
 local _, ns = ...
@@ -23,6 +23,21 @@ local function help()
   ns.Print("  /ryna status: what is recorded, the journal's size, combat logging")
   ns.Print("  /ryna combatlog instances||always||never: when the addon turns combat logging on")
   ns.Print("  /ryna debug on||off||toggle: print what Ryna is doing to chat (/ryna debug alone: which it is)")
+  ns.Print("  /ryna census: run a realm census now (/who, a few queries at a time); /ryna census stop ends it")
+end
+
+local function censusCommand(arg)
+  if arg == "stop" then
+    if ns.Census.Running() then
+      ns.Census.Stop("stopped by you")
+    else
+      ns.Print("no census sweep is running.")
+    end
+  elseif arg == "" then
+    ns.Census.Start(true)
+  else
+    ns.Print("usage: /ryna census (runs a sweep now) or /ryna census stop")
+  end
 end
 
 local function debugCommand(arg)
@@ -101,6 +116,8 @@ function ns.Slash(msg)
     end
   elseif cmd == "debug" then
     debugCommand(arg)
+  elseif cmd == "census" then
+    censusCommand(arg)
   else
     help()
   end
