@@ -99,6 +99,26 @@ function St.DebugLine()
     list and #list or 0, St.Plain(field(a, "agent", "string")) or "version unknown")
 end
 
+-- When the companion app last wrote AgentStatus.lua, as near as the file says: it holds no time of
+-- its own, so this is the newest time in it (the last upload, an account's save or upload, a
+-- message). Nil when the file is empty or has none.
+function St.FileTime()
+  local a = St.Agent()
+  local newest = field(a, "lastPush", "number")
+  local function consider(t, key)
+    local v = field(t, key, "number")
+    if v and (not newest or v > newest) then newest = v end
+  end
+  local accounts = field(a, "accounts", "table")
+  for i = 1, accounts and #accounts or 0 do
+    consider(accounts[i], "savedAt")
+    consider(accounts[i], "pushedAt")
+  end
+  local messages = field(a, "messages", "table")
+  for i = 1, messages and #messages or 0 do consider(messages[i], "at") end
+  return newest
+end
+
 -- True when the app hasn't pushed in the last 24 hours (or never has, as far as the file says).
 function St.IsStale()
   local lastPush = field(St.Agent(), "lastPush", "number")

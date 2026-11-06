@@ -54,8 +54,12 @@ L["not turned on by Ryna"] = true
 L["%s (click to change)"] = true
 L["Ryna records your characters, bags, quests and guild for the Ryna companion app, which "
   .. "uploads them when you sign in there. Signing in happens in the app, not in the game."] = true
+-- The panel's tabs.
 L["Status"] = true
-L["Settings"] = true
+L["Recording"] = true
+L["Census"] = true
+L["Messages"] = true
+L["Advanced"] = true
 L["Turn on the game's combat log:"] = true
 L["The combat log is how Ryna sees fights. \"In dungeons and raids only\" keeps the "
   .. "file small. Logging you start yourself with /combatlog is left alone."] = true
@@ -81,7 +85,24 @@ L["Drag it around the minimap to move it."] = true
 L["Debug messages"] = true
 L["Prints what Ryna is doing to the chat window: scans, journal events, sightings. "
   .. "For checking that it works."] = true
-L["Messages"] = true
+L["About your own characters, Ryna records their gear, bags and bank, quests, "
+  .. "professions, reputations, gold and played time, your guild's roster, and a 30-day journal of what "
+  .. "you do. Other players are the Census tab's."] = true
+L["The census keeps who was seen, never what they said. "
+  .. "Its data is never sold or used for advertising."] = true
+L["From the companion app, newest first, as of your last login or /reload."] = true
+L["Defaults"] = true
+L["Every setting back to its default. The minimap button keeps its place."] = true
+L["Ryna addon version: %s"] = true
+-- %s: a date and time ("2026-11-06 14:02"), then how long ago ("12 minutes ago").
+L["Companion app status file: as of %s (%s)"] = true
+L["Companion app status file: nothing in it yet"] = true
+-- The status tab's census line. %s in "Census: %s" is the sweep's progress or why it can't run.
+L["Census: off"] = true
+L["Census: %s"] = true
+L["Last census sweep: none yet"] = true
+-- %s: "%d player" / "%d players" (Census.lua), then how long ago ("20 minutes ago").
+L["Last census sweep: %s, %s"] = true
 L["settings back to their defaults; debug messages off."] = true
 L["Character: %s, level %s"] = true
 L["Character: not loaded yet"] = true

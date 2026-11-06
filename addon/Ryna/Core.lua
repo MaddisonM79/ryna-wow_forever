@@ -261,6 +261,8 @@ end)
 --   censusSweep     run a /who census sweep every 30 minutes while parked in a city (needs census)
 --   debug           print what the addon is doing to chat (ns.Debug)
 --   minimap         { shown = true, angle = <degrees> } for the minimap button
+--   panelTab        the options panel's selected tab ("status", "recording", "census", "messages",
+--                   "advanced"); Panel.lua checks it and falls back to "status", and Defaults keeps it
 ns.SETTING_DEFAULTS = {
   chatSightings = true, census = true, groupMembers = true, nearbyPlayers = true, advancedCombatLog = true,
   censusSweep = true, debug = false,

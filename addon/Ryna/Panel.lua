@@ -1,7 +1,10 @@
 -- Panel: the options panel under Settings -> AddOns (the modern Settings API as a canvas
--- category), or Interface Options -> AddOns on clients without `Settings`. Three sections:
--- Status, Settings and Messages. Every frame template and UI call is tried and has a plainer
--- fallback, and registering runs under pcall from Init, so a trimmed client can't break login.
+-- category), or Interface Options -> AddOns on clients without `Settings`. One frame, registered
+-- once, with a row of tabs under the title: Status, Recording, Census, Messages and Advanced. Each
+-- tab's content is its own child frame of the scroll child; only the selected one is shown and laid
+-- out, and the choice is kept in RynaDB.settings.panelTab. Every frame template and UI call is tried
+-- and has a plainer fallback, and registering runs under pcall from Init, so a trimmed client can't
+-- break login.
 
 local _, ns = ...
 local L = ns.L
@@ -12,6 +15,17 @@ ns.Panel = P
 local St = ns.Status
 local WIDTH = 580
 local FONT = "Fonts\\FRIZQT__.TTF"
+local TABS_Y = -36 -- the tab row, under the title
+local BODY_Y = -72 -- the scrolling content, under the tabs
+
+-- The tabs, in order. The first is the default.
+local TABS = {
+  { key = "status", label = L["Status"] },
+  { key = "recording", label = L["Recording"] },
+  { key = "census", label = L["Census"] },
+  { key = "messages", label = L["Messages"] },
+  { key = "advanced", label = L["Advanced"] },
+}
 
 -- CreateFrame with the first template this client has (nil, last, means no template).
 local function create(kind, parent, templates)
@@ -35,6 +49,21 @@ local function text(parent, fontObject, size)
   return fs
 end
 
+-- A push button, with its own label when the template gives it none.
+local function button(parent, label, w, h)
+  local b = create("Button", parent, { "UIPanelButtonTemplate" })
+  if not b then return nil end
+  b:SetSize(w, h)
+  if not b:GetFontString() then
+    local fs = text(b, "GameFontNormal")
+    fs:SetAllPoints()
+    fs:SetJustifyH("CENTER")
+    b:SetFontString(fs)
+  end
+  if label then b:SetText(label) end
+  return b
+end
+
 -- Lays children out top to bottom inside `content`.
 local function stack(content)
   local s = { y = -12 }
@@ -42,6 +71,10 @@ local function stack(content)
     region:ClearAllPoints()
     region:SetPoint("TOPLEFT", content, "TOPLEFT", 12 + (indent or 0), s.y)
     s.y = s.y - (height or region:GetHeight() or 14) - (gap or 6)
+  end
+  -- A font string, as tall as its text.
+  function s.text(fs, indent, gap)
+    s.add(fs, fs:GetStringHeight() or 14, indent, gap)
   end
   return s
 end
@@ -100,14 +133,7 @@ local function modeControl(parent)
     end
     dd:Hide()
   end
-  local b = create("Button", parent, { "UIPanelButtonTemplate" })
-  b:SetSize(300, 24)
-  if not b:GetFontString() then
-    local fs = text(b, "GameFontNormal")
-    fs:SetAllPoints()
-    fs:SetJustifyH("CENTER")
-    b:SetFontString(fs)
-  end
+  local b = button(parent, nil, 300, 24)
   b:SetScript("OnClick", function()
     local order, current = St.MODE_ORDER, ns.db.settings.combatLog
     for i, m in ipairs(order) do
@@ -119,156 +145,66 @@ local function modeControl(parent)
   return b
 end
 
+-- Tab buttons: WoW's tab templates where this client has them (and the functions that mark one
+-- selected), else plain buttons with the selected one's highlight locked on.
+local TAB_TEMPLATES = { "PanelTopTabButtonTemplate", "PanelTabButtonTemplate" }
+
+local function templateExists(name)
+  local info = ns.Fn("C_XMLUtil", "GetTemplateInfo")
+  if not info then return true end -- can't ask: CreateFrame under pcall decides
+  local ok, found = pcall(info, name)
+  return ok and found ~= nil
+end
+
+local function tabButton(parent, i, label)
+  local selectTab = ns.Fn("PanelTemplates_SelectTab")
+  local deselectTab = ns.Fn("PanelTemplates_DeselectTab")
+  local resize = ns.Fn("PanelTemplates_TabResize")
+  if selectTab and deselectTab then
+    for _, template in ipairs(TAB_TEMPLATES) do
+      if templateExists(template) then
+        -- Named, because the older tab functions find a tab's parts by its name.
+        local ok, b = pcall(CreateFrame, "Button", "RynaPanelTab" .. i, parent, template)
+        if ok and b and b.SetText then
+          b:SetText(label)
+          if b.SetID then b:SetID(i) end
+          if resize then pcall(resize, b, 0) end
+          b.select, b.deselect = selectTab, deselectTab
+          return b
+        end
+      end
+    end
+  end
+  return button(parent, label, 104, 24)
+end
+
+local function markTab(b, selected)
+  if b.select and pcall(selected and b.select or b.deselect, b) then return end
+  b.select, b.deselect = nil, nil -- the template's functions failed once: plain from now on
+  b:Enable()
+  if selected then b:LockHighlight() else b:UnlockHighlight() end
+  local fs = b:GetFontString()
+  if fs then
+    if selected then fs:SetTextColor(1, 1, 1) else fs:SetTextColor(1, 0.82, 0) end
+  end
+end
+
 local LEVEL_COLOR = { info = "|cffffffff", warn = "|cffffd100", error = "|cffff4040" }
 
-local function build()
-  local panel = CreateFrame("Frame")
-  panel.name = "Ryna"
-  panel:Hide()
+local function when(t)
+  return date("%Y-%m-%d %H:%M", t)
+end
 
-  -- Scrolls where a scroll template exists; otherwise the content sits in the panel directly.
-  local content = panel
-  local scroll = create("ScrollFrame", panel, { "ScrollFrameTemplate", "UIPanelScrollFrameTemplate" })
-  if scroll and scroll.SetScrollChild then
-    scroll:SetPoint("TOPLEFT", 0, -4)
-    scroll:SetPoint("BOTTOMRIGHT", -26, 4)
-    content = CreateFrame("Frame", nil, scroll)
-    content:SetSize(WIDTH, 800)
-    scroll:SetScrollChild(content)
-  end
-
-  local s = stack(content)
-  local title = text(content, "GameFontNormalLarge", 16)
-  title:SetText("Ryna " .. ns.VERSION)
-  s.add(title, 20)
-  local intro = text(content, "GameFontHighlightSmall", 11)
-  intro:SetText(L["Ryna records your characters, bags, quests and guild for the Ryna companion app, which "
-    .. "uploads them when you sign in there. Signing in happens in the app, not in the game."])
-  s.add(intro, 28, 0, 12)
-
-  local h1 = text(content, "GameFontNormal", 13)
-  h1:SetText(L["Status"])
-  s.add(h1, 16)
-  P.status = text(content, "GameFontHighlight")
-  s.add(P.status, 150, 8, 12)
-  P.statusAnchor = s.y
-
-  local h2 = text(content, "GameFontNormal", 13)
-  h2:SetText(L["Settings"])
-  P.h2 = h2
-
-  local modeLabel = text(content, "GameFontHighlight")
-  modeLabel:SetText(L["Turn on the game's combat log:"])
-  P.modeLabel = modeLabel
-  P.mode = modeControl(content)
-  P.modeHelp = text(content, "GameFontDisableSmall", 10)
-  P.modeHelp:SetText(L["The combat log is how Ryna sees fights. \"In dungeons and raids only\" keeps the "
-    .. "file small. Logging you start yourself with /combatlog is left alone."])
-
-  P.chat = checkbox(content, L["Record who I see in chat"],
-    L["Only who spoke, never what they said or in which channel."])
-  P.census = checkbox(content, L["Take part in the census"],
-    L["Records other players you see (nearby, in chat, your group and your guild). "
-    .. "Off: Ryna records only your own characters."])
-  P.group = checkbox(content, L["Record other players in my group"],
-    L["Who was in your groups."])
-  P.nearby = checkbox(content, L["Record players I see nearby"],
-    L["Players whose nameplates, target or mouseover you see: their level, class and guild, and where."])
-  P.sweep = checkbox(content, L["Run a realm census while I'm in a city"],
-    L["Every 30 minutes while you're parked in a capital, Ryna asks the server who is online (/who), "
-    .. "a few queries at a time, to count the realm's players by level, class and zone. "
-    .. "Nothing about you is sent."])
-  P.sweepButton = create("Button", content, { "UIPanelButtonTemplate" })
-  if P.sweepButton then
-    local b = P.sweepButton
-    b:SetSize(140, 22)
-    if not b:GetFontString() then
-      local fs = text(b, "GameFontNormal")
-      fs:SetAllPoints()
-      fs:SetJustifyH("CENTER")
-      b:SetFontString(fs)
-    end
-    b:SetText(L["Run census now"])
-    b:SetScript("OnClick", function()
-      ns.Run("census sweep", function()
-        ns.Census.Start(true)
-        P.Refresh()
-      end)
-    end)
-    P.sweepText = text(content, "GameFontHighlightSmall", 11)
-    P.sweepText:SetWidth(WIDTH - 230)
-    P.sweepText:SetPoint("LEFT", b, "RIGHT", 8, 0)
-  end
-  P.acl = checkbox(content, L["Advanced combat logging"],
-    L["Sets the game's advanced combat logging on, so fights are logged with positions and health. "
-    .. "Needed for Ryna's timelines and deaths."])
-  P.minimap = checkbox(content, L["Show the minimap button"], L["Drag it around the minimap to move it."])
-  P.debug = checkbox(content, L["Debug messages"],
-    L["Prints what Ryna is doing to the chat window: scans, journal events, sightings. "
-    .. "For checking that it works."])
-
-  local function toggle(cb, key)
-    cb:SetScript("OnClick", function(self)
-      ns.Run("setting " .. key, function()
-        ns.db.settings[key] = self:GetChecked() and true or false
-        ns.Debug("setting %s: %s", key, ns.db.settings[key] and "on" or "off")
-        P.Refresh()
-      end)
-    end)
-  end
-  toggle(P.chat, "chatSightings")
-  toggle(P.census, "census")
-  toggle(P.group, "groupMembers")
-  toggle(P.nearby, "nearbyPlayers")
-  toggle(P.sweep, "censusSweep")
-  P.acl:SetScript("OnClick", function(self)
-    ns.Run("setting advancedCombatLog", function()
-      ns.db.settings.advancedCombatLog = self:GetChecked() and true or false
-      ns.Debug("setting advancedCombatLog: %s", ns.db.settings.advancedCombatLog and "on" or "off")
-      ns.Zone.ApplyAdvancedLogging()
-      P.Refresh()
-    end)
-  end)
-  P.minimap:SetScript("OnClick", function(self)
-    ns.Run("setting minimap", function()
-      ns.db.settings.minimap.shown = self:GetChecked() and true or false
-      ns.Debug("setting minimap button: %s", ns.db.settings.minimap.shown and "shown" or "hidden")
-      if ns.Minimap then ns.Minimap.Update() end
-      P.Refresh()
-    end)
-  end)
-  P.debug:SetScript("OnClick", function(self)
-    ns.Run("setting debug", function()
-      ns.SetDebug(self:GetChecked() and true or false)
-      P.Refresh()
-    end)
-  end)
-
-  P.h3 = text(content, "GameFontNormal", 13)
-  P.h3:SetText(L["Messages"])
-  P.messages = text(content, "GameFontHighlightSmall", 11)
-
-  P.content, P.panel = content, panel
-  panel:SetScript("OnShow", function() ns.Run("panel", P.Refresh) end)
-  -- Settings and Interface Options call these; changes apply at once, so only Defaults does work.
-  panel.OnCommit, panel.okay, panel.cancel = function() end, function() end, function() end
-  panel.OnRefresh = function() ns.Run("panel", P.Refresh) end
-  panel.refresh = panel.OnRefresh
-  panel.OnDefault = function()
-    ns.Run("panel defaults", function()
-      local mm = ns.db.settings.minimap
-      local wasDebug = ns.Debugging()
-      ns.db.settings = { minimap = mm }
-      ns.ApplySettingDefaults(ns.db.settings)
-      mm.shown = true
-      if wasDebug then ns.Print(L["settings back to their defaults; debug messages off."]) end
-      ns.Zone.SetMode(ns.db.settings.combatLog)
-      if ns.Minimap then ns.Minimap.Update() end
-      P.Refresh()
-    end)
-  end
-  panel.default = panel.OnDefault
-  return panel
+-- The status tab's census line: off, the running sweep, or the last one.
+local function censusLine()
+  local C = ns.Census
+  if not C then return nil end
+  if not ns.db.settings.census then return L["Census: off"] end
+  if C.Running() or C.blocked then return string.format(L["Census: %s"], C.StatusLine()) end
+  local l = C.LastSweep()
+  if not l then return L["Last census sweep: none yet"] end
+  return string.format(L["Last census sweep: %s, %s"],
+    ns.Plural(l.players or 0, L["%d player"], L["%d players"]), St.Ago(l.at) or "?")
 end
 
 local function statusText()
@@ -288,6 +224,8 @@ local function statusText()
   lines[#lines + 1] = string.format(L["Session: %s"], tostring(ns.Journal.session or L["not started"]))
   lines[#lines + 1] = string.format(L["Combat log: %s right now. Mode: %s"], St.LoggingText(),
     St.MODE_LABELS[ns.db.settings.combatLog] or "?")
+  local census = censusLine()
+  if census then lines[#lines + 1] = census end
   lines[#lines + 1] = " "
   lines[#lines + 1] = string.format(L["Companion app: %s"], St.SyncLine())
   local agent = St.Plain(St.Field(St.Agent(), "agent", "string"))
@@ -306,62 +244,292 @@ local function messagesText()
   if #msgs == 0 then return L["No messages"] end
   local lines = {}
   for _, m in ipairs(msgs) do
-    local when = m.at and string.format(L["%s: "], St.Ago(m.at)) or ""
-    lines[#lines + 1] = (LEVEL_COLOR[m.level] or "") .. when .. m.text .. "|r"
+    local at = m.at and string.format(L["%s: "], St.Ago(m.at)) or ""
+    lines[#lines + 1] = (LEVEL_COLOR[m.level] or "") .. at .. m.text .. "|r"
   end
   return table.concat(lines, "\n")
 end
 
--- Fills every section and re-lays out the parts below the (variable-height) status text.
-function P.Refresh()
-  if not P.panel or not ns.db then return end
-  local settings = ns.db.settings
+local function versionsText()
+  local lines = { string.format(L["Ryna addon version: %s"], ns.VERSION) }
+  local t = St.FileTime()
+  if t then
+    lines[2] = string.format(L["Companion app status file: as of %s (%s)"], when(t), St.Ago(t) or "?")
+  else
+    lines[2] = L["Companion app status file: nothing in it yet"]
+  end
+  return table.concat(lines, "\n")
+end
+
+-- A setting's checkbox: writes RynaDB.settings[key], then `after` (if any), then refreshes.
+local function toggle(cb, key, after)
+  cb:SetScript("OnClick", function(self)
+    ns.Run("setting " .. key, function()
+      ns.db.settings[key] = self:GetChecked() and true or false
+      ns.Debug("setting %s: %s", key, ns.db.settings[key] and "on" or "off")
+      if after then after() end
+      P.Refresh()
+    end)
+  end)
+end
+
+-- Each tab: build(frame) makes its controls once; layout(s, settings) fills and places them.
+local build, layout = {}, {}
+
+function build.status(f)
+  P.intro = text(f, "GameFontHighlightSmall", 11)
+  P.intro:SetText(L["Ryna records your characters, bags, quests and guild for the Ryna companion app, which "
+    .. "uploads them when you sign in there. Signing in happens in the app, not in the game."])
+  P.status = text(f, "GameFontHighlight")
+end
+
+function layout.status(s)
+  s.text(P.intro, 0, 12)
   P.status:SetText(statusText())
-  local s = stack(P.content)
-  s.y = P.statusAnchor + 150 - (P.status:GetStringHeight() or 150)
-  s.add(P.h2, 16)
+  s.text(P.status, 8, 6)
+end
+
+function build.recording(f)
+  P.recordingIntro = text(f, "GameFontHighlightSmall", 11)
+  P.recordingIntro:SetText(L["About your own characters, Ryna records their gear, bags and bank, quests, "
+    .. "professions, reputations, gold and played time, your guild's roster, and a 30-day journal of what "
+    .. "you do. Other players are the Census tab's."])
+  P.modeLabel = text(f, "GameFontHighlight")
+  P.modeLabel:SetText(L["Turn on the game's combat log:"])
+  P.mode = modeControl(f)
+  P.modeHelp = text(f, "GameFontDisableSmall", 10)
+  P.modeHelp:SetText(L["The combat log is how Ryna sees fights. \"In dungeons and raids only\" keeps the "
+    .. "file small. Logging you start yourself with /combatlog is left alone."])
+  P.acl = checkbox(f, L["Advanced combat logging"],
+    L["Sets the game's advanced combat logging on, so fights are logged with positions and health. "
+    .. "Needed for Ryna's timelines and deaths."])
+  toggle(P.acl, "advancedCombatLog", function() ns.Zone.ApplyAdvancedLogging() end)
+end
+
+function layout.recording(s, settings)
+  s.text(P.recordingIntro, 0, 12)
   s.add(P.modeLabel, 14, 8, 4)
   s.add(P.mode, 26, 8, 2)
-  s.add(P.modeHelp, P.modeHelp:GetStringHeight() or 24, 8, 10)
+  s.text(P.modeHelp, 8, 10)
   P.mode.sync()
-  P.chat:SetChecked(settings.chatSightings)
+  P.acl:SetChecked(settings.advancedCombatLog)
+  P.acl.place(s, 4)
+end
+
+function build.census(f)
+  P.census = checkbox(f, L["Take part in the census"],
+    L["Records other players you see (nearby, in chat, your group and your guild). "
+    .. "Off: Ryna records only your own characters."])
+  P.chat = checkbox(f, L["Record who I see in chat"],
+    L["Only who spoke, never what they said or in which channel."])
+  P.group = checkbox(f, L["Record other players in my group"],
+    L["Who was in your groups."])
+  P.nearby = checkbox(f, L["Record players I see nearby"],
+    L["Players whose nameplates, target or mouseover you see: their level, class and guild, and where."])
+  P.sweep = checkbox(f, L["Run a realm census while I'm in a city"],
+    L["Every 30 minutes while you're parked in a capital, Ryna asks the server who is online (/who), "
+    .. "a few queries at a time, to count the realm's players by level, class and zone. "
+    .. "Nothing about you is sent."])
+  toggle(P.census, "census")
+  toggle(P.chat, "chatSightings")
+  toggle(P.group, "groupMembers")
+  toggle(P.nearby, "nearbyPlayers")
+  toggle(P.sweep, "censusSweep")
+  P.sweepButton = button(f, L["Run census now"], 140, 22)
+  if P.sweepButton then
+    P.sweepButton:SetScript("OnClick", function()
+      ns.Run("census sweep", function()
+        ns.Census.Start(true)
+        P.Refresh()
+      end)
+    end)
+    P.sweepText = text(f, "GameFontHighlightSmall", 11)
+    P.sweepText:SetWidth(WIDTH - 230)
+    P.sweepText:SetPoint("LEFT", P.sweepButton, "RIGHT", 8, 0)
+  end
+  P.privacy = text(f, "GameFontDisableSmall", 10)
+  P.privacy:SetText(L["The census keeps who was seen, never what they said. "
+    .. "Its data is never sold or used for advertising."])
+end
+
+function layout.census(s, settings)
   P.census:SetChecked(settings.census)
+  P.chat:SetChecked(settings.chatSightings)
   P.group:SetChecked(settings.groupMembers)
   P.nearby:SetChecked(settings.nearbyPlayers)
   P.sweep:SetChecked(settings.censusSweep)
-  P.acl:SetChecked(settings.advancedCombatLog)
-  P.minimap:SetChecked(settings.minimap.shown)
-  P.debug:SetChecked(settings.debug)
-  P.chat.setActive(settings.census)
-  P.group.setActive(settings.census)
-  P.nearby.setActive(settings.census)
-  P.sweep.setActive(settings.census)
   P.census.place(s, 4)
-  P.chat.place(s, 30)
-  P.group.place(s, 30)
-  P.nearby.place(s, 30)
-  P.sweep.place(s, 30)
+  for _, cb in ipairs({ P.chat, P.group, P.nearby, P.sweep }) do
+    cb.setActive(settings.census)
+    cb.place(s, 30)
+  end
   if P.sweepButton then
     local C = ns.Census
     local usable = settings.census and C and not C.Running() and not C.blocked and C.Available()
     if usable then P.sweepButton:Enable() else P.sweepButton:Disable() end
     P.sweepText:SetText(C and C.StatusLine() or "")
-    s.add(P.sweepButton, 22, 34, 12)
+    s.add(P.sweepButton, 22, 34, 14)
   end
-  P.acl.place(s, 4)
-  P.minimap.place(s, 4)
-  P.debug.place(s, 4)
-  s.y = s.y - 6
-  s.add(P.h3, 16)
+  s.text(P.privacy, 4, 6)
+end
+
+function build.messages(f)
+  P.messagesIntro = text(f, "GameFontDisableSmall", 10)
+  P.messagesIntro:SetText(L["From the companion app, newest first, as of your last login or /reload."])
+  P.messages = text(f, "GameFontHighlightSmall", 11)
+end
+
+function layout.messages(s)
+  s.text(P.messagesIntro, 0, 10)
   P.messages:SetText(messagesText())
-  s.add(P.messages, P.messages:GetStringHeight() or 14, 8)
-  if P.content ~= P.panel then P.content:SetHeight(-s.y + 20) end
+  s.text(P.messages, 8, 6)
+end
+
+function build.advanced(f)
+  P.debug = checkbox(f, L["Debug messages"],
+    L["Prints what Ryna is doing to the chat window: scans, journal events, sightings. "
+    .. "For checking that it works."])
+  P.debug:SetScript("OnClick", function(self)
+    ns.Run("setting debug", function()
+      ns.SetDebug(self:GetChecked() and true or false)
+      P.Refresh()
+    end)
+  end)
+  P.minimap = checkbox(f, L["Show the minimap button"], L["Drag it around the minimap to move it."])
+  P.minimap:SetScript("OnClick", function(self)
+    ns.Run("setting minimap", function()
+      ns.db.settings.minimap.shown = self:GetChecked() and true or false
+      ns.Debug("setting minimap button: %s", ns.db.settings.minimap.shown and "shown" or "hidden")
+      if ns.Minimap then ns.Minimap.Update() end
+      P.Refresh()
+    end)
+  end)
+  P.defaults = button(f, L["Defaults"], 140, 22)
+  if P.defaults then
+    P.defaults:SetScript("OnClick", function() P.panel.OnDefault() end)
+    P.defaultsText = text(f, "GameFontDisableSmall", 10)
+    P.defaultsText:SetWidth(WIDTH - 230)
+    P.defaultsText:SetPoint("LEFT", P.defaults, "RIGHT", 8, 0)
+    P.defaultsText:SetText(L["Every setting back to its default. The minimap button keeps its place."])
+  end
+  P.versions = text(f, "GameFontHighlightSmall", 11)
+end
+
+function layout.advanced(s, settings)
+  P.debug:SetChecked(settings.debug)
+  P.minimap:SetChecked(settings.minimap.shown)
+  P.debug.place(s, 4)
+  P.minimap.place(s, 4)
+  if P.defaults then s.add(P.defaults, 22, 8, 16) end
+  P.versions:SetText(versionsText())
+  s.text(P.versions, 8, 6)
+end
+
+local function buildPanel()
+  local panel = CreateFrame("Frame")
+  panel.name = "Ryna"
+  panel:Hide()
+
+  local title = text(panel, "GameFontNormalLarge", 16)
+  title:SetText("Ryna " .. ns.VERSION)
+  title:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -12)
+
+  -- The scroll child holds every tab's frame. Without a scroll template it sits in the panel.
+  local content = CreateFrame("Frame", nil, panel)
+  content:SetSize(WIDTH, 800)
+  local scroll = create("ScrollFrame", panel, { "ScrollFrameTemplate", "UIPanelScrollFrameTemplate" })
+  if scroll and scroll.SetScrollChild then
+    scroll:SetPoint("TOPLEFT", 0, BODY_Y)
+    scroll:SetPoint("BOTTOMRIGHT", -26, 4)
+    content:SetParent(scroll)
+    scroll:SetScrollChild(content)
+    P.scroll = scroll
+  else
+    content:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, BODY_Y)
+  end
+  P.content, P.panel = content, panel
+
+  P.tabs, P.tabsByKey = {}, {}
+  local prev
+  for i, def in ipairs(TABS) do
+    local f = CreateFrame("Frame", nil, content)
+    f:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+    f:SetSize(WIDTH, 100)
+    f:Hide()
+    build[def.key](f)
+    local b = tabButton(panel, i, def.label)
+    if prev then
+      b:SetPoint("LEFT", prev, "RIGHT", b.select and 2 or 4, 0)
+    else
+      b:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, TABS_Y)
+    end
+    local key = def.key
+    b:SetScript("OnClick", function() ns.Run("panel tab", P.Select, key) end)
+    prev = b
+    local tab = { key = key, frame = f, button = b, layout = layout[key] }
+    P.tabs[i], P.tabsByKey[key] = tab, tab
+  end
+
+  panel:SetScript("OnShow", function() ns.Run("panel", P.Refresh) end)
+  -- Settings and Interface Options call these; changes apply at once, so only Defaults does work.
+  panel.OnCommit, panel.okay, panel.cancel = function() end, function() end, function() end
+  panel.OnRefresh = function() ns.Run("panel", P.Refresh) end
+  panel.refresh = panel.OnRefresh
+  panel.OnDefault = function()
+    ns.Run("panel defaults", function()
+      local mm, tab = ns.db.settings.minimap, ns.db.settings.panelTab
+      local wasDebug = ns.Debugging()
+      ns.db.settings = { minimap = mm, panelTab = tab }
+      ns.ApplySettingDefaults(ns.db.settings)
+      mm.shown = true
+      if wasDebug then ns.Print(L["settings back to their defaults; debug messages off."]) end
+      ns.Zone.SetMode(ns.db.settings.combatLog)
+      if ns.Minimap then ns.Minimap.Update() end
+      P.Refresh()
+    end)
+  end
+  panel.default = panel.OnDefault
+  return panel
+end
+
+-- The selected tab's key: RynaDB.settings.panelTab when it names a tab, else the first.
+function P.SelectedTab()
+  local key = ns.db and ns.db.settings.panelTab
+  if P.tabsByKey and P.tabsByKey[key] then return key end
+  return TABS[1].key
+end
+
+-- Shows another tab, remembers it, and scrolls back to the top.
+function P.Select(key)
+  if not (P.tabsByKey and P.tabsByKey[key] and ns.db) then return end
+  ns.db.settings.panelTab = key
+  if P.scroll and P.scroll.SetVerticalScroll then pcall(P.scroll.SetVerticalScroll, P.scroll, 0) end
+  P.Refresh()
+end
+
+-- Marks the selected tab, shows only its frame, fills and lays it out, and sizes the scroll child
+-- to it. The other tabs are filled when they're selected.
+function P.Refresh()
+  if not P.panel or not ns.db then return end
+  local key = P.SelectedTab()
+  for _, tab in ipairs(P.tabs) do
+    local on = tab.key == key
+    markTab(tab.button, on)
+    if on then tab.frame:Show() else tab.frame:Hide() end
+  end
+  local tab = P.tabsByKey[key]
+  local s = stack(tab.frame)
+  tab.layout(s, ns.db.settings)
+  local height = -s.y + 20
+  tab.frame:SetHeight(height)
+  P.content:SetHeight(height)
+  if P.scroll and P.scroll.UpdateScrollChildRect then pcall(P.scroll.UpdateScrollChildRect, P.scroll) end
 end
 
 -- Called once from PLAYER_LOGIN (under ns.Run). Returns true when a panel is registered.
 function P.Register()
   if P.panel then return true end
-  local panel = build()
+  local panel = buildPanel()
   local S = _G.Settings
   if type(S) == "table" and type(S.RegisterCanvasLayoutCategory) == "function"
     and type(S.RegisterAddOnCategory) == "function" then

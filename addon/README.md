@@ -2,7 +2,7 @@
 
 A World of Warcraft: Forever addon that records what your characters have and do into one
 account-wide SavedVariable, `RynaDB`, for the Ryna companion app (the agent) to read and upload.
-It has a small settings panel, a minimap button, and a line in chat when you log in.
+It has a small settings panel (in tabs), a minimap button, and a line in chat when you log in.
 
 The game writes SavedVariables at logout and `/reload`. Addons can't reach the network or the
 filesystem, so that file is the only way the data leaves the game. The addon never depends on
@@ -82,7 +82,7 @@ person's name, and nothing about you is sent.**
 - **The Who window**: while a sweep runs the answers go to Ryna, not the Who window; the friends
   frame stops listening for who results and gets them back, with the game's who-to-window setting,
   as soon as the sweep ends or is stopped, so your own `/who` works as before.
-- **When it runs**: `/ryna census` or the panel's **Run census now** button runs one now; with the
+- **When it runs**: `/ryna census` or the Census tab's **Run census now** button runs one now; with the
   setting "Run a realm census while I'm in a city" on, one runs every 30 minutes while you're in a
   city (Orgrimmar, Thunder Bluff, Undercity, Stormwind City, Ironforge, Darnassus, Booty Bay,
   Gadgetzan, Everlook, Ratchet) for at least a minute. Never in an instance, never in combat (combat
@@ -92,7 +92,7 @@ person's name, and nothing about you is sent.**
   fourth answer) and a summary ("census sweep done: 412 players, 380 new to this sweep's window, in
   52s": the players it found, and how many of them weren't already seen in the last 10 minutes). An
   automatic sweep prints only debug lines. The last sweep's summary is kept in `RynaDB.census` and
-  shown beside the panel's button ("Last sweep: 412 players, 20 minutes ago").
+  shown beside the Census tab's button and on the Status tab ("Last sweep: 412 players, 20 minutes ago").
 
 `RynaDB.client` holds the client's version and Interface number and how it returned your character's
 name parts, overwritten each login, so the format can be checked against a real client.
@@ -112,32 +112,51 @@ names match the JSON the agent uploads one for one.
 ## The panel
 
 `/ryna`, or a click on the minimap button, opens **Settings → AddOns → Ryna** (on older clients,
-Interface Options → AddOns → Ryna). It has three parts.
+Interface Options → AddOns → Ryna). Under its title is a row of five tabs; a click on one shows that
+tab (the content scrolls when it's taller than the window), and the panel opens on the tab you last
+had (`RynaDB.settings.panelTab`). The tabs use the game's own tab style where the client has it, and
+plain buttons with the selected one lit where it doesn't.
 
 **Status**: the character you're on; what's been recorded (items in your bags and bank, equipped
 gear, quests in your log and completed, guild members); how many journal events this session and in
-all, and the session id; whether combat logging is on right now and the mode; and the companion app:
-"Synced 12 minutes ago as <name>", or "Not synced yet. Sign in from the Ryna companion app.", its
-version, and "Update available" when the app knows of a newer addon or app. Signing in happens in the
-companion app, never in the game: an addon can't reach the network.
+all, and the session id; whether combat logging is on right now and the mode; the last census sweep
+("Last census sweep: 412 players, 20 minutes ago", the running one's progress, or "Census: off");
+and the companion app: "Synced 12 minutes ago as <name>", or "Not synced yet. Sign in from the Ryna
+companion app.", its version, and "Update available" when the app knows of a newer addon or app.
+Signing in happens in the companion app, never in the game: an addon can't reach the network.
 
-**Settings** (saved in `RynaDB.settings`; if the game loses them, the defaults come back):
+**Recording**: one line on what the addon records about your own characters, the combat-log mode and
+Advanced combat logging.
 
-| Setting | Default | What it does |
-|---|---|---|
-| Turn on the game's combat log | In dungeons and raids only | When the addon turns combat logging on (see below). Same as `/ryna combatlog`. |
-| Record who I see in chat | on | A `seen` event for who speaks in chat (only who, never what). Off: chat isn't looked at. |
-| Take part in the census | on | Records the other players you see. Off: **no** `seen` events at all, from chat, players nearby, your group or your guild roster; the addon records only your own characters (and still your guild's roster, which is your guild's own list). |
-| Record other players in my group | on | Part of the census. Off: no `seen` events for group members, and `group` events say only that you joined, changed or left a group, without the member list. |
-| Record players I see nearby | on | Part of the census. Players whose nameplates, target or mouseover you see: their level, class and guild, and where. Off: those three sources are ignored. |
-| Run a realm census while I'm in a city | on | Part of the census. Every 30 minutes while you're parked in a city, a `/who` sweep (see "The census sweep"). Off: sweeps run only when you start one. The **Run census now** button beside it runs one at once (greyed while one runs), with the last sweep's summary next to it. |
-| Show the minimap button | on | Hides or shows the button. `/ryna` still opens the panel. |
-| Debug messages | off | Prints what Ryna is doing to the chat window, one dimmed `Ryna debug:` line each: scans as they run (played time, gear, professions, reputations, bags and bank, quest log, group, guild roster), every journal event, every sighting and every sighting skipped, each census-sweep query and answer (by the 10-minute window or a census setting; nearby players print at most one line per 5 seconds, a count with the names when there are 5 or fewer), combat-log decisions and settings changes. For checking that it works. Same as `/ryna debug`. |
-
-The settings are for the whole game account (`RynaDB` is account-wide), not per character.
+**Census**: Take part in the census, with its four switches under it (greyed while it's off): chat,
+your group, players nearby and the city sweep. Then the **Run census now** button (greyed while a
+sweep runs) with the last sweep's summary beside it, and the census's promise: who was seen, never
+what they said, and the data is never sold or used for advertising.
 
 **Messages**: up to 10 notices from the companion app, newest first ("No messages" when there are
 none).
+
+**Advanced**: Debug messages, Show the minimap button, a **Defaults** button (every setting back to
+its default, as the Settings window's own Defaults does; the minimap button keeps its place and the
+panel its tab), the addon's version, and how recent the companion app's `AgentStatus.lua` is (the
+newest time in it: the last upload, an account's save or upload, or a message, since the file holds
+no time of its own).
+
+The settings (saved in `RynaDB.settings`; if the game loses them, the defaults come back):
+
+| Setting | Tab | Default | What it does |
+|---|---|---|---|
+| Turn on the game's combat log | Recording | In dungeons and raids only | When the addon turns combat logging on (see below). Same as `/ryna combatlog`. |
+| Advanced combat logging | Recording | on | Sets the game's `advancedCombatLogging`, so fights are logged with positions and health (see below). |
+| Take part in the census | Census | on | Records the other players you see. Off: **no** `seen` events at all, from chat, players nearby, your group or your guild roster; the addon records only your own characters (and still your guild's roster, which is your guild's own list). |
+| Record who I see in chat | Census | on | Part of the census. A `seen` event for who speaks in chat (only who, never what). Off: chat isn't looked at. |
+| Record other players in my group | Census | on | Part of the census. Off: no `seen` events for group members, and `group` events say only that you joined, changed or left a group, without the member list. |
+| Record players I see nearby | Census | on | Part of the census. Players whose nameplates, target or mouseover you see: their level, class and guild, and where. Off: those three sources are ignored. |
+| Run a realm census while I'm in a city | Census | on | Part of the census. Every 30 minutes while you're parked in a city, a `/who` sweep (see "The census sweep"). Off: sweeps run only when you start one. |
+| Debug messages | Advanced | off | Prints what Ryna is doing to the chat window, one dimmed `Ryna debug:` line each: scans as they run (played time, gear, professions, reputations, bags and bank, quest log, group, guild roster), every journal event, every sighting and every sighting skipped, each census-sweep query and answer (by the 10-minute window or a census setting; nearby players print at most one line per 5 seconds, a count with the names when there are 5 or fewer), combat-log decisions and settings changes. For checking that it works. Same as `/ryna debug`. |
+| Show the minimap button | Advanced | on | Hides or shows the button. `/ryna` still opens the panel. |
+
+The settings are for the whole game account (`RynaDB` is account-wide), not per character.
 
 ## The minimap button
 
