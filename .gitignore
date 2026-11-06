@@ -1,0 +1,10 @@
+# Real captures from a game install (SavedVariables, combat logs) never land in the tree:
+# the capture script scrubs them into fixtures first.
+captures/
+*.local.*
+.DS_Store
+node_modules/
+dist/
+target/
+.env
+.env.*
