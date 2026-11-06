@@ -9,8 +9,11 @@ pub const DEFAULT_API: &str = "https://api.ryna.io";
 pub const DEFAULT_RESOURCE: &str = "https://api.ryna.io/wow/ingest";
 /// The scope the API requires on the agent's routes.
 pub const INGEST_SCOPE: &str = "wow:ingest";
-/// `RYNA_WOW_CLIENT_ID`. The public device client for this agent isn't registered at the IdP
-/// yet, so there is no real id to build in. This stands in for it and is refused by `login`.
+/// The public device client registered for this agent at auth.nyratech.dev (`ryna-wow`,
+/// 2026-11-06). Public by design (RFC 8628: no secret), so it can live here; `RYNA_WOW_CLIENT_ID`
+/// overrides it for another IdP.
+pub const DEFAULT_CLIENT_ID: &str = "lgiJjuqYkThXPGdHOUseZThNlwvFaNLe";
+/// What `client_id` is when no client exists for the configured IdP; `login` refuses it.
 pub const PLACEHOLDER_CLIENT_ID: &str = "ryna-wow-device-client-NOT-ISSUED-YET";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,7 +45,7 @@ impl Config {
                 api.or_else(|| env("RYNA_WOW_API"))
                     .unwrap_or_else(|| DEFAULT_API.into()),
             ),
-            client_id: env("RYNA_WOW_CLIENT_ID").unwrap_or_else(|| PLACEHOLDER_CLIENT_ID.into()),
+            client_id: env("RYNA_WOW_CLIENT_ID").unwrap_or_else(|| DEFAULT_CLIENT_ID.into()),
             resource: env("RYNA_WOW_RESOURCE").unwrap_or_else(|| DEFAULT_RESOURCE.into()),
         }
     }
