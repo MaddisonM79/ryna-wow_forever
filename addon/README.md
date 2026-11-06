@@ -38,9 +38,18 @@ guild and zone where the client gives them. Sightings come from your group, from
 
 **Nearby** (source `nameplate`, `target` or `mouseover`): a player whose nameplate appears, whom you
 target, or whom you mouse over gives their level, class, race and guild as the client shows them,
-with your own current zone. Players of the other faction are skipped (the census counts a sighting
-under your faction). Nameplates only appear for players the game already shows you; the addon asks
-the client nothing extra.
+with your own current zone, and their **faction**: a `faction` field on the `seen` event, `"Horde"`
+or `"Alliance"` (the English token `UnitFactionGroup` gives), on every nearby sighting, your own
+faction's included. Players of both factions are recorded, and the API prefers the event's faction
+over the observer's. Chat, group, guild-roster and `/who` sightings carry no `faction`: they are your
+own faction's players by construction.
+
+Nameplates only appear for players the game already draws, and the addon asks the client nothing
+extra. **The game shows nameplates for enemies only unless friendly nameplates are on** (Shift+V,
+the game's `nameplateShowFriends` variable), so with them off the nearby source sees mostly the
+other faction. The Census tab says so under "Record players I see nearby" and has a **Turn friendly
+nameplates on** button, which sets `nameplateShowFriends` to 1 when you click it (it reads
+"Friendly nameplates are on" once it is). The addon never changes it by itself.
 
 **Chat**: a chat message yields only a sighting of its sender (GUID and name, plus class and race
 from the client's cache) and, for chat that is only heard nearby or in your zone, where: say, yell,
@@ -84,8 +93,13 @@ person's name, and nothing about you is sent.**
   as soon as the sweep ends or is stopped, so your own `/who` works as before.
 - **When it runs**: `/ryna census` or the Census tab's **Run census now** button runs one now; with the
   setting "Run a realm census while I'm in a city" on, one runs every 30 minutes while you're in a
-  city (Orgrimmar, Thunder Bluff, Undercity, Stormwind City, Ironforge, Darnassus, Booty Bay,
-  Gadgetzan, Everlook, Ratchet) for at least a minute. Never in an instance, never in combat (combat
+  city for at least a minute. A capital is recognised by its map id
+  (`C_Map.GetBestMapForUnit("player")`, the same in every client language; a sub-map of a capital
+  counts too), using the Classic world's ids: Stormwind City 1453, Orgrimmar 1454, Ironforge 1455,
+  Thunder Bluff 1456, Darnassus 1457, Undercity 1458. The neutral towns (Booty Bay, Gadgetzan,
+  Everlook, Ratchet) have no map of their own, so outside a capital they are matched by the subzone's
+  name, which is in the client's language: on a non-English client they don't start a sweep. If the
+  client can't give a map id at all, no automatic sweep runs. Never in an instance, never in combat (combat
   stops a running sweep, and it isn't resumed), never while you have the Who window open (opening
   it stops one before its next query), and never with the census setting off. `/ryna census stop` stops one.
 - A sweep you start prints its progress ("census sweep: 8 of 12 queries, 214 players so far", every
@@ -129,7 +143,10 @@ Signing in happens in the companion app, never in the game: an addon can't reach
 Advanced combat logging.
 
 **Census**: Take part in the census, with its four switches under it (greyed while it's off): chat,
-your group, players nearby and the city sweep. Then the **Run census now** button (greyed while a
+your group, players nearby and the city sweep. Under players nearby, a note that the game draws
+nameplates for enemies only unless friendly nameplates are on (Shift+V), and the **Turn friendly
+nameplates on** button ("Friendly nameplates are on", greyed, once they are). Then the **Run census
+now** button (greyed while a
 sweep runs) with the last sweep's summary beside it, and the census's promise: who was seen, never
 what they said, and the data is never sold or used for advertising.
 
@@ -151,7 +168,7 @@ The settings (saved in `RynaDB.settings`; if the game loses them, the defaults c
 | Take part in the census | Census | on | Records the other players you see. Off: **no** `seen` events at all, from chat, players nearby, your group or your guild roster; the addon records only your own characters (and still your guild's roster, which is your guild's own list). |
 | Record who I see in chat | Census | on | Part of the census. A `seen` event for who speaks in chat (only who, never what). Off: chat isn't looked at. |
 | Record other players in my group | Census | on | Part of the census. Off: no `seen` events for group members, and `group` events say only that you joined, changed or left a group, without the member list. |
-| Record players I see nearby | Census | on | Part of the census. Players whose nameplates, target or mouseover you see: their level, class and guild, and where. Off: those three sources are ignored. |
+| Record players I see nearby | Census | on | Part of the census. Players whose nameplates, target or mouseover you see, of either faction: their level, class, guild and faction, and where. Off: those three sources are ignored. Friendly nameplates are the game's own setting (Shift+V); the button under this one turns them on. |
 | Run a realm census while I'm in a city | Census | on | Part of the census. Every 30 minutes while you're parked in a city, a `/who` sweep (see "The census sweep"). Off: sweeps run only when you start one. |
 | Debug messages | Advanced | off | Prints what Ryna is doing to the chat window, one dimmed `Ryna debug:` line each: scans as they run (played time, gear, professions, reputations, bags and bank, quest log, group, guild roster), every journal event, every sighting and every sighting skipped, each census-sweep query and answer (by the 10-minute window or a census setting; nearby players print at most one line per 5 seconds, a count with the names when there are 5 or fewer), combat-log decisions and settings changes. For checking that it works. Same as `/ryna debug`. |
 | Show the minimap button | Advanced | on | Hides or shows the button. `/ryna` still opens the panel. |
@@ -273,7 +290,9 @@ kept in `RynaDB.census`) is marked with `N("...")` and looked up with `L[reason]
 ## Development
 
 `luacheck addon/` from the repository root uses `addon/.luacheckrc`, and
-`node addon/tools/strings.mjs` checks the translatable strings (see "Translating Ryna").
+`node addon/tools/strings.mjs` checks the translatable strings (see "Translating Ryna"). The
+version is in two places, `## Version` in `Ryna.toc` and `ns.VERSION` in `Core.lua` (0.2.0 now);
+change both together.
 
 ### Advanced combat logging
 

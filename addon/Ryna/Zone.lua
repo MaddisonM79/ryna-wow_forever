@@ -69,7 +69,10 @@ function Z.Update()
   rec.lastSeen = ns.Now()
   if zone ~= Z.lastZone or instance ~= Z.lastInstance then
     Z.lastZone, Z.lastInstance = zone, instance
-    ns.Journal.Add("zone", { zone = zone, subzone = subzone, instance = instance, difficulty = difficulty })
+    local best = ns.Fn("C_Map", "GetBestMapForUnit")
+    local mapId = best and ns.Try(best, "player") or nil
+    if type(mapId) ~= "number" then mapId = nil end
+    ns.Journal.Add("zone", { zone = zone, subzone = subzone, instance = instance, difficulty = difficulty, mapId = mapId })
   end
   Z.ApplyCombatLog(inInstance)
 end

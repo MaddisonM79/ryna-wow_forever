@@ -326,6 +326,20 @@ function build.census(f)
     L["Who was in your groups."])
   P.nearby = checkbox(f, L["Record players I see nearby"],
     L["Players whose nameplates, target or mouseover you see: their level, class and guild, and where."])
+  P.nameplateHint = text(f, "GameFontDisableSmall", 10)
+  P.nameplateHint:SetWidth(WIDTH - 100)
+  P.nameplateHint:SetText(L["The game shows nameplates for enemies only unless friendly nameplates are on "
+    .. "(Shift+V). Ryna only sees nameplates the game draws."])
+  -- Sets the game's nameplateShowFriends only when clicked; the addon never changes it by itself.
+  P.friendly = button(f, L["Turn friendly nameplates on"], 240, 22)
+  if P.friendly then
+    P.friendly:SetScript("OnClick", function()
+      ns.Run("friendly nameplates", function()
+        ns.Sightings.ShowFriendlyNameplates()
+        P.Refresh()
+      end)
+    end)
+  end
   P.sweep = checkbox(f, L["Run a realm census while I'm in a city"],
     L["Every 30 minutes while you're parked in a capital, Ryna asks the server who is online (/who), "
     .. "a few queries at a time, to count the realm's players by level, class and zone. "
@@ -362,6 +376,16 @@ function layout.census(s, settings)
   for _, cb in ipairs({ P.chat, P.group, P.nearby, P.sweep }) do
     cb.setActive(settings.census)
     cb.place(s, 30)
+    if cb == P.nearby then
+      P.nameplateHint:SetAlpha(settings.census and 1 or 0.5)
+      s.text(P.nameplateHint, 60, 4)
+      if P.friendly then
+        local on = ns.Sightings.FriendlyNameplatesOn()
+        P.friendly:SetText(on and L["Friendly nameplates are on"] or L["Turn friendly nameplates on"])
+        if settings.census and not on then P.friendly:Enable() else P.friendly:Disable() end
+        s.add(P.friendly, 22, 60, 12)
+      end
+    end
   end
   if P.sweepButton then
     local C = ns.Census

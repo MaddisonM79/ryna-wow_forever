@@ -42,9 +42,22 @@ local CLASS_ENGLISH = {
   WARRIOR = "Warrior", PALADIN = "Paladin", HUNTER = "Hunter", ROGUE = "Rogue", PRIEST = "Priest",
   SHAMAN = "Shaman", MAGE = "Mage", WARLOCK = "Warlock", DRUID = "Druid",
 }
-C.CITIES = {
-  ["Orgrimmar"] = true, ["Thunder Bluff"] = true, ["Undercity"] = true,
-  ["Stormwind City"] = true, ["Ironforge"] = true, ["Darnassus"] = true,
+-- The capitals by uiMapID (C_Map.GetBestMapForUnit), which reads the same in every client
+-- language. These are the Classic world's ids; the English names are for debug lines only.
+-- Forever numbers its maps its own way (its combat log calls Zephras Isle map 2521, which is neither
+-- Classic's nor retail's id), so both known sets are candidates until a zone event from a capital
+-- gives the real ids (Zone.lua records `mapId` on every zone change for exactly that).
+C.CITY_MAPS = {
+  [1453] = "Stormwind City", [1454] = "Orgrimmar", [1455] = "Ironforge",
+  [1456] = "Thunder Bluff", [1457] = "Darnassus", [1458] = "Undercity",
+  [84] = "Stormwind City", [85] = "Orgrimmar", [87] = "Ironforge",
+  [88] = "Thunder Bluff", [89] = "Darnassus", [90] = "Undercity",
+}
+-- The neutral towns are subzones of a larger zone's map, so they have no map id of their own and
+-- are matched by the subzone's name. That name is in the client's language, so this only works on
+-- English clients; elsewhere they simply don't trigger a sweep. Used only when the map id isn't a
+-- capital's.
+C.NEUTRAL_TOWNS = {
   ["Booty Bay"] = true, ["Gadgetzan"] = true, ["Everlook"] = true, ["Ratchet"] = true,
 }
 
@@ -495,13 +508,37 @@ ns.On("PLAYER_REGEN_DISABLED", function() C.Stop(N("combat started")) end)
 -- started in the last 30 minutes.
 local city = { zone = nil, since = nil }
 
+local ZONE_MAP_TYPE = 3 -- Enum.UIMapType.Zone: anything above it (dungeon, micro, orphan) is climbed
+
+-- The city the player is in (its English name, for debug lines), or nil. The map id decides: a
+-- capital's id, or a sub-map of one (climbed through parentMapID, at most three levels). A map
+-- that isn't a capital's falls back to the neutral towns by subzone name. No map id at all (the
+-- client has no C_Map, or it can't place the player) means no city, so no automatic sweep.
+function C.CurrentCity()
+  local best = ns.Fn("C_Map", "GetBestMapForUnit")
+  local mapId = best and ns.Try(best, "player")
+  if type(mapId) ~= "number" or ns.IsSecret(mapId) then return nil end
+  local info = ns.Fn("C_Map", "GetMapInfo")
+  local id = mapId
+  for _ = 1, 3 do
+    if C.CITY_MAPS[id] then return C.CITY_MAPS[id] end
+    local mi = info and ns.Try(info, id)
+    if type(mi) ~= "table" or type(mi.parentMapID) ~= "number" or type(mi.mapType) ~= "number"
+      or mi.mapType <= ZONE_MAP_TYPE or mi.parentMapID == 0 then
+      break
+    end
+    id = mi.parentMapID
+  end
+  if C.CITY_MAPS[id] then return C.CITY_MAPS[id] end
+  local sub = NonEmpty(ns.Try(ns.Fn("GetSubZoneText")))
+  if sub and C.NEUTRAL_TOWNS[sub] then return sub end
+  return nil
+end
+
 function C.AutoCheck()
   local rec = ns.rec
   if not rec or not ns.db then return end
-  -- Booty Bay, Gadgetzan, Everlook and Ratchet are subzones, so the live subzone counts too.
-  local zone = NonEmpty(ns.Try(ns.Fn("GetRealZoneText"))) or rec.zone
-  local sub = NonEmpty(ns.Try(ns.Fn("GetSubZoneText")))
-  if not (zone and C.CITIES[zone]) then zone = sub and C.CITIES[sub] and sub or nil end
+  local zone = C.CurrentCity()
   if not zone or inInstance() then
     city.zone, city.since = nil, nil
     return

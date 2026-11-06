@@ -7,7 +7,7 @@
 local addonName, ns = ...
 
 ns.NAME = addonName
-ns.VERSION = "0.1.0"
+ns.VERSION = "0.2.0"
 ns.SCHEMA = 1
 ns.FLAVOR = "wowf"
 ns.COMBAT_LOG_MODES = { instances = true, always = true, never = true }

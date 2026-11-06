@@ -64,10 +64,12 @@ function S.IsSelf(fullName)
   return mine ~= nil and ns.CanonicalName(NonEmpty(fullName)) == mine
 end
 
--- info: { guid, fullName, level, class, race, guild, zone, batch }
+-- info: { guid, fullName, level, class, race, guild, zone, batch, faction }
 -- Nothing is written while the census setting is off, whatever the source (chat, group, roster).
 -- quiet: no debug line per sighting (group and roster print one summary). Returns the event.
--- batch is the /who sweep's id, carried only by `who` sightings.
+-- batch is the /who sweep's id, carried only by `who` sightings. faction ("Horde" or "Alliance")
+-- is carried only by nearby sightings, the one source that sees the other faction; chat, group,
+-- roster and /who sightings are the observer's own faction by construction and leave it out.
 function S.Seen(source, info, quiet)
   if not info then return nil end
   if not ns.Setting("census") then
@@ -81,6 +83,7 @@ function S.Seen(source, info, quiet)
   local e = ns.Journal.Add("seen", {
     guid = guid, fullName = ns.CanonicalName(NonEmpty(info.fullName)), level = info.level, class = info.class,
     race = info.race, guild = info.guild, zone = info.zone, source = source, batch = info.batch,
+    faction = info.faction,
   }, quiet)
   if e then
     if guid then remember(guid, info.level) end
@@ -251,9 +254,9 @@ ns.On("GROUP_ROSTER_UPDATE", function() ns.Debounce("group", 1, S.ScanGroup) end
 
 -- Nearby: players whose nameplate appears, whom you target, or whom you mouse over. Each gives
 -- the client's level, class, race and guild, and the observer's zone; the shared 10-minute
--- window applies (a sighting with a level is still recorded after one without). Players of the
--- other faction are skipped: the census counts a sighting under the observer's faction, which
--- only holds for your own faction's players (chat, groups, guilds).
+-- window applies (a sighting with a level is still recorded after one without). Players of both
+-- factions are recorded, each with the `faction` the client gives (UnitFactionGroup's English
+-- token, "Horde" or "Alliance"), which the API prefers over the observer's faction.
 --
 -- Debug: a city can bring dozens of nameplates in seconds, so nearby sightings print at most one
 -- line per 5 seconds: the sighting itself when it is the only one, else a count (with the names
@@ -303,6 +306,13 @@ local function levelOf(unit)
   return level
 end
 
+-- The unit's faction as the English token: "Horde" or "Alliance", else nil (a neutral or unknown).
+local FACTIONS = { Horde = true, Alliance = true }
+local function factionOf(unit)
+  local faction = NonEmpty(ns.Try(UnitFactionGroup, unit))
+  return faction and FACTIONS[faction] and faction or nil
+end
+
 local function seeUnit(unit, source)
   local rec = ns.rec
   if not rec then return end
@@ -320,8 +330,7 @@ local function seeUnit(unit, source)
   if ns.IsSecret(guid) or type(guid) ~= "string" or not guid:find("^Player%-") or guid == ns.playerGuid then
     return
   end
-  local faction = NonEmpty(ns.Try(UnitFactionGroup, unit))
-  if faction and rec.faction and faction ~= rec.faction then return end
+  local faction = factionOf(unit)
 
   local now = GetTime()
   local earlier = recent(guid, now)
@@ -339,12 +348,13 @@ local function seeUnit(unit, source)
     class = NonEmpty(select(2, ns.Try(UnitClass, unit))),
     race = NonEmpty(select(2, ns.Try(UnitRace, unit))),
     guild = NonEmpty(ns.Try(ns.Fn("GetGuildInfo"), unit)),
-    zone = rec.zone,
+    zone = rec.zone, faction = faction,
   }
   if S.Seen(source, info, true) and ns.Debugging() then
     local name = tostring(info.fullName or guid)
-    noteNearby(string.format("census: seen %s level %s %s nearby (%s)%s", name, tostring(level or "?"),
-      tostring(info.class or "?"), source, earlier and ", now with a level" or ""), name)
+    noteNearby(string.format("census: seen %s level %s %s %s nearby (%s)%s", name, tostring(level or "?"),
+      tostring(faction or "?"), tostring(info.class or "?"), source, earlier and ", now with a level" or ""),
+      name)
   end
 end
 
@@ -357,4 +367,45 @@ function S.RegisterNearby()
   end)
   ns.On("PLAYER_TARGET_CHANGED", function() seeUnit("target", "target") end)
   ns.On("UPDATE_MOUSEOVER_UNIT", function() seeUnit("mouseover", "mouseover") end)
+end
+
+-- Friendly nameplates: the game draws nameplates for enemies only unless the player turns friendly
+-- ones on (Shift+V, the client variable nameplateShowFriends), and the nearby source sees only the
+-- nameplates the game draws. The panel offers a button; the addon never changes it by itself.
+local FRIENDLY_CVAR = "nameplateShowFriends"
+
+local function cvarGet()
+  return ns.Fn("C_CVar", "GetCVar") or ns.Fn("GetCVar")
+end
+
+-- True when friendly nameplates are on, false when off, nil when the client can't say.
+function S.FriendlyNameplatesOn()
+  local get = cvarGet()
+  if not get then return nil end
+  local v = ns.Try(get, FRIENDLY_CVAR)
+  if v == nil or ns.IsSecret(v) then return nil end
+  return tostring(v) == "1"
+end
+
+-- Sets nameplateShowFriends to 1, from the panel's button only. Returns true when it is on after.
+function S.ShowFriendlyNameplates()
+  local set = ns.Fn("C_CVar", "SetCVar") or ns.Fn("SetCVar")
+  if not set then
+    ns.Debug("friendly nameplates: this client has no SetCVar")
+    return false
+  end
+  local was = S.FriendlyNameplatesOn()
+  if was then
+    ns.Debug("friendly nameplates: already on")
+    return true
+  end
+  local ok, err = pcall(set, FRIENDLY_CVAR, "1")
+  local now = S.FriendlyNameplatesOn()
+  if ok and now ~= false then
+    ns.Debug("friendly nameplates: turned on (%s 1, was %s)", FRIENDLY_CVAR, tostring(was))
+    return true
+  end
+  ns.Debug("friendly nameplates: the client refused to set %s: %s", FRIENDLY_CVAR,
+    ok and "still off afterwards" or tostring(err))
+  return false
 end
