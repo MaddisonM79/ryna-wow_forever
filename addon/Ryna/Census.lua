@@ -44,14 +44,12 @@ local CLASS_ENGLISH = {
 }
 -- The capitals by uiMapID (C_Map.GetBestMapForUnit), which reads the same in every client
 -- language. These are the Classic world's ids; the English names are for debug lines only.
--- Forever numbers its maps its own way (its combat log calls Zephras Isle map 2521, which is neither
--- Classic's nor retail's id), so both known sets are candidates until a zone event from a capital
--- gives the real ids (Zone.lua records `mapId` on every zone change for exactly that).
+-- The capitals' uiMapIDs in Forever's own UiMap table (build 1.60.1.70790, read from wago.tools on
+-- 2026-11-06): the Classic ids. New zones have new ids (Zephras Isle is 2521). Zone.lua records
+-- `mapId` on every zone change, so the data shows any id this table lacks.
 C.CITY_MAPS = {
   [1453] = "Stormwind City", [1454] = "Orgrimmar", [1455] = "Ironforge",
   [1456] = "Thunder Bluff", [1457] = "Darnassus", [1458] = "Undercity",
-  [84] = "Stormwind City", [85] = "Orgrimmar", [87] = "Ironforge",
-  [88] = "Thunder Bluff", [89] = "Darnassus", [90] = "Undercity",
 }
 -- The neutral towns are subzones of a larger zone's map, so they have no map id of their own and
 -- are matched by the subzone's name. That name is in the client's language, so this only works on
