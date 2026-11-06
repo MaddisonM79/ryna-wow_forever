@@ -9,7 +9,9 @@ device grant, so it never sees your password.
   the snapshot builder, install and account discovery, the sign-in and token refresh, the pusher,
   the per-file state, and the addon installer.
 - `cli/` (crate `ryna-wow`, binary `ryna-wow`): a command line over it, **for developers and
-  debugging**. People install the desktop app (stage 3, `app/`), which runs the same core.
+  debugging**. People install the desktop app (`app/`), which runs the same core.
+- `app/` (crate `ryna-wow-app` in `app/src-tauri`, product "Ryna"): the desktop app, Tauri 2
+  with a Vue 3 window over the core. See "The app" below.
 - `fixtures/`: scrubbed, invented SavedVariables files the tests read. Real captures never land
   here unscrubbed: `scripts/capture.sh` makes fixtures from them, and keeps the original in
   `captures/` (gitignored).
@@ -53,6 +55,44 @@ std::thread::spawn(move || watch(&config, &opts, &cancel, &mut |event: WatchEven
 After every pass, successful or not, the agent rewrites `Interface/AddOns/Ryna/AgentStatus.lua`
 in each install that has the addon (`RynaAgentStatus`: version, signed in and as whom, last push,
 that install's accounts, and the last error as a message), so the addon can show it in game.
+
+## The app
+
+`app/` is the product: the only thing a person installs (a `.dmg` on macOS, an NSIS installer on
+Windows). It signs in with the device grant (it shows the code and opens the sign-in page), finds
+the game, installs the bundled addon (`addon/Ryna`, carried as a resource), and runs the core's
+watch loop on its own thread, showing each account's last save and push and a log of what the
+loop did. It shows status, not charts: those live on the portal.
+
+**Nothing runs when it's closed.** Closing the window hides it to the tray (menu bar on macOS),
+where it keeps syncing; Quit, in the tray menu, stops the loop and exits. There is no service,
+launchd job or scheduled task. "Open Ryna when I log in" is a setting, off by default; on macOS
+it's a login item (through System Events, which asks once for permission), not a launch agent.
+
+Run it in development (Node 24 and pnpm; the Rust toolchain above):
+
+```bash
+cd agent/app
+pnpm install
+pnpm tauri dev        # the window, with the frontend hot-reloading
+pnpm test             # the frontend's tests; `cargo test -p ryna-wow-app` for the Rust side
+pnpm tauri build      # the installer for this OS, in target/release/bundle/
+```
+
+A bare `cargo build` or `cargo test` at the root covers the core and the CLI only
+(`default-members`): the app needs `pnpm build` first (it embeds `app/dist`) and is built by name.
+
+The device client id: like the CLI, the app reads `RYNA_WOW_CLIENT_ID` from its environment. A
+release build can also bake one in: set `RYNA_WOW_CLIENT_ID` when compiling and the app uses it
+unless the environment overrides it. No id is issued yet, so today's builds show "can't sign in
+yet" until one is set. API and sign-in provider come from the same variables as the CLI's
+(`RYNA_WOW_API`, `RYNA_WOW_ISSUER`). The app keeps its own setting (the chosen game folder) in
+`settings.json` in its config folder (`io.ryna.wow`); the sign-in and the push state are the
+core's, shared with the CLI.
+
+The icons in `app/src-tauri/icons` are placeholders: `pnpm icon` draws `app/app-icon.png` with a
+small Node script and runs `tauri icon` on it. Replace the PNG and run `pnpm tauri icon app-icon.png`
+for real artwork.
 
 ## Use (developers)
 

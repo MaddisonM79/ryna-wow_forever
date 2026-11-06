@@ -1,8 +1,12 @@
-# The agent's cargo workspace: the library every front end shares, and the command-line binary.
-# Stage 3 adds the desktop app (agent/app) as a third member over the same core.
+# The agent's cargo workspace: the library every front end shares, the command-line binary, and
+# the desktop app (agent/app/src-tauri) over the same core.
 [workspace]
 resolver = "2"
-members = ["agent/core", "agent/cli"]
+members = ["agent/core", "agent/cli", "agent/app/src-tauri"]
+# A bare `cargo build|clippy|test` covers the core and the CLI only: the app needs its web
+# frontend built first (agent/app: `pnpm build`) and the webview's system libraries, so it's
+# built by name (`-p ryna-wow-app`) or through `pnpm tauri`.
+default-members = ["agent/core", "agent/cli"]
 
 [workspace.package]
 version = "0.1.0"

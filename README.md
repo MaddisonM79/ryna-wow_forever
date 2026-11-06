@@ -17,7 +17,7 @@ Pre-alpha. The design is settled and nothing here is usable yet. The order of wo
 1. Addon and agent core: identity, gold, bags, bank, professions, reputations, quests, roster, pushed
    from a command-line agent on macOS.
 2. Combat log: tailing, segmenting fights, aggregating, pushing summaries.
-3. The desktop app (macOS and Windows), with the command line still supported.
+3. The desktop app (macOS and Windows), the only thing a player installs; it syncs while it is open.
 4. Guild: roster-driven membership, guild bank, guild runs.
 
 ## What is in here
@@ -27,7 +27,7 @@ Pre-alpha. The design is settled and nothing here is usable yet. The order of wo
 - `agent/`: the agent, a Rust workspace (`Cargo.toml` at the root). `agent/core` is the library:
   the SavedVariables reader, install discovery, the sign-in (OAuth device grant: the agent never
   sees your password), the pusher, and the watch loop. `agent/cli` is a command line over it for
-  developers; the desktop app that people install comes next and runs the same core while it is
+  developers; the desktop app (`agent/app`) that people install runs the same core while it is
   open. `agent/fixtures` holds scrubbed test files. The combat-log parser comes in stage 2.
 - `scripts/capture.sh`: turns a real `Ryna.lua` into a scrubbed fixture (the original stays in the
   gitignored `captures/`).
