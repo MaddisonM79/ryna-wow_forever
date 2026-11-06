@@ -28,11 +28,14 @@
 //! webview unchanged.
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
 use crate::auth::{Auth, KeyringStore};
+use crate::cancel::Waited;
+use crate::combat::tail::{self, Tailer};
+use crate::combat::CombatOptions;
 use crate::config::Config;
 use crate::discovery::{self, Discovery};
 use crate::fix::Fix;
@@ -97,6 +100,46 @@ pub enum WatchEvent {
         ok: bool,
         next_in_secs: u64,
     },
+    /// A combat log seen for the first time since the loop started.
+    #[serde(rename_all = "camelCase")]
+    CombatLogFound {
+        file: String,
+        path: String,
+    },
+    /// A fight ended and is queued to upload. `kind` is boss, trash or world; `players` the
+    /// players in it.
+    #[serde(rename_all = "camelCase")]
+    FightQueued {
+        key: String,
+        kind: String,
+        zone: Option<String>,
+        name: Option<String>,
+        duration_ms: i64,
+        players: usize,
+    },
+    /// A fight is up (its summary and, when on, its digest and raw lines). `id` is the API's
+    /// encounter; `merged` says it joined another logger's copy of the same fight.
+    #[serde(rename_all = "camelCase")]
+    FightUploaded {
+        key: String,
+        kind: String,
+        zone: Option<String>,
+        name: Option<String>,
+        duration_ms: i64,
+        players: usize,
+        id: serde_json::Value,
+        merged: bool,
+    },
+    /// A fight's upload failed (it stays queued, unless it was refused too often). `fight` names
+    /// it ("Zephras Isle, 3 min, 2 players", or "Fights" for the queue as a whole).
+    #[serde(rename_all = "camelCase")]
+    FightFailed {
+        key: String,
+        fight: String,
+        message: String,
+        fix: Fix,
+        advice: String,
+    },
 }
 
 pub use crate::cancel::CancelToken;
@@ -152,21 +195,28 @@ impl From<CancelToken> for WatchControl {
     }
 }
 
+/// How often the combat logs are read between snapshot passes.
+pub const TAIL_INTERVAL: Duration = Duration::from_secs(2);
+
 #[derive(Debug, Clone)]
 pub struct WatchOptions {
     /// `--install`: the game folder or a product folder, else the OS defaults.
     pub install: Option<PathBuf>,
     pub state_dir: PathBuf,
     pub interval: Duration,
+    /// What to do with the combat logs (read them, send digests, send raw lines).
+    pub combat: CombatOptions,
 }
 
 impl WatchOptions {
-    /// With the OS state folder (`state::state_dir`); None when there isn't one.
+    /// With the OS state folder (`state::state_dir`) and the default combat options; None when
+    /// there's no state folder.
     pub fn new(install: Option<PathBuf>, interval: Duration) -> Option<Self> {
         Some(WatchOptions {
             install,
             state_dir: state::state_dir()?,
             interval,
+            combat: CombatOptions::default(),
         })
     }
 }
@@ -219,12 +269,16 @@ pub fn watch_with(
     let auth = Auth::new(config, http, store, clock);
     let api = Api::new(&config.api, http, &auth, clock);
     let mut known: Vec<PathBuf> = Vec::new();
+    let mut tailer = Tailer::new(&opts.state_dir, opts.combat);
+    // One tailer per state folder: a second loop (the CLI beside the app) leaves the logs alone.
+    let mut tail_lock = None;
+    let mut found = Discovery::default();
     while !cancel.is_cancelled() {
         on_event(WatchEvent::SignedIn {
             signed_in: auth.signed_in().unwrap_or(false),
         });
         // Rediscovered every pass, so a new install or account folder is picked up.
-        let found = discover(opts.install.as_deref());
+        found = discover(opts.install.as_deref());
         for i in &found.installs {
             if !known.contains(&i.path) {
                 known.push(i.path.clone());
@@ -258,9 +312,42 @@ pub fn watch_with(
             ok,
             next_in_secs: opts.interval.as_secs(),
         });
-        if cancel.wait_or_wake(opts.interval) {
+        // The wait until the next pass, read in short ticks for the combat logs.
+        let deadline = Instant::now() + opts.interval;
+        let mut stop = false;
+        loop {
+            if opts.combat.enabled {
+                if tail_lock.is_none() {
+                    tail_lock =
+                        state::try_lock_named(&opts.state_dir.join("combat"), tail::LOCK_FILE)
+                            .ok()
+                            .flatten();
+                }
+                if tail_lock.is_some() {
+                    let signed_in = auth.signed_in().unwrap_or(false);
+                    tailer.poll(&found, signed_in.then_some(&api), clock.now(), on_event);
+                }
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                break;
+            }
+            match cancel.wait_for(left.min(TAIL_INTERVAL)) {
+                Waited::Cancelled => {
+                    stop = true;
+                    break;
+                }
+                Waited::Woken => break,
+                Waited::TimedOut => {}
+            }
+        }
+        if stop {
             break;
         }
+    }
+    // On quit: what's open is ended and queued, so the next run uploads it.
+    if tail_lock.is_some() {
+        tailer.flush(&found, clock.now(), on_event);
     }
     Ok(())
 }
@@ -293,6 +380,7 @@ mod tests {
             state_dir: dir.path().join("state"),
             // Far longer than the test may take: only a requested pass ends the first wait.
             interval: Duration::from_secs(600),
+            combat: CombatOptions::default(),
         };
         let control = WatchControl::new();
         let mut passes = 0;
@@ -343,6 +431,7 @@ mod tests {
             install: Some(root.clone()),
             state_dir: dir.path().join("state"),
             interval: Duration::from_millis(10),
+            combat: CombatOptions::default(),
         };
         let cancel = CancelToken::new();
         let mut events = Vec::new();
@@ -419,6 +508,7 @@ mod tests {
             install: Some(root),
             state_dir: dir.path().join("state"),
             interval: Duration::from_millis(1),
+            combat: CombatOptions::default(),
         };
         let cancel = CancelToken::new();
         let mut events = Vec::new();

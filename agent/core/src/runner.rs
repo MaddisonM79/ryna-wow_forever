@@ -156,7 +156,8 @@ pub fn run_once_observed(
     let heartbeat = if signed_out {
         Err("skipped: not signed in".to_string())
     } else {
-        let hb = heartbeat_body(discovery, &st, first_error.clone());
+        let mut hb = heartbeat_body(discovery, &st, first_error.clone());
+        hb.combat_log = crate::combat::tail::heartbeat(state_dir, clock.now());
         api.heartbeat(&hb).map(|_| ()).map_err(|e| {
             note(classify(&e), &e.to_string(), &mut failure, &mut first_error);
             e.to_string()
@@ -183,6 +184,7 @@ pub fn run_once_observed(
         auth.signed_in().unwrap_or(false),
         auth.identity(),
         failure.zip(first_error.as_deref()),
+        &agent_status::Combat::from_state(state_dir, clock.now()),
         clock.now(),
     );
     for (path, e) in unwritable {

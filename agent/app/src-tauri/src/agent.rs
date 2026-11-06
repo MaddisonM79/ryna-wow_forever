@@ -14,7 +14,9 @@ use ryna_wow_core::cancel::CancelToken;
 use ryna_wow_core::config::Config;
 use ryna_wow_core::discovery::{self, Install};
 use ryna_wow_core::fix::Fix;
-use ryna_wow_core::status::{self as core_status, AccountStatus, InstallStatus, LastRunStatus};
+use ryna_wow_core::status::{
+    self as core_status, AccountStatus, CombatStatus, InstallStatus, LastRunStatus,
+};
 use ryna_wow_core::watch::{self, WatchControl, WatchEvent, WatchOptions};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -180,6 +182,11 @@ impl Live {
             WatchEvent::Error {
                 path: None, advice, ..
             } => self.last_error = Some(advice.clone()),
+            WatchEvent::FightFailed {
+                fix: Fix::SignIn | Fix::Network,
+                advice,
+                ..
+            } => self.last_error = Some(advice.clone()),
             WatchEvent::PassFinished { ok: true, .. } => self.last_error = None,
             _ => {}
         }
@@ -240,13 +247,14 @@ pub fn start_watch(app: &AppHandle) {
         live.control = Some(control.clone());
         let previous = live.worker.take();
         let install = live.settings.install_override.clone();
+        let combat = live.settings.combat();
         let config = agent.config.clone();
         let handle = app.clone();
         live.worker = Some(std::thread::spawn(move || {
             if let Some(previous) = previous {
                 let _ = previous.join();
             }
-            run_loop(&handle, &config, install, &control);
+            run_loop(&handle, &config, install, combat, &control);
         }));
     }
     let _ = app.emit(WATCH_STATE, true);
@@ -300,9 +308,16 @@ fn emit_event(app: &AppHandle, event: &WatchEvent) {
     let _ = app.emit(AGENT_EVENT, event);
 }
 
-fn run_loop(app: &AppHandle, config: &Config, install: Option<PathBuf>, control: &WatchControl) {
+fn run_loop(
+    app: &AppHandle,
+    config: &Config,
+    install: Option<PathBuf>,
+    combat: ryna_wow_core::combat::CombatOptions,
+    control: &WatchControl,
+) {
     let result = match WatchOptions::new(install, INTERVAL) {
-        Some(opts) => {
+        Some(mut opts) => {
+            opts.combat = combat;
             watch::watch_with_control(config, &opts, control, &mut |event: WatchEvent| {
                 emit_event(app, &event)
             })
@@ -442,6 +457,25 @@ pub fn set_install_override(app: &AppHandle, path: Option<PathBuf>) -> Result<()
     Ok(())
 }
 
+/// The two combat settings: send each fight's digest, keep its raw lines on ryna.io. Kept, and
+/// the loop restarted so it reads them.
+pub fn set_combat_settings(app: &AppHandle, digests: bool, raw: bool) -> Result<(), String> {
+    let agent = app.state::<Agent>();
+    let settings = {
+        let mut live = agent.live();
+        live.settings.send_digests = digests;
+        live.settings.keep_raw = raw;
+        live.settings.clone()
+    };
+    if let Some(dir) = &agent.settings_dir {
+        settings
+            .save(dir)
+            .map_err(|e| format!("Couldn't save the setting: {e}"))?;
+    }
+    restart_if_watching(app);
+    Ok(())
+}
+
 /// An account's row: the core's `AccountStatus` and where the loop has it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -475,6 +509,12 @@ pub struct Status {
     pub install_override: Option<String>,
     pub login: Option<LoginCode>,
     pub state_dir: Option<String>,
+    /// The combat log: the newest log, fights uploaded tonight, the last fight.
+    pub combat: CombatStatus,
+    /// "Send fight digests".
+    pub send_digests: bool,
+    /// "Keep raw logs on ryna.io".
+    pub keep_raw: bool,
 }
 
 fn display(p: &Path) -> String {
@@ -484,7 +524,7 @@ fn display(p: &Path) -> String {
 /// Everything the window shows: the core's `status` (keychain, disk, state) and the live state.
 pub fn status(app: &AppHandle) -> Status {
     let agent = app.state::<Agent>();
-    let (watching, install_override, phases, live_error, login) = {
+    let (watching, install_override, phases, live_error, login, settings) = {
         let live = agent.live();
         (
             live.watching(),
@@ -492,6 +532,7 @@ pub fn status(app: &AppHandle) -> Status {
             live.phases.clone(),
             live.last_error.clone(),
             live.login.clone(),
+            live.settings.clone(),
         )
     };
     let core_status::Status {
@@ -507,6 +548,7 @@ pub fn status(app: &AppHandle) -> Status {
         accounts,
         last_error: _,
         last_run,
+        combat,
         state_dir,
     } = core_status::status(
         &agent.config,
@@ -539,6 +581,9 @@ pub fn status(app: &AppHandle) -> Status {
         install_override: install_override.as_deref().map(display),
         login,
         state_dir,
+        combat,
+        send_digests: settings.send_digests,
+        keep_raw: settings.keep_raw,
     }
 }
 
@@ -678,6 +723,24 @@ mod tests {
             "the API is unreachable or failing after 3 tries: x".into(),
             Fix::Network,
         ));
+        assert_eq!(live.last_error.as_deref(), Some("Couldn't reach the API"));
+        // A fight that couldn't go up for the same reason says so too; a refusal doesn't.
+        live.last_error = None;
+        live.observe(&WatchEvent::FightFailed {
+            key: "k".into(),
+            fight: "Fights".into(),
+            message: "refused".into(),
+            fix: Fix::Other,
+            advice: "refused".into(),
+        });
+        assert_eq!(live.last_error, None);
+        live.observe(&WatchEvent::FightFailed {
+            key: "k".into(),
+            fight: "Fights".into(),
+            message: "offline".into(),
+            fix: Fix::Network,
+            advice: "Couldn't reach the API".into(),
+        });
         assert_eq!(live.last_error.as_deref(), Some("Couldn't reach the API"));
     }
 

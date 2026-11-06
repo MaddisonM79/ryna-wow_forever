@@ -1,5 +1,6 @@
-//! Posting to the API: the snapshot to `/v1/wow/agent/ingest` and the heartbeat to
-//! `/v1/wow/agent/heartbeat`, as the person's own token (auth.rs).
+//! Posting to the API: the snapshot to `/v1/wow/agent/ingest`, the heartbeat to
+//! `/v1/wow/agent/heartbeat`, and fights to `/v1/wow/agent/encounters` (then each one's digest and
+//! raw lines with a PUT), as the person's own token (auth.rs).
 //!
 //! Every answer is the envelope `{ ok: true, data } | { ok: false, error: { code, message, detail } }`.
 //! A refusal is a 200 with `ok:false`; `SCHEMA_UNSUPPORTED` means the agent and addon need
@@ -15,16 +16,23 @@ use thiserror::Error;
 use crate::auth::{Auth, AuthError};
 use crate::config::INGEST_SCOPE;
 use crate::fix::Fix;
-use crate::http::{Request, Response, Transport};
+use crate::http::{Method, Request, Response, Transport};
 use crate::snapshot::Snapshot;
 use crate::util::Clock;
 
 pub const INGEST_PATH: &str = "/v1/wow/agent/ingest";
 pub const HEARTBEAT_PATH: &str = "/v1/wow/agent/heartbeat";
+pub const ENCOUNTERS_PATH: &str = "/v1/wow/agent/encounters";
 pub const TRIES: u32 = 3;
 /// The API refuses bodies over these.
 pub const INGEST_LIMIT: usize = 16 * 1024 * 1024;
 pub const HEARTBEAT_LIMIT: usize = 64 * 1024;
+/// One `POST /encounters` (and at most `ENCOUNTERS_PER_CALL` fights in it).
+pub const ENCOUNTERS_LIMIT: usize = 8 * 1024 * 1024;
+pub const ENCOUNTERS_PER_CALL: usize = 50;
+/// A digest's gzipped bytes, and a fight's gzipped raw lines.
+pub const DIGEST_LIMIT: usize = 32 * 1024 * 1024;
+pub const RAW_LIMIT: usize = 64 * 1024 * 1024;
 
 #[derive(Debug, Error)]
 pub enum PushError {
@@ -115,11 +123,27 @@ pub struct HeartbeatAccount {
     pub characters: Option<usize>,
 }
 
-/// Stage 2 fills these; until then the log is never read.
+/// The combat log's state on this computer (docs/wow.md section 9.3).
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CombatLog {
+    /// A log was written to recently (logging is on and the game is playing).
     pub active: bool,
+    /// Whether its lines carry the advanced block; null before any line said.
     pub advanced: Option<bool>,
+    /// The newest log's file name.
+    pub file: Option<String>,
+    /// The newest event's time (unix seconds).
+    pub last_event_at: Option<i64>,
+    /// Fights read but not yet uploaded (queued, or still open).
+    pub pending: usize,
+}
+
+/// Which of a fight's two bodies a PUT carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FightBody {
+    Digest,
+    Raw,
 }
 
 pub struct Api<'a> {
@@ -148,6 +172,49 @@ impl<'a> Api<'a> {
         self.auth
     }
 
+    /// Post fights (`{ encounters: [...] }`, at most `ENCOUNTERS_PER_CALL`); returns the
+    /// envelope's `data` (`{ encounters: [ { key, id, merged, sources } ] }`).
+    pub fn encounters(&self, body: &Value) -> Result<Value, PushError> {
+        let body = serde_json::to_vec(body).expect("a value always serialises");
+        self.send_body(
+            Method::Post,
+            ENCOUNTERS_PATH,
+            "application/json",
+            None,
+            body,
+            ENCOUNTERS_LIMIT,
+            Duration::from_secs(120),
+        )
+    }
+
+    /// `PUT /encounters/:id/digest?key=` (or `/raw`) with already-gzipped bytes.
+    pub fn fight_body(
+        &self,
+        which: FightBody,
+        id: &str,
+        key: &str,
+        gzipped: Vec<u8>,
+    ) -> Result<Value, PushError> {
+        let (part, limit) = match which {
+            FightBody::Digest => ("digest", DIGEST_LIMIT),
+            FightBody::Raw => ("raw", RAW_LIMIT),
+        };
+        let path = format!(
+            "{ENCOUNTERS_PATH}/{}/{part}?key={}",
+            path_segment(id),
+            path_segment(key)
+        );
+        self.send_body(
+            Method::Put,
+            &path,
+            "application/octet-stream",
+            Some("gzip"),
+            gzipped,
+            limit,
+            Duration::from_secs(300),
+        )
+    }
+
     /// Post one snapshot; returns the envelope's `data` (snapshotId, account, counts).
     pub fn ingest(&self, snapshot: &Snapshot) -> Result<Value, PushError> {
         let body = serde_json::to_vec(snapshot).expect("a snapshot always serialises");
@@ -171,25 +238,31 @@ impl<'a> Api<'a> {
         }
     }
 
-    fn send(
-        &self,
-        url: &str,
-        body: &[u8],
-        timeout: Duration,
-        token: String,
-    ) -> Result<Response, String> {
-        self.http.post(&Request {
-            url: url.to_string(),
-            content_type: "application/json",
-            body: body.to_vec(),
-            bearer: Some(token),
-            timeout,
-        })
-    }
-
     fn post(
         &self,
         path: &str,
+        body: Vec<u8>,
+        limit: usize,
+        timeout: Duration,
+    ) -> Result<Value, PushError> {
+        self.send_body(
+            Method::Post,
+            path,
+            "application/json",
+            None,
+            body,
+            limit,
+            timeout,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn send_body(
+        &self,
+        method: Method,
+        path: &str,
+        content_type: &'static str,
+        content_encoding: Option<&'static str>,
         body: Vec<u8>,
         limit: usize,
         timeout: Duration,
@@ -210,7 +283,16 @@ impl<'a> Api<'a> {
                 self.clock.sleep(Duration::from_secs(1 << attempt));
             }
             attempt += 1;
-            let res = match self.send(&url, &body, timeout, self.token()?) {
+            let req = Request {
+                method,
+                url: url.clone(),
+                content_type,
+                content_encoding,
+                body: body.clone(),
+                bearer: Some(self.token()?),
+                timeout,
+            };
+            let res = match self.http.post(&req) {
                 Ok(r) => r,
                 Err(e) => {
                     last = e;
@@ -232,6 +314,20 @@ impl<'a> Api<'a> {
         }
         Err(PushError::Unavailable(last))
     }
+}
+
+/// A path or query part, percent-encoded (ids and keys are plain, but never trust that).
+fn path_segment(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 /// The envelope's `data`, or why there isn't one.
@@ -334,7 +430,7 @@ mod tests {
             v,
             json!({ "agent": "0.1.0", "host": "test-host", "os": "macos",
                     "installs": [ { "path": "/Applications/World of Warcraft/_forever_", "flavor": "wowf", "addon": "0.1.0" } ],
-                    "accounts": [], "combatLog": { "active": false, "advanced": null }, "lastError": null })
+                    "accounts": [], "combatLog": { "active": false, "advanced": null, "file": null, "lastEventAt": null, "pending": 0 }, "lastError": null })
         );
     }
 

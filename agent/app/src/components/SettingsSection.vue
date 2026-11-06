@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { api, errorText } from "../api";
-import { chooseGameFolder, refresh, setGameFolder, status } from "../store";
+import { chooseGameFolder, refresh, setCombatSettings, setGameFolder, status } from "../store";
 
 const autostartError = ref<string | null>(null);
 
@@ -42,11 +42,26 @@ async function toggleAutostart(e: Event): Promise<void> {
         </button>
       </span>
     </div>
-    <label class="setting disabled">
-      <input type="checkbox" disabled />
+    <label class="setting">
+      <input
+        type="checkbox"
+        :checked="status.sendDigests"
+        @change="setCombatSettings(($event.target as HTMLInputElement).checked, status.keepRaw)"
+      />
       <span>
-        Upload raw combat logs
-        <span class="muted">Coming with combat logs.</span>
+        Send fight digests
+        <span class="muted">Each fight's hits, heals and deaths go up beside its totals, so ryna.io can merge it with a groupmate's log.</span>
+      </span>
+    </label>
+    <label class="setting">
+      <input
+        type="checkbox"
+        :checked="status.keepRaw"
+        @change="setCombatSettings(status.sendDigests, ($event.target as HTMLInputElement).checked)"
+      />
+      <span>
+        Keep raw logs on ryna.io
+        <span class="muted">Each fight's own combat log lines are stored too, for 90 days.</span>
       </span>
     </label>
   </section>

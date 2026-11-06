@@ -44,6 +44,41 @@ group("the activity log's words", () => {
     expect(describe({ event: "heartbeat", ok: true, error: null })).toBeNull();
   });
 
+  it("names fights", () => {
+    expect(
+      describe({
+        event: "fightUploaded",
+        key: "k",
+        kind: "world",
+        zone: "Zephras Isle",
+        name: null,
+        durationMs: 186_674,
+        players: 2,
+        id: 7,
+        merged: false,
+      }),
+    ).toBe("Fight: Zephras Isle, 3 min, 2 players: uploaded");
+    expect(
+      describe({
+        event: "fightFailed",
+        key: "k",
+        fight: "Onyxia, 45 s, 1 player",
+        message: "the API is unreachable",
+        fix: "network",
+        advice: "Couldn't reach the API",
+      }),
+    ).toBe("Fight: Onyxia, 45 s, 1 player: Couldn't reach the API");
+    expect(
+      describe({ event: "fightFailed", key: "", fight: "Fights", message: "x", fix: "signIn", advice: "Sign in again" }),
+    ).toBe("Fights: Sign in again");
+    expect(describe({ event: "combatLogFound", file: "WoWCombatLog-1.txt", path: "/x" })).toBe(
+      "Reading the combat log WoWCombatLog-1.txt",
+    );
+    expect(
+      describe({ event: "fightQueued", key: "k", kind: "trash", zone: "Z", name: null, durationMs: 1, players: 1 }),
+    ).toBeNull();
+  });
+
   it("says how long ago", () => {
     expect(ago(null)).toBe("never");
     expect(ago(1000, 1010)).toBe("just now");

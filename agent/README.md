@@ -85,6 +85,32 @@ After every pass, successful or not, the agent rewrites `Interface/AddOns/Ryna/A
 in each install that has the addon (`RynaAgentStatus`: version, signed in and as whom, last push,
 that install's accounts, and the last error as a message), so the addon can show it in game.
 
+## Combat logs
+
+While the loop runs it also follows the game's combat logs (`<install>/Logs/WoWCombatLog-*.txt`,
+written while `/combatlog` is on), every 2 s between snapshot passes (`combat` in the core):
+
+- **Reading**: every log written in the last 7 days, newest first, from where the last read
+  stopped (`<state>/combat/state.json`, per log: the resume offset, the last fight queued, and the
+  zone and owners known there). The first run reads what's on disk whole; a partial last line
+  waits. Forever's layouts (checked against real logs): a 19-field advanced block (detected per
+  line, not from the header's flag), damage `amount, baseAmount, overkill, school, resisted,
+  blocked, absorbed, critical, glancing, crushing` plus a trailing `ST` on spells, heals `amount,
+  baseAmount, overheal, absorbed, critical`.
+- **Encounters**: a boss is `ENCOUNTER_START`…`END`; otherwise a pull opens on the first damage, heal
+  or miss involving the logger's group (the affiliation flags: the logger, party, raid and their
+  pets) and ends 8 s after the last one; in an instance it's `trash`, in the world pulls in one zone
+  under 5 minutes apart are one `world` encounter. A stranger nearby only counts when they touch the
+  group or a mob it engaged. Fights under 2 s or without the group doing or taking damage are
+  dropped. A swing and its `SWING_DAMAGE_LANDED` twin count once; a lone one of either kind counts.
+- **Uploads**: each fight's summary, gzipped digest (and, with raw logs on, its own lines) wait in
+  `<state>/combat/queue/` until the API has them: `POST /v1/wow/agent/encounters` in batches, then
+  `PUT …/:id/digest` and `…/raw`. Quitting ends what's open and queues it.
+
+`ryna-wow combat <file>` prints the fights a log holds (`--full` for each summary, `--digest <dir>`
+for each digest's NDJSON). `ryna-wow watch --no-digests --raw-logs --no-combat` set the same
+choices the app's Settings do. Combat fixtures come from `scripts/capture.sh --combat <log>`.
+
 ## The app
 
 `app/` is the product: the only thing a person installs (a `.dmg` on macOS, an NSIS installer on

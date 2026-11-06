@@ -61,6 +61,42 @@ pub struct LastRunStatus {
     pub advice: Option<String>,
 }
 
+/// The combat log's side: what the tailer last saw and what went up.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CombatStatus {
+    /// A log was written in the last few minutes.
+    pub active: bool,
+    pub advanced: Option<bool>,
+    /// The newest log's file name.
+    pub file: Option<String>,
+    /// Unix seconds.
+    pub last_event_at: Option<i64>,
+    /// Fights queued to upload, plus encounters still open.
+    pub pending: usize,
+    /// Fights uploaded in the last 12 hours.
+    pub fights_tonight: usize,
+    pub last_fight: Option<crate::combat::tail::UploadedFight>,
+    pub last_error: Option<String>,
+}
+
+impl CombatStatus {
+    pub fn read(state_dir: &Path, now: i64) -> CombatStatus {
+        let st = crate::combat::tail::CombatState::load(state_dir);
+        let hb = crate::combat::tail::heartbeat(state_dir, now);
+        CombatStatus {
+            active: hb.active,
+            advanced: hb.advanced,
+            file: hb.file,
+            last_event_at: hb.last_event_at,
+            pending: hb.pending,
+            fights_tonight: st.fights_tonight(now),
+            last_fight: st.last_fight().cloned(),
+            last_error: st.last_error.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
@@ -82,6 +118,7 @@ pub struct Status {
     /// The last run's error, if it failed.
     pub last_error: Option<String>,
     pub last_run: Option<LastRunStatus>,
+    pub combat: CombatStatus,
     pub state_dir: Option<String>,
 }
 
@@ -196,6 +233,9 @@ pub fn status_with(
             .filter(|r| !r.ok)
             .and_then(|r| r.error.clone()),
         last_run,
+        combat: state_dir
+            .map(|d| CombatStatus::read(d, crate::util::now_secs()))
+            .unwrap_or_default(),
         state_dir: state_dir.map(display),
     }
 }

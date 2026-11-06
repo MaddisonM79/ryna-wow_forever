@@ -69,12 +69,39 @@ enum Command {
         /// Seconds between runs.
         #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(5..))]
         interval: u64,
+        /// Leave the combat logs alone.
+        #[arg(long)]
+        no_combat: bool,
+        /// Upload fights' summaries only, not their digests.
+        #[arg(long)]
+        no_digests: bool,
+        /// Also upload each fight's raw log lines (kept 90 days on ryna.io).
+        #[arg(long)]
+        raw_logs: bool,
     },
     /// Copy the addon into each Forever install's Interface/AddOns.
     InstallAddon {
         /// The addon folder (or a folder holding Ryna/ or addon/Ryna/). Default: beside this binary.
         #[arg(long, value_name = "DIR")]
         from: Option<PathBuf>,
+    },
+    /// Print the fights found in one combat log as JSON, without sending anything (a debug view of
+    /// what the agent would upload).
+    Combat {
+        file: PathBuf,
+        /// Write each fight's digest NDJSON (uncompressed) into this folder, as `<key>.ndjson`.
+        #[arg(long, value_name = "DIR")]
+        digest: Option<PathBuf>,
+        /// The flavor for each fight's key.
+        #[arg(long, default_value = "wowf")]
+        flavor: String,
+        /// The logger's account key for each fight's key (what the agent finds from the addon's
+        /// files).
+        #[arg(long, default_value = "")]
+        account_key: String,
+        /// Print every fight's whole summary, not just what it is.
+        #[arg(long)]
+        full: bool,
     },
     /// Print the snapshot JSON for one SavedVariables file, without sending anything.
     Parse {
@@ -109,9 +136,28 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
             let code = run(&config, cli.install.as_deref(), &RunOptions { force })?;
             Ok(ExitCode::from(code))
         }
-        Command::Watch { interval } => watch(&config, cli.install.as_deref(), interval),
+        Command::Watch {
+            interval,
+            no_combat,
+            no_digests,
+            raw_logs,
+        } => {
+            let combat = ryna_wow_core::combat::CombatOptions {
+                enabled: !no_combat,
+                digests: !no_digests,
+                raw: raw_logs,
+            };
+            watch(&config, cli.install.as_deref(), interval, combat)
+        }
         Command::InstallAddon { from } => install_addon(cli.install.as_deref(), from.as_deref()),
         Command::Parse { file, raw, account } => parse(&file, raw, account.as_deref()),
+        Command::Combat {
+            file,
+            digest,
+            flavor,
+            account_key,
+            full,
+        } => combat(&file, digest.as_deref(), &flavor, &account_key, full),
     }
 }
 
@@ -251,6 +297,42 @@ fn status(config: &Config, install: Option<&Path>, from: Option<&Path>) -> Resul
         };
         println!("\nLast run {}: {outcome}", iso_utc(r.at));
     }
+    let c = &s.combat;
+    match &c.file {
+        Some(file) => {
+            println!(
+                "\nCombat log: {file}, {}{}, last event {}",
+                if c.active { "active" } else { "quiet" },
+                match c.advanced {
+                    Some(true) => ", advanced logging on",
+                    Some(false) => ", advanced logging off",
+                    None => "",
+                },
+                when(c.last_event_at)
+            );
+            println!(
+                "  fights uploaded in the last 12 h: {}  waiting: {}",
+                c.fights_tonight, c.pending
+            );
+            if let Some(f) = &c.last_fight {
+                println!(
+                    "  last fight: {} ({}), uploaded {}",
+                    ryna_wow_core::combat::describe(
+                        f.zone.as_deref(),
+                        f.name.as_deref(),
+                        f.duration_ms,
+                        f.players
+                    ),
+                    f.kind,
+                    iso_utc(f.at)
+                );
+            }
+            if let Some(e) = &c.last_error {
+                println!("  last error: {e}");
+            }
+        }
+        None => println!("\nCombat log: none read yet (type /combatlog in the game to start one)."),
+    }
     if let Some(d) = &s.state_dir {
         println!("State: {d}");
     }
@@ -315,12 +397,18 @@ fn run(config: &Config, install: Option<&Path>, opts: &RunOptions) -> Result<u8>
 }
 
 /// The core's watch loop (the one the desktop app drives), printing its events.
-fn watch(config: &Config, install: Option<&Path>, interval: u64) -> Result<ExitCode> {
-    let opts = WatchOptions::new(
+fn watch(
+    config: &Config,
+    install: Option<&Path>,
+    interval: u64,
+    combat: ryna_wow_core::combat::CombatOptions,
+) -> Result<ExitCode> {
+    let mut opts = WatchOptions::new(
         install.map(Path::to_path_buf),
         Duration::from_secs(interval),
     )
     .context("no place to keep the agent's state: set RYNA_WOW_STATE_DIR")?;
+    opts.combat = combat;
     println!("Watching every {interval} s (Ctrl-C to stop).");
     let cancel = CancelToken::new();
     ryna_wow_core::watch::watch(config, &opts, &cancel, &mut |event| {
@@ -370,6 +458,47 @@ fn watch(config: &Config, install: Option<&Path>, interval: u64) -> Result<ExitC
                 error.as_deref().unwrap_or("failed")
             ),
             WatchEvent::PassFinished { .. } => {}
+            WatchEvent::CombatLogFound { file, .. } => println!("{stamp} combat log {file}"),
+            WatchEvent::FightQueued {
+                kind,
+                zone,
+                name,
+                duration_ms,
+                players,
+                ..
+            } => println!(
+                "{stamp} fight ({kind}) {}: queued",
+                ryna_wow_core::combat::describe(
+                    zone.as_deref(),
+                    name.as_deref(),
+                    *duration_ms,
+                    *players
+                )
+            ),
+            WatchEvent::FightUploaded {
+                zone,
+                name,
+                duration_ms,
+                players,
+                id,
+                merged,
+                ..
+            } => println!(
+                "{stamp} fight {}: uploaded (encounter {id}{})",
+                ryna_wow_core::combat::describe(
+                    zone.as_deref(),
+                    name.as_deref(),
+                    *duration_ms,
+                    *players
+                ),
+                if *merged { ", merged" } else { "" }
+            ),
+            WatchEvent::FightFailed {
+                fight,
+                message,
+                fix,
+                ..
+            } => println!("{stamp} fight {fight}: {}", with_hint(message, *fix)),
         }
     })?;
     Ok(ExitCode::SUCCESS)
@@ -428,5 +557,62 @@ fn parse(file: &Path, raw: bool, account: Option<&str>) -> Result<ExitCode> {
         eprintln!("client: {}", snapshot::client_summary(client));
     }
     println!("{}", serde_json::to_string_pretty(&built.snapshot)?);
+    Ok(ExitCode::SUCCESS)
+}
+
+/// `ryna-wow combat <file>`: the fights in a log, as the agent would cut and summarise them.
+fn combat(
+    file: &Path,
+    digest: Option<&Path>,
+    flavor: &str,
+    account_key: &str,
+    full: bool,
+) -> Result<ExitCode> {
+    use ryna_wow_core::combat::{self, segment, CombatOptions};
+    let bytes = std::fs::read(file).with_context(|| format!("reading {}", file.display()))?;
+    let text = String::from_utf8_lossy(&bytes);
+    let (fights, seg) = segment::segment_text(&text, false);
+    let name = file
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    let opts = CombatOptions::default();
+    if let Some(dir) = digest {
+        std::fs::create_dir_all(dir).with_context(|| dir.display().to_string())?;
+    }
+    let mut out = Vec::new();
+    for f in &fights {
+        let s = combat::summarize(f, flavor, account_key, &name, &opts);
+        if let Some(dir) = digest {
+            let path = dir.join(format!("{}.ndjson", s.key));
+            std::fs::write(&path, f.digest().to_ndjson())
+                .with_context(|| path.display().to_string())?;
+            eprintln!("digest: {}", path.display());
+        }
+        let mut v = if full {
+            serde_json::to_value(&s)?
+        } else {
+            serde_json::json!({
+                "key": s.key, "kind": s.kind, "name": s.name, "zone": s.zone,
+                "instance": s.instance, "startedAt": s.started_at, "endedAt": s.ended_at,
+                "durationMs": s.duration_ms, "success": s.success, "realmId": s.realm_id,
+                "players": s.participants.len(), "actors": s.actors.len(),
+                "abilities": s.abilities.len(), "deaths": s.deaths.len(),
+                "events": s.source.events, "advanced": s.source.advanced,
+                "digestEvents": f.digest.len(),
+            })
+        };
+        v["pulls"] = serde_json::json!(f.pulls);
+        out.push(v);
+    }
+    let report = serde_json::json!({
+        "file": name,
+        "fights": out,
+        "dropped": seg.dropped,
+        "subevents": seg.subevents,
+        "unreadable": seg.unreadable,
+        "logger": seg.ctx.logger.is_some(),
+        "realmId": seg.ctx.realm_id(),
+    });
+    println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(ExitCode::SUCCESS)
 }

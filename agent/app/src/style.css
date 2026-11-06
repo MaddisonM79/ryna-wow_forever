@@ -340,3 +340,8 @@ footer {
 code {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
+
+/* The Accounts section's line about fights. */
+.fights {
+  margin-top: 0.5rem;
+}

@@ -73,7 +73,8 @@ function onEvent(e: AgentEvent): void {
     lastSignedIn = e.signedIn;
   }
   const text = describe(e);
-  if (text) log(text, e.event === "error" || (e.event === "heartbeat" && !e.ok) ? "error" : "info");
+  const failed = e.event === "error" || e.event === "fightFailed" || (e.event === "heartbeat" && !e.ok);
+  if (text) log(text, failed ? "error" : "info");
   switch (e.event) {
     case "pushing":
       setPhase(e.path, "pushing");
@@ -89,6 +90,9 @@ function onEvent(e: AgentEvent): void {
     case "installFound":
     case "accountFileChanged":
     case "passFinished":
+    case "combatLogFound":
+    case "fightUploaded":
+    case "fightFailed":
       refreshSoon();
       break;
   }
@@ -161,6 +165,19 @@ export async function setGameFolder(path: string | null): Promise<void> {
   try {
     await api.setInstallOverride(path);
     log(path ? `Looking for the game in ${path}` : "Looking for the game in the usual places.");
+  } catch (e) {
+    log(errorText(e), "error");
+  }
+  await refresh();
+}
+
+/** "Send fight digests" and "Keep raw logs on ryna.io". */
+export async function setCombatSettings(digests: boolean, raw: boolean): Promise<void> {
+  try {
+    await api.setCombatSettings(digests, raw);
+    log(
+      `Fights: ${digests ? "sending digests" : "summaries only, no digests"}${raw ? ", keeping raw logs on ryna.io" : ""}.`,
+    );
   } catch (e) {
     log(errorText(e), "error");
   }

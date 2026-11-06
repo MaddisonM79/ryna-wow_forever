@@ -362,8 +362,10 @@ impl<'a> Auth<'a> {
         timeout: Duration,
     ) -> Result<crate::http::Response, String> {
         self.http.post(&Request {
+            method: crate::http::Method::Post,
             url: format!("{}{path}", self.config.issuer),
             content_type: "application/x-www-form-urlencoded",
+            content_encoding: None,
             body: form_encode(fields),
             bearer: None,
             timeout,

@@ -52,8 +52,23 @@ export function describe(e: AgentEvent): string | null {
     case "heartbeat":
       return e.ok ? null : `Couldn't report in to the API${e.error ? `: ${e.error}` : ""}.`;
     case "passFinished":
+    case "fightQueued":
       return null;
+    case "combatLogFound":
+      return `Reading the combat log ${e.file}`;
+    case "fightUploaded":
+      return `Fight: ${fightWords(e.zone, e.name, e.durationMs, e.players)}: uploaded${e.merged ? " (merged with another player's log)" : ""}`;
+    case "fightFailed":
+      return e.fight === "Fights" ? `Fights: ${e.advice}` : `Fight: ${e.fight}: ${e.advice}`;
   }
+}
+
+/** "Zephras Isle, 3 min, 2 players" (the core's `combat::describe`). */
+export function fightWords(zone: string | null, name: string | null, durationMs: number, players: number): string {
+  const place = name ?? zone ?? "Somewhere";
+  const secs = Math.max(0, Math.floor(durationMs / 1000));
+  const length = secs < 90 ? `${secs} s` : `${Math.floor((secs + 30) / 60)} min`;
+  return `${place}, ${length}, ${plural(players, "player")}`;
 }
 
 /** "3 minutes ago", "just now", "never". */

@@ -53,6 +53,34 @@ export interface LastRun {
   advice: string | null;
 }
 
+/** A fight that went up (the core's `UploadedFight`). */
+export interface UploadedFight {
+  /** Unix seconds. */
+  at: number;
+  key: string;
+  kind: "boss" | "trash" | "world" | string;
+  name: string | null;
+  zone: string | null;
+  durationMs: number;
+  players: number;
+}
+
+/** The combat log's side (the core's `CombatStatus`). */
+export interface CombatStatus {
+  active: boolean;
+  advanced: boolean | null;
+  /** The newest log's file name. */
+  file: string | null;
+  /** Unix seconds. */
+  lastEventAt: number | null;
+  /** Fights waiting to upload, plus encounters still open. */
+  pending: number;
+  /** Fights uploaded in the last 12 hours. */
+  fightsTonight: number;
+  lastFight: UploadedFight | null;
+  lastError: string | null;
+}
+
 export interface Status {
   agentVersion: string;
   appVersion: string;
@@ -72,6 +100,11 @@ export interface Status {
   installOverride: string | null;
   login: LoginCode | null;
   stateDir: string | null;
+  combat: CombatStatus;
+  /** "Send fight digests". */
+  sendDigests: boolean;
+  /** "Keep raw logs on ryna.io". */
+  keepRaw: boolean;
   autostart: boolean;
 }
 
@@ -99,7 +132,37 @@ export type AgentEvent =
       advice: string;
     }
   | { event: "heartbeat"; ok: boolean; error: string | null }
-  | { event: "passFinished"; ok: boolean; nextInSecs: number };
+  | { event: "passFinished"; ok: boolean; nextInSecs: number }
+  | { event: "combatLogFound"; file: string; path: string }
+  | {
+      event: "fightQueued";
+      key: string;
+      kind: string;
+      zone: string | null;
+      name: string | null;
+      durationMs: number;
+      players: number;
+    }
+  | {
+      event: "fightUploaded";
+      key: string;
+      kind: string;
+      zone: string | null;
+      name: string | null;
+      durationMs: number;
+      players: number;
+      id: unknown;
+      merged: boolean;
+    }
+  | {
+      event: "fightFailed";
+      key: string;
+      /** "Zephras Isle, 3 min, 2 players", or "Fights" for the queue as a whole. */
+      fight: string;
+      message: string;
+      fix: Fix;
+      advice: string;
+    };
 
 export interface LoginFinished {
   ok: boolean;
@@ -134,6 +197,8 @@ export const api = {
   stopWatch: () => invoke<void>("stop_watch"),
   syncNow: () => invoke<void>("sync_now"),
   setInstallOverride: (path: string | null) => invoke<void>("set_install_override", { path }),
+  setCombatSettings: (digests: boolean, raw: boolean) =>
+    invoke<void>("set_combat_settings", { digests, raw }),
   /** Into the install at `path`, or every install it belongs in when null. */
   installAddon: (path: string | null = null) => invoke<InstallResult>("install_addon", { path }),
   setAutostart: (enabled: boolean) => invoke<boolean>("set_autostart", { enabled }),
