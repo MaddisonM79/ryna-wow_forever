@@ -99,6 +99,7 @@ fn main() {
             commands::stop_watch,
             commands::sync_now,
             commands::set_install_override,
+            commands::set_combat_settings,
             commands::install_addon,
             commands::set_autostart,
             commands::open_portal,

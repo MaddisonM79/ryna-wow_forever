@@ -20,6 +20,8 @@ rust-version = "1.89"
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
 directories = "6"
+# gzip for the combat digests and raw segments (already in the tree through Tauri).
+flate2 = "1"
 # keyring 3: the OS keychain on each target (no D-Bus on Linux, so CI needs no system libraries).
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 # Blocking, rustls with the webpki roots: no OpenSSL to link on any target.

@@ -13,11 +13,13 @@
 //! - [`status`]: what a front end shows (installs, accounts, the sign-in, the last run).
 //! - [`fix`]: what fixes a failure, in words with no command in them.
 //! - [`cancel`]: the cancel (and wake) handle the watch loop and the sign-in share.
+//! - [`combat`]: the combat log: parsing, encounters, digests, the tailer and its upload queue.
 
 pub mod addon_install;
 pub mod agent_status;
 pub mod auth;
 pub mod cancel;
+pub mod combat;
 pub mod config;
 pub mod discovery;
 pub mod fix;

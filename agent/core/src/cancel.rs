@@ -17,6 +17,14 @@ struct Shared {
     cv: Condvar,
 }
 
+/// What ended a [`CancelToken::wait_for`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Waited {
+    Cancelled,
+    Woken,
+    TimedOut,
+}
+
 /// Stops a watch loop or a sign-in from another thread. Cloning shares it.
 #[derive(Debug, Clone, Default)]
 pub struct CancelToken(Arc<Shared>);
@@ -63,6 +71,24 @@ impl CancelToken {
         self.0.cv.notify_all();
     }
 
+    /// Wait up to `d`, or until cancelled or woken, and say which ended it. Consumes the wake.
+    pub fn wait_for(&self, d: Duration) -> Waited {
+        let guard = self.flags();
+        let (mut guard, _) = self
+            .0
+            .cv
+            .wait_timeout_while(guard, d, |f| !f.cancelled && !f.wake)
+            .unwrap_or_else(|e| e.into_inner());
+        let woken = std::mem::take(&mut guard.wake);
+        if guard.cancelled {
+            Waited::Cancelled
+        } else if woken {
+            Waited::Woken
+        } else {
+            Waited::TimedOut
+        }
+    }
+
     /// Wait up to `d`, or until cancelled or woken; true if cancelled. Consumes the wake.
     pub fn wait_or_wake(&self, d: Duration) -> bool {
         let guard = self.flags();
@@ -94,6 +120,7 @@ mod tests {
         c.cancel();
         let (cancelled, took) = t.join().unwrap();
         assert!(cancelled && took < Duration::from_secs(5));
+        assert_eq!(c.wait_for(Duration::from_secs(30)), Waited::Cancelled);
         assert!(!CancelToken::new().wait(Duration::from_millis(1)));
         assert!(c.same(&c.clone()) && !c.same(&CancelToken::new()));
     }
@@ -118,6 +145,10 @@ mod tests {
         assert!(!c.wait_or_wake(Duration::from_secs(30)));
         assert!(start.elapsed() < Duration::from_secs(5));
         assert!(!c.wait_or_wake(Duration::from_millis(1)));
+        // wait_for says what ended it.
+        c.wake();
+        assert_eq!(c.wait_for(Duration::from_secs(30)), Waited::Woken);
+        assert_eq!(c.wait_for(Duration::from_millis(1)), Waited::TimedOut);
         // A plain wait ignores a wake.
         c.wake();
         let start = Instant::now();

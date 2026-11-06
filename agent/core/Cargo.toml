@@ -10,6 +10,7 @@ rust-version.workspace = true
 [dependencies]
 anyhow.workspace = true
 directories.workspace = true
+flate2.workspace = true
 keyring.workspace = true
 reqwest.workspace = true
 serde.workspace = true

@@ -7,12 +7,43 @@ use serde::{Deserialize, Serialize};
 
 pub const FILE: &str = "settings.json";
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     /// The game folder (or one product folder) the person chose, in place of the OS defaults.
     #[serde(default)]
     pub install_override: Option<PathBuf>,
+    /// "Send fight digests": each fight's events go up beside its summary (on by default).
+    #[serde(default = "yes")]
+    pub send_digests: bool,
+    /// "Keep raw logs on ryna.io": each fight's own log lines go up too (off by default).
+    #[serde(default)]
+    pub keep_raw: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            install_override: None,
+            send_digests: true,
+            keep_raw: false,
+        }
+    }
+}
+
+impl Settings {
+    /// What the watch loop does with the combat logs.
+    pub fn combat(&self) -> ryna_wow_core::combat::CombatOptions {
+        ryna_wow_core::combat::CombatOptions {
+            enabled: true,
+            digests: self.send_digests,
+            raw: self.keep_raw,
+        }
+    }
 }
 
 impl Settings {
@@ -48,10 +79,16 @@ mod tests {
         assert_eq!(Settings::load(dir.path()), Settings::default());
         let s = Settings {
             install_override: Some(PathBuf::from("/Games/World of Warcraft")),
+            send_digests: false,
+            keep_raw: true,
         };
         s.save(dir.path()).unwrap();
         assert_eq!(Settings::load(dir.path()), s);
         std::fs::write(dir.path().join(FILE), "{ not json").unwrap();
         assert_eq!(Settings::load(dir.path()), Settings::default());
+        // Settings written before the combat ones: digests on, raw off.
+        std::fs::write(dir.path().join(FILE), r#"{ "installOverride": null }"#).unwrap();
+        let old = Settings::load(dir.path());
+        assert!(old.send_digests && !old.keep_raw);
     }
 }

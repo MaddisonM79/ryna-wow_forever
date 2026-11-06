@@ -99,6 +99,12 @@ pub async fn set_install_override(app: AppHandle, path: Option<String>) -> Resul
     .await
 }
 
+/// "Send fight digests" and "Keep raw logs on ryna.io".
+#[tauri::command]
+pub async fn set_combat_settings(app: AppHandle, digests: bool, raw: bool) -> Result<(), String> {
+    blocking(move || agent::set_combat_settings(&app, digests, raw)).await
+}
+
 /// Installs the bundled addon into the install at `path` (an install row's path), or into every
 /// install it belongs in when `path` is null.
 #[tauri::command]

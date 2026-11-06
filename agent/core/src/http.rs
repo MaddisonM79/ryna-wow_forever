@@ -1,12 +1,22 @@
-//! The one HTTP call the agent makes (a POST), behind a trait so sign-in and pushing can be tested
-//! without a network.
+//! The HTTP calls the agent makes (a POST, or a PUT for a fight's digest and raw lines), behind a
+//! trait so sign-in and pushing can be tested without a network.
 
 use std::time::Duration;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Method {
+    #[default]
+    Post,
+    Put,
+}
+
 #[derive(Debug, Clone)]
 pub struct Request {
+    pub method: Method,
     pub url: String,
     pub content_type: &'static str,
+    /// `Content-Encoding` (`gzip` for a body that is already gzipped).
+    pub content_encoding: Option<&'static str>,
     pub body: Vec<u8>,
     pub bearer: Option<String>,
     pub timeout: Duration,
@@ -35,7 +45,8 @@ impl Response {
     }
 }
 
-/// POST and return whatever came back. `Err` means no answer (connection, TLS, timeout).
+/// Send (a POST, or a PUT when `req.method` says) and return whatever came back. `Err` means no
+/// answer (connection, TLS, timeout).
 pub trait Transport {
     fn post(&self, req: &Request) -> Result<Response, String>;
 }
@@ -57,15 +68,20 @@ impl HttpTransport {
 
 impl Transport for HttpTransport {
     fn post(&self, req: &Request) -> Result<Response, String> {
-        let mut r = self
-            .client
-            .post(&req.url)
+        let builder = match req.method {
+            Method::Post => self.client.post(&req.url),
+            Method::Put => self.client.put(&req.url),
+        };
+        let mut r = builder
             .header("Content-Type", req.content_type)
             .header("Accept", "application/json")
             .timeout(req.timeout)
             .body(req.body.clone());
         if let Some(token) = &req.bearer {
             r = r.bearer_auth(token);
+        }
+        if let Some(encoding) = req.content_encoding {
+            r = r.header("Content-Encoding", encoding);
         }
         let res = r.send().map_err(|e| describe(&e))?;
         let status = res.status().as_u16();

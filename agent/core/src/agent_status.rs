@@ -6,7 +6,8 @@
 //! RynaAgentStatus = { agent = "0.1.0", signedIn = true, as = "aerin", lastPush = 1762464060,
 //!   accounts = { { key = "…", label = "UNT1", savedAt = 1762464000, pushedAt = 1762464060, characters = 2 } },
 //!   latest = { addon = nil, agent = nil },
-//!   messages = { { at = 1762464060, level = "error", text = "Couldn't reach the API" } } }
+//!   messages = { { at = 1762464060, level = "error", text = "Couldn't reach the API" } },
+//!   combat = { active = true, advanced = true, lastEventAt = 1762464050, fightsTonight = 3 } }
 //! ```
 //!
 //! `accounts` lists that install's accounts only. `messages` carries the last run's error, if any;
@@ -47,6 +48,28 @@ pub struct Message {
     pub text: String,
 }
 
+/// The combat log, as the addon's panel shows it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Combat {
+    pub active: bool,
+    pub advanced: Option<bool>,
+    pub last_event_at: Option<i64>,
+    pub fights_tonight: usize,
+}
+
+impl Combat {
+    /// From the tailer's state on disk.
+    pub fn from_state(state_dir: &Path, now: i64) -> Combat {
+        let st = crate::combat::tail::CombatState::load(state_dir);
+        Combat {
+            active: st.active(now),
+            advanced: st.advanced,
+            last_event_at: st.last_event_at,
+            fights_tonight: st.fights_tonight(now),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentStatus {
     pub agent: String,
@@ -56,6 +79,7 @@ pub struct AgentStatus {
     pub last_push: Option<i64>,
     pub accounts: Vec<StatusAccount>,
     pub messages: Vec<Message>,
+    pub combat: Combat,
 }
 
 /// A Lua string literal: quotes, backslashes, and every control or non-ASCII byte escaped as
@@ -127,7 +151,18 @@ impl AgentStatus {
                 lua_string(&m.text)
             );
         }
-        s.push_str("\t},\n}\n");
+        s.push_str("\t},\n");
+        let c = &self.combat;
+        let _ = writeln!(
+            s,
+            "\tcombat = {{ active = {}, advanced = {}, lastEventAt = {}, fightsTonight = {} }},",
+            c.active,
+            c.advanced
+                .map_or_else(|| "nil".to_string(), |a| a.to_string()),
+            opt_int(c.last_event_at),
+            c.fights_tonight
+        );
+        s.push_str("}\n");
         s
     }
 }
@@ -138,6 +173,7 @@ pub fn message_for(failure: Fix, error: &str) -> String {
 }
 
 /// The status for one install: its accounts as `state` knows them.
+#[allow(clippy::too_many_arguments)]
 pub fn for_install(
     install: &Path,
     discovery: &Discovery,
@@ -145,6 +181,7 @@ pub fn for_install(
     signed_in: bool,
     signed_in_as: Option<String>,
     failure: Option<(Fix, &str)>,
+    combat: &Combat,
     now: i64,
 ) -> AgentStatus {
     let accounts: Vec<StatusAccount> = discovery
@@ -176,6 +213,7 @@ pub fn for_install(
             })
             .into_iter()
             .collect(),
+        combat: combat.clone(),
     }
 }
 
@@ -191,12 +229,14 @@ fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
 
 /// Rewrite `AgentStatus.lua` in every install that has the addon. Returns the files written and
 /// the ones that couldn't be (never fails the run).
+#[allow(clippy::too_many_arguments)]
 pub fn write_all(
     discovery: &Discovery,
     state: &State,
     signed_in: bool,
     signed_in_as: Option<String>,
     failure: Option<(Fix, &str)>,
+    combat: &Combat,
     now: i64,
 ) -> (Vec<PathBuf>, Vec<(PathBuf, std::io::Error)>) {
     let mut written = Vec::new();
@@ -214,6 +254,7 @@ pub fn write_all(
             signed_in,
             signed_in_as.clone(),
             failure,
+            combat,
             now,
         );
         match write_atomic(&path, &status.to_lua()) {
@@ -259,6 +300,12 @@ mod tests {
                 level: Level::Error,
                 text: "Couldn't reach the API".into(),
             }],
+            combat: Combat {
+                active: true,
+                advanced: Some(true),
+                last_event_at: Some(1_762_464_050),
+                fights_tonight: 3,
+            },
         }
     }
 
@@ -275,6 +322,7 @@ mod tests {
                 ],
                 "latest": [],
                 "messages": [ { "at": 9, "level": "error", "text": "Couldn't reach the API" } ],
+                "combat": { "active": true, "advanced": true, "lastEventAt": 1_762_464_050, "fightsTonight": 3 },
             } })
         );
         let mut empty = status();
@@ -283,7 +331,12 @@ mod tests {
         empty.last_push = None;
         empty.accounts.clear();
         empty.messages.clear();
+        empty.combat = Combat::default();
         let v = lua::parse(&empty.to_lua()).unwrap();
+        assert_eq!(
+            v["RynaAgentStatus"]["combat"],
+            json!({ "active": false, "fightsTonight": 0 })
+        );
         assert_eq!(v["RynaAgentStatus"]["signedIn"], json!(false));
         assert!(v["RynaAgentStatus"].get("as").is_none());
         assert_eq!(v["RynaAgentStatus"]["accounts"], json!([]));
@@ -344,6 +397,7 @@ mod tests {
             true,
             Some("aerin".into()),
             Some((Fix::Network, "unreachable")),
+            &Combat::default(),
             30,
         );
         assert!(failed.is_empty());
@@ -361,7 +415,7 @@ mod tests {
         assert_eq!(s["messages"][0]["text"], json!("Couldn't reach the API"));
         assert!(!root.join("_retail_/Interface").exists());
         // Rewritten whole the next time, with no temp file left.
-        write_all(&d, &st, false, None, None, 40);
+        write_all(&d, &st, false, None, None, &Combat::default(), 40);
         let v = lua::parse(&std::fs::read_to_string(&written[0]).unwrap()).unwrap();
         assert_eq!(v["RynaAgentStatus"]["messages"], json!([]));
         assert_eq!(

@@ -100,12 +100,17 @@ pub struct RunLock {
 
 /// Take the run lock, or None when another run holds it.
 pub fn try_lock(dir: &Path) -> std::io::Result<Option<RunLock>> {
+    try_lock_named(dir, LOCK_FILE)
+}
+
+/// Take the lock in `dir/name` (the combat tailer's is `combat/tail.lock`), or None when it's held.
+pub fn try_lock_named(dir: &Path, name: &str) -> std::io::Result<Option<RunLock>> {
     std::fs::create_dir_all(dir)?;
     let file = OpenOptions::new()
         .create(true)
         .truncate(false)
         .write(true)
-        .open(dir.join(LOCK_FILE))?;
+        .open(dir.join(name))?;
     match file.try_lock() {
         Ok(()) => Ok(Some(RunLock { _file: file })),
         Err(TryLockError::WouldBlock) => Ok(None),
