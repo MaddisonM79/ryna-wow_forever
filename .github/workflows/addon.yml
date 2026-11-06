@@ -1,0 +1,25 @@
+name: addon
+
+on:
+  push:
+    branches: [main]
+    paths: ["addon/**", ".github/workflows/addon.yml"]
+  pull_request:
+    paths: ["addon/**", ".github/workflows/addon.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  luacheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install luacheck
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q lua5.1 luarocks
+          sudo luarocks install luacheck
+      - run: luacheck addon/ --no-color
+      - name: Every addon file parses as Lua 5.1
+        run: for f in addon/Ryna/*.lua; do luac5.1 -p "$f" || exit 1; done
