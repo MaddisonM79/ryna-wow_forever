@@ -1,0 +1,869 @@
+//! Signing the agent in as its person: the OAuth device grant (RFC 8628) at the IdP, the same
+//! flow as palworld-agent's signin.ts, for this agent's client and resource.
+//!
+//! `login` asks for a code, shows the link and code, and polls while the person allows it. The
+//! refresh token goes into the OS keychain (service `ryna-wow`), never a file. A run trades it
+//! for a short-lived access token (aud the resource, sub the person). Refresh tokens rotate and are
+//! good for one use, and the IdP revokes the whole chain if a spent one comes back after its
+//! replay window (30 s), so:
+//! - the rotated token is stored at once, with retries;
+//! - the access token is kept in the keychain too, so runs minutes apart refresh once per token
+//!   lifetime rather than every run;
+//! - a refresh that got no answer is sent again straight away with the same token, inside the
+//!   replay window, where the IdP hands back the answer that was lost.
+
+use std::cell::{Cell, RefCell};
+use std::time::Duration;
+
+use serde::Deserialize;
+use thiserror::Error;
+
+use crate::config::{Config, INGEST_SCOPE};
+use crate::http::{form_encode, Request, Transport};
+use crate::util::Clock;
+
+pub const KEYRING_SERVICE: &str = "ryna-wow";
+const DEVICE_CODE_PATH: &str = "/api/auth/device/code";
+/// The IdP's token endpoint, as palworld-agent's signin.ts calls it.
+const TOKEN_PATH: &str = "/api/auth/oauth2/token";
+const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
+/// `offline_access` is what earns a refresh token; `openid email` as signin.ts asks.
+pub fn scope() -> String {
+    format!("openid email offline_access {INGEST_SCOPE}")
+}
+
+/// Short enough that a resend lands well inside the IdP's 30 s replay window.
+const TOKEN_TIMEOUT: Duration = Duration::from_secs(10);
+const REFRESH_RESENDS: u32 = 2;
+const RESEND_AFTER: Duration = Duration::from_secs(2);
+const STORE_TRIES: u32 = 3;
+/// An access token with less than this left is refreshed rather than used.
+const MIN_TTL: i64 = 60;
+
+#[derive(Debug, Error)]
+pub enum AuthError {
+    #[error("this build has no device client id: the IdP client for ryna-wow isn't issued yet, so set RYNA_WOW_CLIENT_ID (see agent/README.md)")]
+    NoClientId,
+    #[error("sign-in was declined")]
+    Declined,
+    #[error("the sign-in code expired: run `ryna-wow login` again")]
+    Expired,
+    #[error("the sign-in no longer refreshes ({0}): run `ryna-wow login` again")]
+    Lapsed(String),
+    #[error("the sign-in provider is unavailable: {0}")]
+    Unavailable(String),
+    #[error("sign-in failed: {0}")]
+    Failed(String),
+    #[error("the OS keychain: {0}")]
+    Store(String),
+}
+
+impl AuthError {
+    /// Only a new `ryna-wow login` (or a client id) fixes this one.
+    pub fn needs_login(&self) -> bool {
+        matches!(
+            self,
+            AuthError::NoClientId | AuthError::Declined | AuthError::Expired | AuthError::Lapsed(_)
+        )
+    }
+}
+
+/// An access token and when it expires (unix seconds).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccessToken {
+    pub token: String,
+    pub exp: i64,
+}
+
+impl AccessToken {
+    /// One keychain value: `<exp> <token>`.
+    pub fn encode(&self) -> String {
+        format!("{} {}", self.exp, self.token)
+    }
+    pub fn decode(v: &str) -> Option<AccessToken> {
+        let (exp, token) = v.trim().split_once(' ')?;
+        if token.is_empty() || token.contains(char::is_whitespace) {
+            return None;
+        }
+        Some(AccessToken {
+            exp: exp.parse().ok()?,
+            token: token.to_string(),
+        })
+    }
+}
+
+/// Where tokens live: the OS keychain, or memory in tests.
+pub trait TokenStore {
+    fn refresh_token(&self) -> Result<Option<String>, String>;
+    fn set_refresh_token(&self, token: &str) -> Result<(), String>;
+    /// A convenience; losing it only costs a refresh, so reading it never fails.
+    fn access_token(&self) -> Option<AccessToken>;
+    fn set_access_token(&self, token: &AccessToken) -> Result<(), String>;
+    fn clear(&self) -> Result<(), String>;
+}
+
+/// The OS keychain (macOS Keychain, Windows Credential Manager, Linux keyutils), service
+/// `ryna-wow`. Sign-ins to an IdP other than the default are kept under their own names, so a
+/// local-API sign-in never replaces the real one.
+pub struct KeyringStore {
+    refresh_account: String,
+    access_account: String,
+}
+
+impl KeyringStore {
+    pub fn for_issuer(issuer: &str) -> Self {
+        let suffix = if issuer == crate::config::DEFAULT_ISSUER {
+            String::new()
+        } else {
+            format!(" {issuer}")
+        };
+        KeyringStore {
+            refresh_account: format!("refresh-token{suffix}"),
+            access_account: format!("access-token{suffix}"),
+        }
+    }
+
+    fn entry(account: &str) -> Result<keyring::Entry, String> {
+        keyring::Entry::new(KEYRING_SERVICE, account).map_err(|e| e.to_string())
+    }
+
+    fn get(account: &str) -> Result<Option<String>, String> {
+        match Self::entry(account)?.get_password() {
+            Ok(v) if v.trim().is_empty() => Ok(None),
+            Ok(v) => Ok(Some(v.trim().to_string())),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    fn set(account: &str, value: &str) -> Result<(), String> {
+        Self::entry(account)?
+            .set_password(value)
+            .map_err(|e| e.to_string())
+    }
+
+    fn delete(account: &str) -> Result<(), String> {
+        match Self::entry(account)?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+}
+
+impl TokenStore for KeyringStore {
+    fn refresh_token(&self) -> Result<Option<String>, String> {
+        Self::get(&self.refresh_account)
+    }
+    fn set_refresh_token(&self, token: &str) -> Result<(), String> {
+        Self::set(&self.refresh_account, token)
+    }
+    fn access_token(&self) -> Option<AccessToken> {
+        Self::get(&self.access_account)
+            .ok()
+            .flatten()
+            .and_then(|v| AccessToken::decode(&v))
+    }
+    fn set_access_token(&self, token: &AccessToken) -> Result<(), String> {
+        Self::set(&self.access_account, &token.encode())
+    }
+    fn clear(&self) -> Result<(), String> {
+        Self::delete(&self.access_account)?;
+        Self::delete(&self.refresh_account)
+    }
+}
+
+/// What the IdP shows the person.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceCode {
+    pub user_code: String,
+    pub verification_uri: String,
+    pub verification_uri_complete: Option<String>,
+    pub expires_in: i64,
+}
+
+impl DeviceCode {
+    /// The link to open: the one with the code in it when the IdP gives one.
+    pub fn link(&self) -> &str {
+        self.verification_uri_complete
+            .as_deref()
+            .unwrap_or(&self.verification_uri)
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct DeviceAnswer {
+    device_code: Option<String>,
+    user_code: Option<String>,
+    verification_uri: Option<String>,
+    verification_uri_complete: Option<String>,
+    interval: Option<i64>,
+    expires_in: Option<i64>,
+    error: Option<String>,
+    error_description: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct TokenAnswer {
+    access_token: Option<String>,
+    refresh_token: Option<String>,
+    expires_in: Option<i64>,
+    error: Option<String>,
+    error_description: Option<String>,
+}
+
+pub struct Auth<'a> {
+    config: &'a Config,
+    http: &'a dyn Transport,
+    store: &'a dyn TokenStore,
+    clock: &'a dyn Clock,
+    cached: RefCell<Option<AccessToken>>,
+    /// After a 401: don't fall back to the access token the keychain kept.
+    forgotten: Cell<bool>,
+}
+
+impl<'a> Auth<'a> {
+    pub fn new(
+        config: &'a Config,
+        http: &'a dyn Transport,
+        store: &'a dyn TokenStore,
+        clock: &'a dyn Clock,
+    ) -> Self {
+        Auth {
+            config,
+            http,
+            store,
+            clock,
+            cached: RefCell::new(None),
+            forgotten: Cell::new(false),
+        }
+    }
+
+    /// Whether a refresh token is kept. Doesn't touch the network.
+    pub fn signed_in(&self) -> Result<bool, AuthError> {
+        Ok(self
+            .store
+            .refresh_token()
+            .map_err(AuthError::Store)?
+            .is_some())
+    }
+
+    /// Who the kept access token is for, for display: its `name`, `preferred_username`, or the
+    /// local part of its `email` claim. Read from the token without checking it (it is only
+    /// shown, never trusted); None when there's no token in hand or it carries none of them.
+    pub fn identity(&self) -> Option<String> {
+        let token = self
+            .cached
+            .borrow()
+            .as_ref()
+            .map(|a| a.token.clone())
+            .or_else(|| self.store.access_token().map(|a| a.token))?;
+        identity_from_jwt(&token)
+    }
+
+    /// Forget the sign-in on this computer.
+    pub fn logout(&self) -> Result<(), AuthError> {
+        *self.cached.borrow_mut() = None;
+        self.store.clear().map_err(AuthError::Store)
+    }
+
+    /// Forget the access token in hand (after a 401), so the next call refreshes.
+    pub fn forget_access_token(&self) {
+        *self.cached.borrow_mut() = None;
+        self.forgotten.set(true);
+    }
+
+    fn post_form(
+        &self,
+        path: &str,
+        fields: &[(&str, &str)],
+        timeout: Duration,
+    ) -> Result<crate::http::Response, String> {
+        self.http.post(&Request {
+            url: format!("{}{path}", self.config.issuer),
+            content_type: "application/x-www-form-urlencoded",
+            body: form_encode(fields),
+            bearer: None,
+            timeout,
+        })
+    }
+
+    /// A token-endpoint call. `Err` is "no answer": the request may still have been used.
+    fn token_call(&self, fields: &[(&str, &str)]) -> Result<TokenAnswer, String> {
+        let res = self
+            .post_form(TOKEN_PATH, fields, TOKEN_TIMEOUT)
+            .map_err(|e| format!("sign-in provider unreachable: {e}"))?;
+        serde_json::from_slice(&res.body)
+            .map_err(|_| format!("sign-in provider answered {} with no JSON", res.status))
+    }
+
+    fn keep(&self, access: AccessToken, refresh: &str) -> Result<(), AuthError> {
+        if let Err(e) = self.store.set_access_token(&access) {
+            eprintln!("couldn't keep the access token for the next run: {e}");
+        }
+        *self.cached.borrow_mut() = Some(access);
+        self.forgotten.set(false);
+        let mut last = String::new();
+        for i in 0..STORE_TRIES {
+            if i > 0 {
+                self.clock.sleep(Duration::from_secs(1));
+            }
+            match self.store.set_refresh_token(refresh) {
+                Ok(()) => return Ok(()),
+                Err(e) => last = e,
+            }
+        }
+        Err(AuthError::Store(format!(
+            "couldn't store the refresh token after {STORE_TRIES} tries ({last})"
+        )))
+    }
+
+    /// Run the device flow: `show` is called once with the link and code to show the person.
+    pub fn login(&self, show: &mut dyn FnMut(&DeviceCode)) -> Result<(), AuthError> {
+        if !self.config.client_id_issued() {
+            return Err(AuthError::NoClientId);
+        }
+        let scope = scope();
+        let res = self
+            .post_form(
+                DEVICE_CODE_PATH,
+                &[
+                    ("client_id", &self.config.client_id),
+                    ("scope", &scope),
+                    ("resource", &self.config.resource),
+                ],
+                Duration::from_secs(30),
+            )
+            .map_err(AuthError::Unavailable)?;
+        let answer: DeviceAnswer = serde_json::from_slice(&res.body).unwrap_or_default();
+        let (Some(device_code), Some(user_code), Some(verification_uri)) = (
+            answer.device_code,
+            answer.user_code,
+            answer
+                .verification_uri
+                .or(answer.verification_uri_complete.clone()),
+        ) else {
+            let why = answer
+                .error_description
+                .or(answer.error)
+                .unwrap_or_else(|| format!("HTTP {}: {}", res.status, res.excerpt()));
+            return Err(AuthError::Failed(format!(
+                "couldn't get a sign-in code: {why}"
+            )));
+        };
+        let code = DeviceCode {
+            user_code,
+            verification_uri,
+            verification_uri_complete: answer.verification_uri_complete,
+            expires_in: answer.expires_in.unwrap_or(600),
+        };
+        show(&code);
+
+        let mut interval = answer.interval.unwrap_or(10).max(1);
+        let deadline = self.clock.now() + code.expires_in;
+        while self.clock.now() < deadline {
+            self.clock.sleep(Duration::from_secs(interval as u64));
+            let t = match self.token_call(&[
+                ("grant_type", DEVICE_GRANT),
+                ("client_id", &self.config.client_id),
+                ("device_code", &device_code),
+            ]) {
+                Ok(t) => t,
+                // A blip while polling: keep polling until the code expires.
+                Err(_) => continue,
+            };
+            if let Some(access) = t.access_token {
+                let refresh = t.refresh_token.ok_or_else(|| {
+                    AuthError::Failed(
+                        "signed in, but the provider sent no refresh token (offline_access)".into(),
+                    )
+                })?;
+                let exp = self.clock.now() + t.expires_in.unwrap_or(900);
+                return self.keep(AccessToken { token: access, exp }, &refresh);
+            }
+            match t.error.as_deref() {
+                Some("authorization_pending") => {}
+                Some("slow_down") => interval += 5,
+                Some("access_denied") => return Err(AuthError::Declined),
+                Some("expired_token") => return Err(AuthError::Expired),
+                other => {
+                    return Err(AuthError::Failed(
+                        t.error_description
+                            .or(other.map(str::to_string))
+                            .unwrap_or_else(|| "unknown".into()),
+                    ))
+                }
+            }
+        }
+        Err(AuthError::Expired)
+    }
+
+    /// An access token for a push, or None when this agent was never signed in.
+    pub fn access_token(&self) -> Result<Option<String>, AuthError> {
+        let now = self.clock.now();
+        let fresh = |a: &AccessToken| a.exp - now > MIN_TTL;
+        if let Some(a) = self.cached.borrow().as_ref().filter(|a| fresh(a)) {
+            return Ok(Some(a.token.clone()));
+        }
+        if !self.forgotten.get() {
+            if let Some(a) = self.store.access_token().filter(fresh) {
+                let token = a.token.clone();
+                *self.cached.borrow_mut() = Some(a);
+                return Ok(Some(token));
+            }
+        }
+        let Some(refresh) = self.store.refresh_token().map_err(AuthError::Store)? else {
+            return Ok(None);
+        };
+        if !self.config.client_id_issued() {
+            return Err(AuthError::NoClientId);
+        }
+        let fields = [
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh.as_str()),
+            ("client_id", self.config.client_id.as_str()),
+            ("resource", self.config.resource.as_str()),
+        ];
+        let mut resend = 0;
+        let t = loop {
+            match self.token_call(&fields) {
+                Ok(t) => break t,
+                Err(e) if resend < REFRESH_RESENDS => {
+                    // The IdP may have rotated without our hearing it: the same token again, at
+                    // once, gets the lost answer back; waiting for the next run would revoke the chain.
+                    eprintln!("{e}; sending the refresh again");
+                    resend += 1;
+                    self.clock.sleep(RESEND_AFTER);
+                }
+                Err(e) => return Err(AuthError::Unavailable(e)),
+            }
+        };
+        let (Some(access), Some(new_refresh)) = (t.access_token, t.refresh_token) else {
+            let error = t.error.unwrap_or_else(|| "no token".into());
+            if error == "server_error" || error == "temporarily_unavailable" {
+                return Err(AuthError::Unavailable(error));
+            }
+            return Err(AuthError::Lapsed(error));
+        };
+        let exp = self.clock.now() + t.expires_in.unwrap_or(900);
+        let token = access.clone();
+        if let Err(e) = self.keep(AccessToken { token: access, exp }, &new_refresh) {
+            // The old refresh token is spent; this run can still push with the access token.
+            eprintln!("{e}: the sign-in is lost once this run ends; run `ryna-wow login` again");
+        }
+        Ok(Some(token))
+    }
+}
+
+/// RFC 4648 base64url, padding optional.
+fn base64url_decode(s: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(s.len() * 3 / 4);
+    let (mut acc, mut bits) = (0u32, 0u32);
+    for c in s.trim_end_matches('=').bytes() {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'-' | b'+' => 62,
+            b'_' | b'/' => 63,
+            _ => return None,
+        };
+        acc = (acc << 6) | u32::from(v);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+        }
+    }
+    Some(out)
+}
+
+/// The display identity in a JWT's payload (see `Auth::identity`).
+pub fn identity_from_jwt(token: &str) -> Option<String> {
+    let payload = token.split('.').nth(1)?;
+    let claims: serde_json::Value = serde_json::from_slice(&base64url_decode(payload)?).ok()?;
+    let text = |k: &str| {
+        claims
+            .get(k)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+    };
+    text("name")
+        .or_else(|| text("preferred_username"))
+        .map(str::to_string)
+        .or_else(|| {
+            text("email")
+                .and_then(|e| e.split('@').next())
+                .map(str::to_string)
+        })
+}
+
+#[cfg(test)]
+pub(crate) mod testing {
+    use super::*;
+    use std::cell::RefCell;
+
+    #[derive(Default)]
+    pub struct MemoryStore {
+        pub refresh: RefCell<Option<String>>,
+        pub access: RefCell<Option<AccessToken>>,
+        pub fail_writes: Cell<u32>,
+    }
+
+    impl MemoryStore {
+        pub fn with_refresh(token: &str) -> Self {
+            let s = Self::default();
+            *s.refresh.borrow_mut() = Some(token.into());
+            s
+        }
+        pub fn with_access(token: &str, exp: i64) -> Self {
+            let s = Self::with_refresh("r0");
+            *s.access.borrow_mut() = Some(AccessToken {
+                token: token.into(),
+                exp,
+            });
+            s
+        }
+    }
+
+    impl TokenStore for MemoryStore {
+        fn refresh_token(&self) -> Result<Option<String>, String> {
+            Ok(self.refresh.borrow().clone())
+        }
+        fn set_refresh_token(&self, token: &str) -> Result<(), String> {
+            if self.fail_writes.get() > 0 {
+                self.fail_writes.set(self.fail_writes.get() - 1);
+                return Err("locked".into());
+            }
+            *self.refresh.borrow_mut() = Some(token.into());
+            Ok(())
+        }
+        fn access_token(&self) -> Option<AccessToken> {
+            self.access.borrow().clone()
+        }
+        fn set_access_token(&self, token: &AccessToken) -> Result<(), String> {
+            *self.access.borrow_mut() = Some(token.clone());
+            Ok(())
+        }
+        fn clear(&self) -> Result<(), String> {
+            *self.refresh.borrow_mut() = None;
+            *self.access.borrow_mut() = None;
+            Ok(())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::testing::MemoryStore;
+    use super::*;
+    use crate::config::{test_config, PLACEHOLDER_CLIENT_ID};
+    use crate::http::testing::ScriptedTransport;
+    use crate::util::testing::FakeClock;
+    use serde_json::json;
+
+    const NOW: i64 = 1_800_000_000;
+
+    fn device_answer() -> serde_json::Value {
+        json!({ "device_code": "dev-1", "user_code": "ABCD-EFGH", "verification_uri": "https://idp.test/device",
+                "verification_uri_complete": "https://idp.test/device?user_code=ABCD-EFGH", "interval": 5, "expires_in": 600 })
+    }
+
+    #[test]
+    fn device_flow_polls_through_pending_and_slow_down() {
+        let config = test_config();
+        let http = ScriptedTransport::new();
+        http.json(200, device_answer())
+            .json(400, json!({ "error": "authorization_pending" }))
+            .json(400, json!({ "error": "slow_down" }))
+            .fail("connection reset")
+            .json(
+                200,
+                json!({ "access_token": "at-1", "refresh_token": "rt-1", "expires_in": 900 }),
+            );
+        let store = MemoryStore::default();
+        let clock = FakeClock::at(NOW);
+        let auth = Auth::new(&config, &http, &store, &clock);
+        let mut shown = None;
+        auth.login(&mut |c| shown = Some(c.clone())).unwrap();
+
+        let shown = shown.unwrap();
+        assert_eq!(shown.user_code, "ABCD-EFGH");
+        assert_eq!(shown.link(), "https://idp.test/device?user_code=ABCD-EFGH");
+        assert_eq!(
+            http.urls(),
+            vec![
+                "https://idp.test/api/auth/device/code",
+                "https://idp.test/api/auth/oauth2/token",
+                "https://idp.test/api/auth/oauth2/token",
+                "https://idp.test/api/auth/oauth2/token",
+                "https://idp.test/api/auth/oauth2/token",
+            ]
+        );
+        let first = http.form(0);
+        assert!(first.contains("client_id=test-client"), "{first}");
+        assert!(
+            first.contains("scope=openid+email+offline_access+wow%3Aingest"),
+            "{first}"
+        );
+        assert!(
+            first.contains("resource=https%3A%2F%2Fapi.ryna.io%2Fwow%2Fingest"),
+            "{first}"
+        );
+        assert!(http
+            .form(1)
+            .contains("grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code"));
+        assert!(http.form(1).contains("device_code=dev-1"));
+        // 5 s, 5 s, then slow_down adds 5.
+        let sleeps: Vec<u64> = clock.sleeps.borrow().iter().map(|d| d.as_secs()).collect();
+        assert_eq!(sleeps, vec![5, 5, 10, 10]);
+        assert_eq!(store.refresh.borrow().as_deref(), Some("rt-1"));
+        assert_eq!(store.access.borrow().as_ref().unwrap().token, "at-1");
+        assert_eq!(auth.access_token().unwrap().as_deref(), Some("at-1"));
+        assert_eq!(http.remaining(), 0);
+    }
+
+    #[test]
+    fn device_flow_refusals() {
+        for (error, expect) in [
+            ("access_denied", "declined"),
+            ("expired_token", "expired"),
+            ("invalid_grant", "invalid_grant"),
+        ] {
+            let config = test_config();
+            let http = ScriptedTransport::new();
+            http.json(200, device_answer())
+                .json(400, json!({ "error": error }));
+            let store = MemoryStore::default();
+            let clock = FakeClock::at(NOW);
+            let e = Auth::new(&config, &http, &store, &clock)
+                .login(&mut |_| {})
+                .unwrap_err();
+            assert!(e.to_string().contains(expect), "{error}: {e}");
+            assert!(store.refresh.borrow().is_none());
+        }
+    }
+
+    #[test]
+    fn device_flow_gives_up_when_the_code_expires() {
+        let config = test_config();
+        let http = ScriptedTransport::new();
+        let mut answer = device_answer();
+        answer["expires_in"] = json!(12);
+        http.json(200, answer);
+        for _ in 0..3 {
+            http.json(400, json!({ "error": "authorization_pending" }));
+        }
+        let store = MemoryStore::default();
+        let clock = FakeClock::at(NOW);
+        let e = Auth::new(&config, &http, &store, &clock)
+            .login(&mut |_| {})
+            .unwrap_err();
+        assert!(matches!(e, AuthError::Expired));
+    }
+
+    #[test]
+    fn login_needs_an_issued_client_id() {
+        let mut config = test_config();
+        config.client_id = PLACEHOLDER_CLIENT_ID.into();
+        let http = ScriptedTransport::new();
+        let store = MemoryStore::default();
+        let clock = FakeClock::at(NOW);
+        let e = Auth::new(&config, &http, &store, &clock)
+            .login(&mut |_| {})
+            .unwrap_err();
+        assert!(matches!(e, AuthError::NoClientId));
+        assert!(e.to_string().contains("RYNA_WOW_CLIENT_ID"));
+        assert!(http.requests.borrow().is_empty());
+    }
+
+    #[test]
+    fn device_code_refusal_is_reported() {
+        let config = test_config();
+        let http = ScriptedTransport::new();
+        http.json(
+            400,
+            json!({ "error": "invalid_client", "error_description": "unknown client" }),
+        );
+        let store = MemoryStore::default();
+        let clock = FakeClock::at(NOW);
+        let e = Auth::new(&config, &http, &store, &clock)
+            .login(&mut |_| {})
+            .unwrap_err();
+        assert!(e.to_string().contains("unknown client"), "{e}");
+    }
+
+    #[test]
+    fn refresh_rotates_and_is_reused_until_near_expiry() {
+        let config = test_config();
+        let http = ScriptedTransport::new();
+        http.json(
+            200,
+            json!({ "access_token": "at-2", "refresh_token": "rt-2", "expires_in": 900 }),
+        );
+        let store = MemoryStore::with_refresh("rt-1");
+        let clock = FakeClock::at(NOW);
+        let auth = Auth::new(&config, &http, &store, &clock);
+        assert_eq!(auth.access_token().unwrap().as_deref(), Some("at-2"));
+        let form = http.form(0);
+        assert!(
+            form.contains("grant_type=refresh_token")
+                && form.contains("refresh_token=rt-1")
+                && form.contains("resource="),
+            "{form}"
+        );
+        assert_eq!(store.refresh.borrow().as_deref(), Some("rt-2"));
+        // In memory, then from the store by a new Auth (the next run): no more calls.
+        assert_eq!(auth.access_token().unwrap().as_deref(), Some("at-2"));
+        let next_run = Auth::new(&config, &http, &store, &clock);
+        assert_eq!(next_run.access_token().unwrap().as_deref(), Some("at-2"));
+        assert_eq!(http.requests.borrow().len(), 1);
+        // Within a minute of expiry it refreshes again, with the rotated token.
+        clock.now.set(NOW + 900 - 30);
+        http.json(
+            200,
+            json!({ "access_token": "at-3", "refresh_token": "rt-3" }),
+        );
+        assert_eq!(next_run.access_token().unwrap().as_deref(), Some("at-3"));
+        assert!(http.form(1).contains("refresh_token=rt-2"));
+    }
+
+    #[test]
+    fn unanswered_refresh_is_resent_with_the_same_token() {
+        let config = test_config();
+        let http = ScriptedTransport::new();
+        http.fail("timed out")
+            .text(502, "<html>bad gateway</html>")
+            .json(
+                200,
+                json!({ "access_token": "at", "refresh_token": "rt-2" }),
+            );
+        let store = MemoryStore::with_refresh("rt-1");
+        let clock = FakeClock::at(NOW);
+        let auth = Auth::new(&config, &http, &store, &clock);
+        assert_eq!(auth.access_token().unwrap().as_deref(), Some("at"));
+        for i in 0..3 {
+            assert!(http.form(i).contains("refresh_token=rt-1"));
+        }
+        assert_eq!(clock.sleeps.borrow().len(), 2);
+
+        let http = ScriptedTransport::new();
+        http.fail("a").fail("b").fail("c");
+        let store = MemoryStore::with_refresh("rt-1");
+        let auth = Auth::new(&config, &http, &store, &clock);
+        assert!(matches!(
+            auth.access_token(),
+            Err(AuthError::Unavailable(_))
+        ));
+        assert_eq!(store.refresh.borrow().as_deref(), Some("rt-1"));
+    }
+
+    #[test]
+    fn a_refused_refresh_needs_login_but_provider_trouble_does_not() {
+        let config = test_config();
+        let clock = FakeClock::at(NOW);
+        let http = ScriptedTransport::new();
+        http.json(400, json!({ "error": "invalid_grant" }));
+        let store = MemoryStore::with_refresh("rt-1");
+        let e = Auth::new(&config, &http, &store, &clock)
+            .access_token()
+            .unwrap_err();
+        assert!(e.needs_login(), "{e}");
+        let http = ScriptedTransport::new();
+        http.json(503, json!({ "error": "temporarily_unavailable" }));
+        let e = Auth::new(&config, &http, &store, &clock)
+            .access_token()
+            .unwrap_err();
+        assert!(!e.needs_login(), "{e}");
+    }
+
+    #[test]
+    fn not_signed_in_is_none_and_logout_clears() {
+        let config = test_config();
+        let http = ScriptedTransport::new();
+        let clock = FakeClock::at(NOW);
+        let store = MemoryStore::default();
+        let auth = Auth::new(&config, &http, &store, &clock);
+        assert_eq!(auth.access_token().unwrap(), None);
+        assert!(!auth.signed_in().unwrap());
+        let store = MemoryStore::with_access("at", NOW + 3600);
+        let auth = Auth::new(&config, &http, &store, &clock);
+        assert!(auth.signed_in().unwrap());
+        auth.logout().unwrap();
+        assert!(!auth.signed_in().unwrap());
+        assert_eq!(auth.access_token().unwrap(), None);
+    }
+
+    #[test]
+    fn forgetting_skips_the_kept_access_token() {
+        let config = test_config();
+        let http = ScriptedTransport::new();
+        http.json(
+            200,
+            json!({ "access_token": "new", "refresh_token": "rt-2" }),
+        );
+        let clock = FakeClock::at(NOW);
+        let store = MemoryStore::with_access("old", NOW + 3600);
+        let auth = Auth::new(&config, &http, &store, &clock);
+        assert_eq!(auth.access_token().unwrap().as_deref(), Some("old"));
+        auth.forget_access_token();
+        assert_eq!(auth.access_token().unwrap().as_deref(), Some("new"));
+    }
+
+    #[test]
+    fn a_refresh_store_that_fails_once_is_retried() {
+        let config = test_config();
+        let http = ScriptedTransport::new();
+        http.json(
+            200,
+            json!({ "access_token": "at", "refresh_token": "rt-2" }),
+        );
+        let clock = FakeClock::at(NOW);
+        let store = MemoryStore::with_refresh("rt-1");
+        store.fail_writes.set(1);
+        Auth::new(&config, &http, &store, &clock)
+            .access_token()
+            .unwrap();
+        assert_eq!(store.refresh.borrow().as_deref(), Some("rt-2"));
+    }
+
+    #[test]
+    fn identity_from_the_token_claims() {
+        // {"sub":"x","email":"aerin@example.test"} and {"name":"Aerin S","email":"a@b"}
+        let email_only = "h.eyJzdWIiOiJ4IiwiZW1haWwiOiJhZXJpbkBleGFtcGxlLnRlc3QifQ.s";
+        let named = "h.eyJuYW1lIjoiQWVyaW4gUyIsImVtYWlsIjoiYUBiIn0.s";
+        assert_eq!(identity_from_jwt(email_only).as_deref(), Some("aerin"));
+        assert_eq!(identity_from_jwt(named).as_deref(), Some("Aerin S"));
+        assert_eq!(identity_from_jwt("opaque-token"), None);
+        assert_eq!(base64url_decode("aGk").unwrap(), b"hi");
+        let config = test_config();
+        let http = ScriptedTransport::new();
+        let clock = FakeClock::at(NOW);
+        let store = MemoryStore::with_access(email_only, NOW + 3600);
+        assert_eq!(
+            Auth::new(&config, &http, &store, &clock)
+                .identity()
+                .as_deref(),
+            Some("aerin")
+        );
+    }
+
+    #[test]
+    fn access_token_encoding() {
+        let a = AccessToken {
+            token: "abc.def".into(),
+            exp: 42,
+        };
+        assert_eq!(AccessToken::decode(&a.encode()), Some(a));
+        assert_eq!(AccessToken::decode("nope"), None);
+        assert_eq!(AccessToken::decode("x abc"), None);
+    }
+
+    #[test]
+    fn keyring_accounts_are_per_issuer() {
+        let d = KeyringStore::for_issuer(crate::config::DEFAULT_ISSUER);
+        assert_eq!(d.refresh_account, "refresh-token");
+        let l = KeyringStore::for_issuer("http://localhost:5174");
+        assert_eq!(l.refresh_account, "refresh-token http://localhost:5174");
+    }
+}

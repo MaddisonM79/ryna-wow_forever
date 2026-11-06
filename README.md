@@ -24,9 +24,13 @@ Pre-alpha. The design is settled and nothing here is usable yet. The order of wo
 
 - `addon/`: the Lua addon, tagged for Forever. It writes a table to SavedVariables on logout and
   `/reload`, and turns combat logging on inside instances. It has no UI beyond `/ryna status`.
-- `agent/`: the agent. A library with the SavedVariables reader, the combat-log parser and
-  segmenter, the sign-in (OAuth device grant: the agent never sees your password) and the pusher,
-  plus a command-line binary and a desktop app around the same library.
+- `agent/`: the agent, a Rust workspace (`Cargo.toml` at the root). `agent/core` is the library:
+  the SavedVariables reader, install discovery, the sign-in (OAuth device grant: the agent never
+  sees your password), the pusher, and the watch loop. `agent/cli` is a command line over it for
+  developers; the desktop app that people install comes next and runs the same core while it is
+  open. `agent/fixtures` holds scrubbed test files. The combat-log parser comes in stage 2.
+- `scripts/capture.sh`: turns a real `Ryna.lua` into a scrubbed fixture (the original stays in the
+  gitignored `captures/`).
 
 ## What leaves your computer
 
@@ -35,6 +39,10 @@ computes: your characters, their inventory, quests, professions and reputations;
 and for each fight, who was in it (character names and in-game ids), what they did, and when. Raw
 combat-log text is uploaded only if you turn that on. Nothing is read from anywhere but the game's
 own folder, and the agent signs in as you, to the backend you point it at.
+
+The data is never sold and never used for advertising. That includes the pooled census of players
+seen in the world, which exists so the people who play can see how many of them there are and
+when. It is for the community that plays, and for nothing else.
 
 ## Licence
 

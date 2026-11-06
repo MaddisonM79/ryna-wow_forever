@@ -1,0 +1,21 @@
+[package]
+name = "ryna-wow-core"
+description = "The World of Warcraft: Forever companion agent's library: SavedVariables reader, snapshot builder, install discovery, sign-in and pusher."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+directories.workspace = true
+keyring.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
