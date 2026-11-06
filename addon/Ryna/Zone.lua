@@ -3,6 +3,7 @@
 -- with the rest of RynaDB if the client doesn't restore it; the default then applies.
 
 local _, ns = ...
+local L = ns.L
 
 local Z = {}
 ns.Zone = Z
@@ -34,7 +35,7 @@ function Z.ApplyCombatLog(inInstance)
   local wanted = mode == "always" or (mode == "instances" and inInstance)
   if wanted then
     if pcall(fn, true) then
-      if not on then ns.Print("combat logging on" .. (inInstance and " (instance)" or "")) end
+      if not on then ns.Print(inInstance and L["combat logging on (instance)"] or L["combat logging on"]) end
       Z.addonTurnedOn = true
       ns.Debug("combat log: mode %s, %s: %s", mode, where, on and "kept on" or "turned on")
     else
@@ -43,7 +44,7 @@ function Z.ApplyCombatLog(inInstance)
   elseif on and (Z.addonTurnedOn or (mode == "instances" and Z.wasInInstance)) then
     if pcall(fn, false) then
       Z.addonTurnedOn = false
-      ns.Print("combat logging off")
+      ns.Print(L["combat logging off"])
       ns.Debug("combat log: mode %s, %s: turned off", mode, where)
     end
   else

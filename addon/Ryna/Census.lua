@@ -13,11 +13,17 @@
 -- client that blocks the call from a timer stops the sweep for the session instead of retrying.
 
 local _, ns = ...
+local L, N = ns.L, ns.N
 
 local C = {}
 ns.Census = C
 
 local NonEmpty = ns.NonEmpty
+
+-- "412 players", in the client's language.
+local function players(n)
+  return ns.Plural(n, L["%d player"], L["%d players"])
+end
 
 local CAP = 50              -- rows the server returns at most per query
 local GAP = 4               -- seconds between queries
@@ -233,13 +239,13 @@ end
 function C.StatusLine()
   local sw = C.sweep
   if sw then
-    return string.format("Sweeping: %d of %d queries, %d players so far", sw.done, #sw.queue, sw.players)
+    return string.format(L["Sweeping: %d of %d queries, %s so far"], sw.done, #sw.queue, players(sw.players))
   end
-  if C.blocked then return "The game blocked /who from Ryna this session." end
+  if C.blocked then return L["The game blocked /who from Ryna this session."] end
   local l = C.LastSweep()
-  if not l then return "No sweep yet." end
-  return string.format("Last sweep: %d players, %s%s", l.players or 0, ns.Status.Ago(l.at) or "?",
-    l.complete and "" or " (stopped early)")
+  if not l then return L["No sweep yet."] end
+  return string.format(l.complete and L["Last sweep: %s, %s"] or L["Last sweep: %s, %s (stopped early)"],
+    players(l.players or 0), ns.Status.Ago(l.at) or "?")
 end
 
 local finish, sendNext
@@ -250,9 +256,9 @@ local function schedule(sweep, delay)
   end)
 end
 
+-- "8 of 12 queries, 214 players so far", in the client's language (only manual sweeps print it).
 local function progress(sweep)
-  return string.format("census sweep: %d of %d queries, %d players so far", sweep.done, #sweep.queue,
-    sweep.players)
+  return string.format(L["%d of %d queries, %s so far"], sweep.done, #sweep.queue, players(sweep.players))
 end
 
 -- Splits a capped answer: a bracket by class, a bracket-and-class by the zones the answer named.
@@ -330,18 +336,19 @@ local function onAnswer(sweep, item)
     .. "%d already in this sweep", item.text, n, total, fresh, skipped, repeated)
   if n >= CAP or total > n then split(sweep, item, rows) end
   if sweep.manual and (sweep.done % PROGRESS_EVERY == 0) and sweep.done < #sweep.queue then
-    ns.Print(progress(sweep))
+    ns.Print(string.format(L["census sweep: %s"], progress(sweep)))
   end
   refreshPanel()
   schedule(sweep, n == 0 and BACKOFF or GAP)
 end
 
--- Why a sweep can't go on right now, or nil.
+-- Why a sweep can't go on right now, or nil. Reasons stay English (they are kept in
+-- RynaDB.census.lastSweep.stopped and debug lines) and are translated with L[why] where printed.
 local function stopReason()
-  if not ns.Setting("census") then return "the census setting is off" end
-  if inCombat() then return "in combat" end
-  if inInstance() then return "in an instance" end
-  if whoFrameOpen() then return "the Who window is open" end
+  if not ns.Setting("census") then return N("the census setting is off") end
+  if inCombat() then return N("in combat") end
+  if inInstance() then return N("in an instance") end
+  if whoFrameOpen() then return N("the Who window is open") end
   return nil
 end
 
@@ -351,7 +358,7 @@ sendNext = function(sweep)
   local item = sweep.queue[sweep.next]
   if not item then return finish(sweep, nil) end
   local F = api()
-  if not F.send then return finish(sweep, "this client has no /who") end
+  if not F.send then return finish(sweep, N("this client has no /who")) end
   if F.toUi then pcall(F.toUi, true) end
   local ok, err = pcall(F.send, item.text)
   if not ok then
@@ -359,7 +366,7 @@ sendNext = function(sweep)
     sweep.errors = sweep.errors + 1
     if sweep.errors >= 2 then
       C.blocked = true
-      return finish(sweep, "the game refused /who from Ryna")
+      return finish(sweep, N("the game refused /who from Ryna"))
     end
     schedule(sweep, BACKOFF)
     return
@@ -378,7 +385,7 @@ sendNext = function(sweep)
     -- The first two queries got no answer: the server is throttling or the client is dropping
     -- the call; either way, stop rather than keep asking.
     if sweep.missed >= 2 and sweep.answered == 0 then
-      return finish(sweep, "the server didn't answer /who")
+      return finish(sweep, N("the server didn't answer /who"))
     end
     schedule(sweep, BACKOFF)
   end)
@@ -394,43 +401,50 @@ finish = function(sweep, why)
     at = ns.Now(), players = sweep.players, new = sweep.new, queries = sweep.done, seconds = seconds,
     complete = complete, stopped = why, manual = sweep.manual,
   }
-  local line
-  if complete then
-    line = string.format("census sweep done: %d players, %d new to this sweep's window, in %ds",
+  if sweep.manual and complete then
+    ns.Print(string.format(L["census sweep done: %s, %d new to this sweep's window, in %ds"],
+      players(sweep.players), sweep.new, seconds))
+  elseif sweep.manual then
+    ns.Print(string.format(L["census sweep stopped (%s): %s, %d new to this sweep's window, in %ds"],
+      L[why], players(sweep.players), sweep.new, seconds))
+  elseif complete then
+    ns.Debug("census sweep done: %d players, %d new to this sweep's window, in %ds",
       sweep.players, sweep.new, seconds)
   else
-    line = string.format("census sweep stopped (%s): %d players, %d new to this sweep's window, in %ds",
+    ns.Debug("census sweep stopped (%s): %d players, %d new to this sweep's window, in %ds",
       why, sweep.players, sweep.new, seconds)
   end
-  if sweep.manual then ns.Print(line) else ns.Debug("%s", line) end
   refreshPanel()
+end
+
+-- Why C.Start didn't start: printed in the client's language for a manual sweep, a debug line
+-- (English) for an automatic one. msg is an English N(...) key with at most one %s, and arg (if
+-- any) is English too, translated for the printed line.
+local function refuse(manual, msg, arg)
+  if manual then
+    ns.Print(string.format(L[msg], arg and L[arg] or nil))
+  else
+    ns.Debug(msg, arg)
+  end
+  return false
 end
 
 -- Starts a sweep. manual: from /ryna census or the panel's button (prints progress and the
 -- summary); otherwise automatic (debug lines only). Returns true when a sweep started.
 function C.Start(manual)
-  local say = manual and ns.Print or ns.Debug
-  if not ns.db or not ns.rec then
-    say("census sweep: not ready yet.")
-    return false
-  end
+  if not ns.db or not ns.rec then return refuse(manual, N("census sweep: not ready yet.")) end
   if C.sweep then
-    say("census sweep: one is already running. " .. progress(C.sweep):gsub("^census sweep: ", ""))
+    -- Only a manual start gets here (the automatic check skips a running sweep).
+    ns.Print(string.format(L["census sweep: one is already running. %s"], progress(C.sweep)))
     return false
   end
   if C.blocked then
-    say("census sweep: the game blocked /who from Ryna earlier this session; /reload to try again.")
-    return false
+    return refuse(manual, N("census sweep: the game blocked /who from Ryna earlier this session; "
+      .. "/reload to try again."))
   end
-  if not C.Available() then
-    say("census sweep: this client has no /who for addons.")
-    return false
-  end
+  if not C.Available() then return refuse(manual, N("census sweep: this client has no /who for addons.")) end
   local why = stopReason()
-  if why then
-    say("census sweep: not now, " .. why .. ".")
-    return false
-  end
+  if why then return refuse(manual, N("census sweep: not now, %s."), why) end
   C.count = (C.count or 0) + 1
   local sweep = {
     batch = string.format("%d-%d", ns.Now(), C.count), manual = manual and true or false,
@@ -445,7 +459,7 @@ function C.Start(manual)
   quietWhoUi(sweep)
   ns.Debug("census sweep %s started (%s): %d level brackets to ask", sweep.batch,
     manual and "by you" or "automatic, in a city", #sweep.queue)
-  if manual then ns.Print("census sweep started: asking the server who is online, one query every 4s.") end
+  if manual then ns.Print(L["census sweep started: asking the server who is online, one query every 4s."]) end
   refreshPanel()
   sendNext(sweep)
   return true
@@ -453,7 +467,7 @@ end
 
 -- Stops the running sweep (it isn't resumed).
 function C.Stop(why)
-  if C.sweep then finish(C.sweep, why or "stopped") end
+  if C.sweep then finish(C.sweep, why or N("stopped")) end
 end
 
 ns.On("WHO_LIST_UPDATE", function()
@@ -469,12 +483,12 @@ local function onBlocked(_, addon, fn)
   if addon ~= ns.NAME or not C.sweep then return end
   if type(fn) == "string" and not fn:find("Who", 1, true) then return end
   C.blocked = true
-  finish(C.sweep, "the game blocked /who from Ryna")
+  finish(C.sweep, N("the game blocked /who from Ryna"))
 end
 ns.On("ADDON_ACTION_BLOCKED", onBlocked)
 ns.On("ADDON_ACTION_FORBIDDEN", onBlocked)
 
-ns.On("PLAYER_REGEN_DISABLED", function() C.Stop("combat started") end)
+ns.On("PLAYER_REGEN_DISABLED", function() C.Stop(N("combat started")) end)
 
 -- Automatic sweeps: checked every minute; one runs when the setting is on, the player has been in
 -- a city for a minute, isn't in combat or an instance, the Who window is closed, and no sweep
@@ -506,7 +520,7 @@ end
 
 local ticking = false
 ns.On("PLAYER_ENTERING_WORLD", function()
-  if inInstance() then C.Stop("entered an instance") end
+  if inInstance() then C.Stop(N("entered an instance")) end
   if ticking or not (_G.C_Timer and _G.C_Timer.NewTicker) then return end
   ticking = true
   _G.C_Timer.NewTicker(TICK, function() ns.Run("census auto", C.AutoCheck) end)

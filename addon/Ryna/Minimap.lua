@@ -3,6 +3,7 @@
 -- in RynaDB.settings.minimap. No library; nothing happens on a client without a Minimap frame.
 
 local _, ns = ...
+local L = ns.L
 
 local M = {}
 ns.Minimap = M
@@ -39,8 +40,8 @@ local function tooltip(self)
   tip:SetOwner(self, "ANCHOR_LEFT")
   tip:SetText("Ryna " .. ns.VERSION)
   tip:AddLine(ns.Status.SyncLine(), 1, 1, 1, true)
-  if #ns.Status.UpdateLines() > 0 then tip:AddLine("Update available", 0.25, 1, 0.25) end
-  tip:AddLine("Click: open Ryna. Drag: move this button.", 0.6, 0.6, 0.6, true)
+  if #ns.Status.UpdateLines() > 0 then tip:AddLine(L["Update available"], 0.25, 1, 0.25) end
+  tip:AddLine(L["Click: open Ryna. Drag: move this button."], 0.6, 0.6, 0.6, true)
   tip:Show()
 end
 

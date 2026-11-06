@@ -4,6 +4,7 @@
 -- fallback, and registering runs under pcall from Init, so a trimmed client can't break login.
 
 local _, ns = ...
+local L = ns.L
 
 local P = {}
 ns.Panel = P
@@ -114,7 +115,7 @@ local function modeControl(parent)
     end
     ns.Run("combat-log mode", setMode, order[1])
   end)
-  function b.sync() b:SetText(St.MODE_LABELS[ns.db.settings.combatLog] .. " (click to change)") end
+  function b.sync() b:SetText(string.format(L["%s (click to change)"], St.MODE_LABELS[ns.db.settings.combatLog])) end
   return b
 end
 
@@ -141,41 +142,42 @@ local function build()
   title:SetText("Ryna " .. ns.VERSION)
   s.add(title, 20)
   local intro = text(content, "GameFontHighlightSmall", 11)
-  intro:SetText("Ryna records your characters, bags, quests and guild for the Ryna companion app, which "
-    .. "uploads them when you sign in there. Signing in happens in the app, not in the game.")
+  intro:SetText(L["Ryna records your characters, bags, quests and guild for the Ryna companion app, which "
+    .. "uploads them when you sign in there. Signing in happens in the app, not in the game."])
   s.add(intro, 28, 0, 12)
 
   local h1 = text(content, "GameFontNormal", 13)
-  h1:SetText("Status")
+  h1:SetText(L["Status"])
   s.add(h1, 16)
   P.status = text(content, "GameFontHighlight")
   s.add(P.status, 150, 8, 12)
   P.statusAnchor = s.y
 
   local h2 = text(content, "GameFontNormal", 13)
-  h2:SetText("Settings")
+  h2:SetText(L["Settings"])
   P.h2 = h2
 
   local modeLabel = text(content, "GameFontHighlight")
-  modeLabel:SetText("Turn on the game's combat log:")
+  modeLabel:SetText(L["Turn on the game's combat log:"])
   P.modeLabel = modeLabel
   P.mode = modeControl(content)
   P.modeHelp = text(content, "GameFontDisableSmall", 10)
-  P.modeHelp:SetText("The combat log is how Ryna sees fights. \"In dungeons and raids only\" keeps the "
-    .. "file small. Logging you start yourself with /combatlog is left alone.")
+  P.modeHelp:SetText(L["The combat log is how Ryna sees fights. \"In dungeons and raids only\" keeps the "
+    .. "file small. Logging you start yourself with /combatlog is left alone."])
 
-  P.chat = checkbox(content, "Record who I see in chat",
-    "Only who spoke, never what they said or in which channel.")
-  P.census = checkbox(content, "Take part in the census",
-    "Records other players you see (nearby, in chat, your group and your guild). "
-    .. "Off: Ryna records only your own characters.")
-  P.group = checkbox(content, "Record other players in my group",
-    "Who was in your groups.")
-  P.nearby = checkbox(content, "Record players I see nearby",
-    "Players whose nameplates, target or mouseover you see: their level, class and guild, and where.")
-  P.sweep = checkbox(content, "Run a realm census while I'm in a city",
-    "Every 30 minutes while you're parked in a capital, Ryna asks the server who is online (/who), "
-    .. "a few queries at a time, to count the realm's players by level, class and zone. Nothing about you is sent.")
+  P.chat = checkbox(content, L["Record who I see in chat"],
+    L["Only who spoke, never what they said or in which channel."])
+  P.census = checkbox(content, L["Take part in the census"],
+    L["Records other players you see (nearby, in chat, your group and your guild). "
+    .. "Off: Ryna records only your own characters."])
+  P.group = checkbox(content, L["Record other players in my group"],
+    L["Who was in your groups."])
+  P.nearby = checkbox(content, L["Record players I see nearby"],
+    L["Players whose nameplates, target or mouseover you see: their level, class and guild, and where."])
+  P.sweep = checkbox(content, L["Run a realm census while I'm in a city"],
+    L["Every 30 minutes while you're parked in a capital, Ryna asks the server who is online (/who), "
+    .. "a few queries at a time, to count the realm's players by level, class and zone. "
+    .. "Nothing about you is sent."])
   P.sweepButton = create("Button", content, { "UIPanelButtonTemplate" })
   if P.sweepButton then
     local b = P.sweepButton
@@ -186,7 +188,7 @@ local function build()
       fs:SetJustifyH("CENTER")
       b:SetFontString(fs)
     end
-    b:SetText("Run census now")
+    b:SetText(L["Run census now"])
     b:SetScript("OnClick", function()
       ns.Run("census sweep", function()
         ns.Census.Start(true)
@@ -197,12 +199,13 @@ local function build()
     P.sweepText:SetWidth(WIDTH - 230)
     P.sweepText:SetPoint("LEFT", b, "RIGHT", 8, 0)
   end
-  P.acl = checkbox(content, "Advanced combat logging",
-    "Sets the game's advanced combat logging on, so fights are logged with positions and health. "
-    .. "Needed for Ryna's timelines and deaths.")
-  P.minimap = checkbox(content, "Show the minimap button", "Drag it around the minimap to move it.")
-  P.debug = checkbox(content, "Debug messages",
-    "Prints what Ryna is doing to the chat window: scans, journal events, sightings. For checking that it works.")
+  P.acl = checkbox(content, L["Advanced combat logging"],
+    L["Sets the game's advanced combat logging on, so fights are logged with positions and health. "
+    .. "Needed for Ryna's timelines and deaths."])
+  P.minimap = checkbox(content, L["Show the minimap button"], L["Drag it around the minimap to move it."])
+  P.debug = checkbox(content, L["Debug messages"],
+    L["Prints what Ryna is doing to the chat window: scans, journal events, sightings. "
+    .. "For checking that it works."])
 
   local function toggle(cb, key)
     cb:SetScript("OnClick", function(self)
@@ -242,7 +245,7 @@ local function build()
   end)
 
   P.h3 = text(content, "GameFontNormal", 13)
-  P.h3:SetText("Messages")
+  P.h3:SetText(L["Messages"])
   P.messages = text(content, "GameFontHighlightSmall", 11)
 
   P.content, P.panel = content, panel
@@ -258,7 +261,7 @@ local function build()
       ns.db.settings = { minimap = mm }
       ns.ApplySettingDefaults(ns.db.settings)
       mm.shown = true
-      if wasDebug then ns.Print("settings back to their defaults; debug messages off.") end
+      if wasDebug then ns.Print(L["settings back to their defaults; debug messages off."]) end
       ns.Zone.SetMode(ns.db.settings.combatLog)
       if ns.Minimap then ns.Minimap.Update() end
       P.Refresh()
@@ -272,35 +275,38 @@ local function statusText()
   local lines = {}
   local rec, c = ns.rec, St.Counts()
   if rec then
-    lines[#lines + 1] = string.format("Character: %s, level %s", tostring(rec.fullName), tostring(rec.level))
+    lines[#lines + 1] = string.format(L["Character: %s, level %s"], tostring(rec.fullName), tostring(rec.level))
   else
-    lines[#lines + 1] = "Character: not loaded yet"
+    lines[#lines + 1] = L["Character: not loaded yet"]
   end
-  lines[#lines + 1] = string.format("Recorded: %d items in bags and bank, %d equipped, %d quests in the log, "
-    .. "%d completed, %d guild members", c.items, c.gear, c.active, c.completed, c.roster)
-  lines[#lines + 1] = string.format("Journal: %d events this session, %d kept in all (last 30 days)",
-    c.session, c.journal)
-  lines[#lines + 1] = "Session: " .. tostring(ns.Journal.session or "not started")
-  lines[#lines + 1] = string.format("Combat log: %s right now. Mode: %s", St.LoggingText(),
+  lines[#lines + 1] = string.format(L["Recorded: %s, %d equipped, %s, %d completed, %s"],
+    ns.Plural(c.items, L["%d item in bags and bank"], L["%d items in bags and bank"]), c.gear,
+    ns.Plural(c.active, L["%d quest in the log"], L["%d quests in the log"]), c.completed,
+    ns.Plural(c.roster, L["%d guild member"], L["%d guild members"]))
+  lines[#lines + 1] = string.format(L["Journal: %s, %d kept in all (last 30 days)"],
+    ns.Plural(c.session, L["%d event this session"], L["%d events this session"]), c.journal)
+  lines[#lines + 1] = string.format(L["Session: %s"], tostring(ns.Journal.session or L["not started"]))
+  lines[#lines + 1] = string.format(L["Combat log: %s right now. Mode: %s"], St.LoggingText(),
     St.MODE_LABELS[ns.db.settings.combatLog] or "?")
   lines[#lines + 1] = " "
-  lines[#lines + 1] = "Companion app: " .. St.SyncLine()
+  lines[#lines + 1] = string.format(L["Companion app: %s"], St.SyncLine())
   local agent = St.Plain(St.Field(St.Agent(), "agent", "string"))
-  if agent then lines[#lines + 1] = "Companion app version: " .. agent end
+  if agent then lines[#lines + 1] = string.format(L["Companion app version: %s"], agent) end
   for _, line in ipairs(St.UpdateLines()) do lines[#lines + 1] = "|cff40ff40" .. line .. "|r" end
-  lines[#lines + 1] = "|cff999999(The app's status is as of your last login or /reload.)|r"
+  lines[#lines + 1] = "|cff999999" .. L["(The app's status is as of your last login or /reload.)"] .. "|r"
   if ns.errors.count > 0 then
-    lines[#lines + 1] = "|cffff8080" .. ns.errors.count .. " errors caught; /ryna status shows the last.|r"
+    lines[#lines + 1] = "|cffff8080" .. ns.Plural(ns.errors.count, L["%d error caught; /ryna status shows the last."],
+      L["%d errors caught; /ryna status shows the last."]) .. "|r"
   end
   return table.concat(lines, "\n")
 end
 
 local function messagesText()
   local msgs = St.Messages(10)
-  if #msgs == 0 then return "No messages" end
+  if #msgs == 0 then return L["No messages"] end
   local lines = {}
   for _, m in ipairs(msgs) do
-    local when = m.at and (St.Ago(m.at) .. ": ") or ""
+    local when = m.at and string.format(L["%s: "], St.Ago(m.at)) or ""
     lines[#lines + 1] = (LEVEL_COLOR[m.level] or "") .. when .. m.text .. "|r"
   end
   return table.concat(lines, "\n")
@@ -377,7 +383,7 @@ end
 -- /ryna and the minimap button. Settings can't open in combat on modern clients.
 function P.Open()
   if ns.Try(ns.Fn("InCombatLockdown")) then
-    ns.Print("the settings open after combat.")
+    ns.Print(L["the settings open after combat."])
     return
   end
   local S = _G.Settings
@@ -392,5 +398,5 @@ function P.Open()
     ns.Try(open, P.panel)
     return
   end
-  ns.Print("no settings panel on this client; /ryna status prints the status.")
+  ns.Print(L["no settings panel on this client; /ryna status prints the status."])
 end

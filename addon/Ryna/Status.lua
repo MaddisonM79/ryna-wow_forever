@@ -3,15 +3,16 @@
 -- which may be nil or hold any subset of its fields, so every read here checks its type.
 
 local _, ns = ...
+local L = ns.L
 
 local St = {}
 ns.Status = St
 
 local STALE_SECONDS = 24 * 3600
 St.MODE_LABELS = {
-  instances = "In dungeons and raids only",
-  always = "Always",
-  never = "Never",
+  instances = L["In dungeons and raids only"],
+  always = L["Always"],
+  never = L["Never"],
 }
 St.MODE_ORDER = { "instances", "always", "never" }
 
@@ -54,18 +55,14 @@ function St.IsNewer(candidate, current)
   return St.CompareVersions(candidate, current) == 1
 end
 
-local function plural(n, word)
-  return n .. " " .. word .. (n == 1 and "" or "s")
-end
-
 -- "just now", "12 minutes ago", "3 hours ago", "2 days ago".
 function St.Ago(t)
   if type(t) ~= "number" then return nil end
   local d = ns.Now() - t
-  if d < 60 then return "just now" end
-  if d < 3600 then return plural(math.floor(d / 60), "minute") .. " ago" end
-  if d < 86400 then return plural(math.floor(d / 3600), "hour") .. " ago" end
-  return plural(math.floor(d / 86400), "day") .. " ago"
+  if d < 60 then return L["just now"] end
+  if d < 3600 then return ns.Plural(math.floor(d / 60), L["%d minute ago"], L["%d minutes ago"]) end
+  if d < 86400 then return ns.Plural(math.floor(d / 3600), L["%d hour ago"], L["%d hours ago"]) end
+  return ns.Plural(math.floor(d / 86400), L["%d day ago"], L["%d days ago"])
 end
 
 -- One line about the companion app: "Synced 12 minutes ago as <name>." or the sign-in hint.
@@ -74,16 +71,22 @@ function St.SyncLine()
   local lastPush = field(a, "lastPush", "number")
   local as = St.Plain(field(a, "as", "string"))
   if lastPush then
-    local line = "Synced " .. St.Ago(lastPush) .. (as and (" as " .. as) or "") .. "."
+    local line
+    if as then
+      line = string.format(L["Synced %s as %s."], St.Ago(lastPush), as)
+    else
+      line = string.format(L["Synced %s."], St.Ago(lastPush))
+    end
     if field(a, "signedIn", "boolean") == false then
-      line = line .. " Signed out now: sign in from the Ryna companion app."
+      line = line .. " " .. L["Signed out now: sign in from the Ryna companion app."]
     end
     return line
   end
-  return "Not synced yet. Sign in from the Ryna companion app."
+  return L["Not synced yet. Sign in from the Ryna companion app."]
 end
 
 -- What AgentStatus.lua held at login, for the debug line: when, as whom, signed in, messages.
+-- Debug text stays English; only St.Ago's "12 minutes ago" comes out in the client's language.
 function St.DebugLine()
   local a = St.Agent()
   if not a then return "empty (nothing synced yet)" end
@@ -109,11 +112,12 @@ function St.UpdateLines()
   local out = {}
   local addon = field(latest, "addon", "string")
   if St.IsNewer(addon, ns.VERSION) then
-    out[#out + 1] = "Update available: Ryna addon " .. St.Plain(addon) .. " (you have " .. ns.VERSION .. ")."
+    out[#out + 1] = string.format(L["Update available: Ryna addon %s (you have %s)."], St.Plain(addon), ns.VERSION)
   end
   local agent, have = field(latest, "agent", "string"), field(a, "agent", "string")
   if St.IsNewer(agent, have) then
-    out[#out + 1] = "Update available: companion app " .. St.Plain(agent) .. " (you have " .. St.Plain(have) .. ")."
+    out[#out + 1] = string.format(L["Update available: companion app %s (you have %s)."], St.Plain(agent),
+      St.Plain(have))
   end
   return out
 end
@@ -162,6 +166,6 @@ end
 -- turned it on, and "not turned on by Ryna" covers both off and a /combatlog typed by hand.
 function St.LoggingText()
   local on = ns.Zone.IsLogging()
-  if on == nil then return "unavailable on this client" end
-  return on and "on (turned on by Ryna)" or "not turned on by Ryna"
+  if on == nil then return L["unavailable on this client"] end
+  return on and L["on (turned on by Ryna)"] or L["not turned on by Ryna"]
 end

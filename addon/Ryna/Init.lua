@@ -5,6 +5,7 @@
 -- time request are deferred a few seconds past the first PLAYER_ENTERING_WORLD.
 
 local addonName, ns = ...
+local L = ns.L
 
 ns.On("ADDON_LOADED", function(_, name)
   if name == addonName then ns.InitDB() end
@@ -16,9 +17,9 @@ ns.On("PLAYER_LOGIN", function()
   local rec = ns.Character.Login()
   ns.Journal.StartSession(rec.guid)
   ns.Journal.Add("session", { kind = "login", clock = time(), zone = rec.zone })
-  ns.PrintRaw("|cff7fb2ffRyna " .. ns.VERSION .. "|r: recording. /ryna for settings.")
+  ns.PrintRaw(string.format("|cff7fb2ffRyna %s|r: %s", ns.VERSION, L["recording. /ryna for settings."]))
   ns.Debug("login: record built for %s, level %s %s, in %s", rec.fullName, rec.level, rec.class, rec.zone)
-  if ns.Status.IsStale() then ns.Print("the companion app hasn't synced recently.") end
+  if ns.Status.IsStale() then ns.Print(L["the companion app hasn't synced recently."]) end
   ns.Debug("companion app file: %s", ns.Status.DebugLine())
   ns.Run("advanced combat logging", ns.Zone.ApplyAdvancedLogging)
 end)

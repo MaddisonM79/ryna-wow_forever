@@ -22,4 +22,6 @@ jobs:
           sudo luarocks install luacheck
       - run: luacheck addon/ --config addon/.luacheckrc --no-color
       - name: Every addon file parses as Lua 5.1
-        run: for f in addon/Ryna/*.lua; do luac5.1 -p "$f" || exit 1; done
+        run: for f in addon/Ryna/*.lua addon/Ryna/Locales/*.lua; do luac5.1 -p "$f" || exit 1; done
+      - name: Every translatable string is in Locales/enUS.lua and the locale templates
+        run: node addon/tools/strings.mjs

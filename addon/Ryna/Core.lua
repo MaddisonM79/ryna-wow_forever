@@ -23,6 +23,30 @@ function ns.Fn(a, b)
   return nil
 end
 
+-- Localisation (Locales/*.lua). ns.L["English text"] is that text in the client's language: the
+-- key itself unless the locale file for GetLocale() translated it, so a missing translation reads
+-- as English and never as nil. Locales/enUS.lua lists every key with `true` ("the text is the key");
+-- only a string value is kept, so a translator's `nil` falls back to English too.
+ns.L = setmetatable({}, {
+  __index = function(_, key) return key end,
+  __newindex = function(t, key, value)
+    if type(value) == "string" and value ~= "" then rawset(t, key, value) end
+  end,
+})
+local L = ns.L
+
+-- Marks English text that is kept as is (in RynaDB or a debug line) and translated with L[text]
+-- only where it is shown, so tools/strings.mjs still sees the key. Returns the text unchanged.
+function ns.N(text)
+  return text
+end
+
+-- "1 minute" / "12 minutes": n formatted into `singular` when it is 1, else into `plural`. Both
+-- are L[...] strings with one %d.
+function ns.Plural(n, singular, plural)
+  return string.format(n == 1 and singular or plural, n)
+end
+
 local function passResults(ok, ...)
   if ok then return ... end
   return nil
@@ -45,6 +69,13 @@ end
 function ns.NonEmpty(s)
   if type(s) == "string" and s ~= "" and not ns.IsSecret(s) then return s end
   return nil
+end
+
+-- The client's language ("enUS", "deDE", ...), for the locale files; "enUS" when it can't say.
+function ns.Locale()
+  local locale = ns.Try(ns.Fn("GetLocale"))
+  if type(locale) == "string" and locale ~= "" then return locale end
+  return "enUS"
 end
 
 function ns.Now()
@@ -121,7 +152,7 @@ function ns.SetDebug(on)
   if on then
     ns.Debug("on")
   else
-    ns.Print("debug messages off.")
+    ns.Print(L["debug messages off."])
   end
 end
 
@@ -166,7 +197,7 @@ function ns.ReportError(label, err)
   e.last = tostring(label) .. ": " .. tostring(err)
   if not e.seen[label] then
     e.seen[label] = true
-    ns.Print("an error in " .. tostring(label) .. " was caught (reported once): " .. tostring(err))
+    ns.Print(string.format(L["an error in %s was caught (reported once): %s"], tostring(label), tostring(err)))
   end
 end
 

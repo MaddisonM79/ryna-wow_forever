@@ -221,9 +221,40 @@ recording starts, each under its own error guard, with plainer fallbacks for eve
 UI API still records everything. Heavy scans run a few seconds after you enter the
 world, and bag and quest updates are coalesced.
 
+## Translating Ryna
+
+Everything Ryna shows (the panel, the minimap tooltip, chat lines and `/ryna` output) comes from
+`Ryna/Locales/`. The keys are the English text itself, and **English is always the fallback**: a
+string a language hasn't translated shows in English, never as a blank or an error. Debug lines
+(`/ryna debug`) stay English on purpose, and so does everything Ryna saves for the companion app.
+
+To translate it into your client's language:
+
+1. Open that language's file in `Ryna/Locales/`: `deDE.lua`, `frFR.lua`, `esES.lua`, `esMX.lua`,
+   `itIT.lua`, `ptBR.lua`, `ruRU.lua`, `koKR.lua`, `zhCN.lua` or `zhTW.lua` (the name is what
+   `/run print(GetLocale())` prints). Each is a copy of `enUS.lua` with every value `nil`, and only
+   loads when the game runs in that language.
+2. Replace `nil` with your text: `L["Run census now"] = "Zensus jetzt starten"`. Leave the key as it
+   is. Keep each `%s` and `%d` in the same order, keep `||` (one `|` in chat), and keep command words
+   inside commands (`/ryna debug on||off||toggle`) in English, since they are what players type. A
+   pair such as `"%d player"` / `"%d players"` is the form for 1 and for every other number.
+3. Test it in the game: set the client's language (Battle.net → Settings → Game Settings → Text
+   Language, or `SET textLocale "deDE"` in `WTF/Config.wtf` with that language installed), log in,
+   and look at `/ryna`, `/ryna status`, `/ryna help` and the minimap tooltip. `/reload` picks up
+   edits to the file.
+
+When a string in the code changes, add or change it in `enUS.lua` (as `L["..."] = true`) and run
+`node addon/tools/strings.mjs --templates` from the repository root: it rewrites the other locale
+files with the new keys and keeps every translation already in them. Without `--templates` it only
+checks (CI runs it): every `L["..."]` and `N("...")` key the code uses is in `enUS.lua`, nothing in
+`enUS.lua` is unused, and each locale file has exactly `enUS.lua`'s keys. Text that is stored or
+printed to debug in English and translated only where it is shown (the census sweep's stop reasons,
+kept in `RynaDB.census`) is marked with `N("...")` and looked up with `L[reason]`.
+
 ## Development
 
-`luacheck addon/` from the repository root uses `addon/.luacheckrc`.
+`luacheck addon/` from the repository root uses `addon/.luacheckrc`, and
+`node addon/tools/strings.mjs` checks the translatable strings (see "Translating Ryna").
 
 ### Advanced combat logging
 
