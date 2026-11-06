@@ -1,0 +1,30 @@
+[package]
+name = "ryna-wow-app"
+description = "Ryna, the World of Warcraft: Forever companion app: signs in, watches the game's files and pushes them while it is open."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+# Tauri 2.12 needs 1.90, one past the workspace's floor.
+rust-version = "1.90"
+
+[[bin]]
+name = "ryna-wow-app"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "=2.7.4", features = [] }
+
+[dependencies]
+ryna-wow-core = { path = "../../core" }
+serde.workspace = true
+serde_json.workspace = true
+# Versions are exact: the Tauri CLI refuses a crate whose major.minor differs from its npm
+# package (package.json pins @tauri-apps/api 2.12 and @tauri-apps/plugin-dialog 2.8 to match).
+tauri = { version = "=2.12.5", features = ["tray-icon"] }
+tauri-plugin-autostart = "=2.7.0"
+tauri-plugin-dialog = "=2.8.3"
+tauri-plugin-opener = "=2.7.2"
+
+[dev-dependencies]
+tempfile.workspace = true
