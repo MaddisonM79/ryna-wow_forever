@@ -83,8 +83,16 @@ pub fn iso_utc(secs: i64) -> String {
     )
 }
 
-/// This machine's name for the heartbeat: `RYNA_HOST`, else the OS's short host name.
+/// This machine's name for the heartbeat: `RYNA_HOST`, else the OS's short host name. Asked once
+/// per process: it doesn't change under a running agent, and on Unix the answer comes from a
+/// `hostname` child process, which is worth not forking at every heartbeat (a child forked while
+/// the run lock is held keeps it a moment longer; see `state_dir::try_lock_named`).
 pub fn hostname() -> String {
+    static NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    NAME.get_or_init(ask_hostname).clone()
+}
+
+fn ask_hostname() -> String {
     if let Ok(h) = std::env::var("RYNA_HOST") {
         if !h.trim().is_empty() {
             return h.trim().to_string();
@@ -146,6 +154,13 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_host_name_is_never_empty_and_asked_once() {
+        let first = hostname();
+        assert!(!first.is_empty());
+        assert_eq!(hostname(), first);
+    }
 
     #[test]
     fn iso_dates() {

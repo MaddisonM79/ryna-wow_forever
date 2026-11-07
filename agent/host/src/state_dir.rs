@@ -4,6 +4,13 @@
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+/// How long a held lock is retried before it is reported busy. A run holds the lock for seconds,
+/// so a real holder is still reported promptly; this covers a lock that is only *apparently* held
+/// (see `try_lock_named`).
+const GRACE: Duration = Duration::from_millis(250);
+const GRACE_STEP: Duration = Duration::from_millis(10);
 
 /// The run lock's file name in the state folder.
 pub const LOCK_FILE: &str = "run.lock";
@@ -93,6 +100,13 @@ fn read_holder(path: &Path) -> Option<String> {
 
 /// Take the lock in `dir/name` (the combat tailer's is `combat/tail.lock`), or `Err(Busy)` when
 /// it's held. The holder writes who it is into the file (truncated first), so a refusal can say.
+///
+/// A held lock is retried for `GRACE` before it counts as busy, because on Unix the lock
+/// (`flock`) belongs to the open file, and a child process forked by *any* thread while the lock
+/// is held inherits that open file until it execs: the holder's `drop` then doesn't free the lock,
+/// the child's exec a moment later does. The app asks `pgrep` whether the game runs while the
+/// watch loop holds this lock, and the heartbeat asks `hostname`, so without the grace a pass
+/// could be refused as "in progress" by a lock nobody holds any more.
 pub fn try_lock_named(dir: &Path, name: &str) -> std::io::Result<Result<RunLock, Busy>> {
     std::fs::create_dir_all(dir)?;
     let path = dir.join(name);
@@ -101,19 +115,27 @@ pub fn try_lock_named(dir: &Path, name: &str) -> std::io::Result<Result<RunLock,
         .truncate(false)
         .write(true)
         .open(&path)?;
-    match file.try_lock() {
-        Ok(()) => {
-            // Who holds it, for the next refusal's words; the lock itself doesn't depend on it.
-            file.set_len(0)?;
-            file.rewind()?;
-            file.write_all(holder_line().as_bytes())?;
-            file.flush()?;
-            Ok(Ok(RunLock { _file: file }))
+    let started = Instant::now();
+    loop {
+        match file.try_lock() {
+            Ok(()) => {
+                // Who holds it, for the next refusal's words; the lock itself doesn't depend on it.
+                file.set_len(0)?;
+                file.rewind()?;
+                file.write_all(holder_line().as_bytes())?;
+                file.flush()?;
+                return Ok(Ok(RunLock { _file: file }));
+            }
+            Err(TryLockError::WouldBlock) if started.elapsed() < GRACE => {
+                std::thread::sleep(GRACE_STEP);
+            }
+            Err(TryLockError::WouldBlock) => {
+                return Ok(Err(Busy {
+                    holder: read_holder(&path),
+                }))
+            }
+            Err(TryLockError::Error(e)) => return Err(e),
         }
-        Err(TryLockError::WouldBlock) => Ok(Err(Busy {
-            holder: read_holder(&path),
-        })),
-        Err(TryLockError::Error(e)) => Err(e),
     }
 }
 
@@ -138,6 +160,34 @@ mod tests {
         assert!(try_lock(dir.path()).unwrap().is_err());
         drop(held);
         assert!(try_lock(dir.path()).unwrap().is_ok());
+    }
+
+    #[test]
+    fn a_lock_that_frees_within_the_grace_is_taken_not_refused() {
+        // Stands for the open file a forked child inherited: a second open of the lock file,
+        // locked, that goes away a moment after the holder's own drop.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(LOCK_FILE);
+        let holder = try_lock(dir.path()).unwrap().expect("first lock");
+        let inherited = OpenOptions::new().write(true).open(&path).unwrap();
+        drop(holder);
+        let lingering = std::thread::spawn(move || {
+            // Our own lock on the same inode: `flock` locks are per open file, so this conflicts
+            // with a fresh `try_lock` the way the child's inherited copy would.
+            inherited.lock().unwrap();
+            std::thread::sleep(Duration::from_millis(60));
+            drop(inherited);
+        });
+        std::thread::sleep(Duration::from_millis(20));
+        let started = Instant::now();
+        let taken = try_lock(dir.path()).unwrap();
+        assert!(taken.is_ok(), "refused as busy: {:?}", taken.as_ref().err());
+        assert!(
+            started.elapsed() < GRACE,
+            "waited the whole grace: {:?}",
+            started.elapsed()
+        );
+        lingering.join().unwrap();
     }
 
     #[test]
