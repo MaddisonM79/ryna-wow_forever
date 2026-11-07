@@ -83,34 +83,31 @@ pub fn iso_utc(secs: i64) -> String {
     )
 }
 
-/// This machine's name for the heartbeat: `RYNA_HOST`, else the OS's short host name. Asked once
-/// per process: it doesn't change under a running agent, and on Unix the answer comes from a
-/// `hostname` child process, which is worth not forking at every heartbeat (a child forked while
-/// the run lock is held keeps it a moment longer; see `state_dir::try_lock_named`).
+/// This machine's name for the heartbeat: `RYNA_HOST`, else the OS's host name up to its first
+/// dot (what `hostname -s` prints), asked of the OS in-process and once: it doesn't change under
+/// a running agent, and a child process forked for it would hold the run lock's open file a
+/// moment longer (see `state_dir::try_lock_named`).
 pub fn hostname() -> String {
     static NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    NAME.get_or_init(ask_hostname).clone()
+    NAME.get_or_init(|| ask_hostname(&gethostname::gethostname().to_string_lossy()))
+        .clone()
 }
 
-fn ask_hostname() -> String {
+fn ask_hostname(os_name: &str) -> String {
     if let Ok(h) = std::env::var("RYNA_HOST") {
         if !h.trim().is_empty() {
             return h.trim().to_string();
         }
     }
-    if cfg!(windows) {
-        if let Ok(h) = std::env::var("COMPUTERNAME") {
-            if !h.is_empty() {
-                return h;
-            }
-        }
-    } else if let Ok(out) = std::process::Command::new("hostname").arg("-s").output() {
-        let h = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if out.status.success() && !h.is_empty() {
-            return h;
-        }
+    match short_name(os_name) {
+        "" => "unknown".to_string(),
+        short => short.to_string(),
     }
-    "unknown".to_string()
+}
+
+/// `hostname -s`: the name up to the first dot, so `aerins-mac.local` is `aerins-mac`.
+fn short_name(name: &str) -> &str {
+    name.trim().split('.').next().unwrap_or("").trim()
 }
 
 /// `macos`, `windows` or `linux` (what the heartbeat's `os` says).
@@ -158,8 +155,16 @@ mod tests {
     #[test]
     fn the_host_name_is_never_empty_and_asked_once() {
         let first = hostname();
-        assert!(!first.is_empty());
+        assert!(!first.is_empty() && !first.contains('.'), "{first}");
         assert_eq!(hostname(), first);
+    }
+
+    #[test]
+    fn the_short_name_stops_at_the_first_dot() {
+        assert_eq!(short_name("aerins-mac.local"), "aerins-mac");
+        assert_eq!(short_name(" tower \n"), "tower");
+        assert_eq!(short_name(""), "");
+        assert_eq!(short_name(".local"), "");
     }
 
     #[test]

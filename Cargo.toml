@@ -27,6 +27,9 @@ directories = "6"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 # gzip for the combat digests and raw segments (already in the tree through Tauri).
 flate2 = "1"
+# This machine's name for the heartbeat, from the OS in-process (no `hostname` child process,
+# whose fork would hold the run lock's open file a moment longer; see state_dir::try_lock_named).
+gethostname = "1"
 # keyring 3: the OS keychain on each target. On Linux the Secret Service (gnome-keyring, KeePassXC,
 # KWallet) over zbus, which is pure Rust (no libdbus, so CI needs no system libraries), with the
 # kernel keyring as the cache, and alone when no Secret Service answers (see auth::KeyringStore).

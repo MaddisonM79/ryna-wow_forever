@@ -105,8 +105,8 @@ fn read_holder(path: &Path) -> Option<String> {
 /// (`flock`) belongs to the open file, and a child process forked by *any* thread while the lock
 /// is held inherits that open file until it execs: the holder's `drop` then doesn't free the lock,
 /// the child's exec a moment later does. The app asks `pgrep` whether the game runs while the
-/// watch loop holds this lock, and the heartbeat asks `hostname`, so without the grace a pass
-/// could be refused as "in progress" by a lock nobody holds any more.
+/// watch loop holds this lock (the heartbeat used to fork `hostname` too), so without the grace
+/// a pass could be refused as "in progress" by a lock nobody holds any more.
 pub fn try_lock_named(dir: &Path, name: &str) -> std::io::Result<Result<RunLock, Busy>> {
     std::fs::create_dir_all(dir)?;
     let path = dir.join(name);

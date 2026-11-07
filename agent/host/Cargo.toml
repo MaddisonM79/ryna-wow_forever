@@ -15,6 +15,7 @@ testing = []
 base64.workspace = true
 directories.workspace = true
 ed25519-dalek.workspace = true
+gethostname.workspace = true
 keyring.workspace = true
 rand_core.workspace = true
 reqwest.workspace = true
