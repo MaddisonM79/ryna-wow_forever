@@ -177,6 +177,13 @@ thread with a cancel token it keeps, `cancel_login` fires it, and `login-finishe
 ended (`ok`, `cancelled`, `error`, `fix`); `sync_now` wakes the running loop
 (`WatchControl::request_pass`) rather than restarting it. Errors show the core's words.
 
+The window opens at 820×560 the first time and remembers the size and position it was left at
+(`tauri-plugin-window-state`, in `window-state.json` in the app's config folder); it opens hidden
+and shows once that frame has been checked against the monitors (`src-tauri/src/frame.rs`): a frame
+whose centre is on no monitor, or that is larger than its monitor's work area, goes back to 820×560
+centred on the primary monitor. Whether it was visible isn't remembered, since it's usually hidden
+to the tray at quit.
+
 **Nothing runs when it's closed.** Closing the window hides it to the tray (menu bar on macOS),
 where it keeps syncing; Quit, in the tray menu, stops the loop and exits. There is no service,
 launchd job or scheduled task. "Open Ryna when I log in" is a setting, off by default; on macOS
