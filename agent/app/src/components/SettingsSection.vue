@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { api, errorText } from "../api";
 import { chooseGameFolder, refresh, setCombatSettings, setGameFolder, status } from "../store";
+import { checkButton } from "../updateWords";
+import { checkForUpdates, updateCheck, updatePhase } from "../updates";
+
+const updateButton = computed(() => checkButton(updateCheck.value, updatePhase.value));
 
 const autostartError = ref<string | null>(null);
 
@@ -64,5 +68,16 @@ async function toggleAutostart(e: Event): Promise<void> {
         <span class="muted">Each fight's own combat log lines are stored too, for 90 days.</span>
       </span>
     </label>
+    <div class="setting">
+      <span>
+        Updates
+        <span class="muted">Ryna {{ status.appVersion }}, with addon {{ status.addonBundled ?? "unknown" }}. A new Ryna brings the addon with it.</span>
+      </span>
+      <span class="row-actions">
+        <button type="button" class="quiet" :disabled="updateButton.disabled" @click="checkForUpdates(true)">
+          {{ updateButton.label }}
+        </button>
+      </span>
+    </div>
   </section>
 </template>

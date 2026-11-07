@@ -187,6 +187,20 @@ export interface InstallResult {
   gameRunning: boolean;
 }
 
+/** What an update check found (updates.rs `UpdateCheck`). */
+export interface UpdateCheck {
+  /** False in a build without an updater key: it never checks. */
+  configured: boolean;
+  current: string;
+  available: { version: string; notes: string | null; date: string | null } | null;
+}
+
+/** While an update downloads (`update-progress`). */
+export interface UpdateProgress {
+  downloaded: number;
+  total: number | null;
+}
+
 export const api = {
   status: () => invoke<Status>("get_status"),
   startLogin: () => invoke<LoginCode>("start_login"),
@@ -203,6 +217,9 @@ export const api = {
   installAddon: (path: string | null = null) => invoke<InstallResult>("install_addon", { path }),
   setAutostart: (enabled: boolean) => invoke<boolean>("set_autostart", { enabled }),
   openPortal: () => invoke<void>("open_portal"),
+  checkForUpdate: () => invoke<UpdateCheck>("check_for_update"),
+  /** Resolves only if it failed to install: on success the app restarts into the new version. */
+  installUpdate: () => invoke<void>("install_update"),
 };
 
 export function onAgentEvent(f: (e: AgentEvent) => void): Promise<UnlistenFn> {
@@ -215,6 +232,10 @@ export function onWatchState(f: (watching: boolean) => void): Promise<UnlistenFn
 
 export function onLoginFinished(f: (r: LoginFinished) => void): Promise<UnlistenFn> {
   return listen<LoginFinished>("login-finished", (e) => f(e.payload));
+}
+
+export function onUpdateProgress(f: (p: UpdateProgress) => void): Promise<UnlistenFn> {
+  return listen<UpdateProgress>("update-progress", (e) => f(e.payload));
 }
 
 /** An error from `invoke` (the commands reject with a plain string). */

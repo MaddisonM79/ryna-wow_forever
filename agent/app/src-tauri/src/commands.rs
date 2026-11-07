@@ -8,6 +8,7 @@ use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_opener::OpenerExt as _;
 
 use crate::agent::{self, InstallResult, LoginCode, Status};
+use crate::updates;
 
 /// The portal's page for this app.
 pub const PORTAL_URL: &str = "https://ryna.io/wow";
@@ -133,4 +134,18 @@ pub fn open_portal(app: AppHandle) -> Result<(), String> {
     app.opener()
         .open_url(PORTAL_URL, None::<&str>)
         .map_err(|e| e.to_string())
+}
+
+/// Asks GitHub Releases whether there's a newer Ryna (`configured: false` in a build without an
+/// updater key, which never asks).
+#[tauri::command]
+pub async fn check_for_update(app: AppHandle) -> Result<updates::UpdateCheck, String> {
+    updates::check(&app).await
+}
+
+/// Downloads and installs the update the last check found, then starts the new version.
+/// Progress arrives as `update-progress`; it returns only if something failed.
+#[tauri::command]
+pub async fn install_update(app: AppHandle) -> Result<(), String> {
+    updates::install(&app).await
 }

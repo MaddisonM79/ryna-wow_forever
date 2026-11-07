@@ -23,14 +23,23 @@ Pre-alpha. The design is settled and nothing here is usable yet. The order of wo
 ## What is in here
 
 - `addon/`: the Lua addon, tagged for Forever. It writes a table to SavedVariables on logout and
-  `/reload`, and turns combat logging on inside instances. It has no UI beyond `/ryna status`.
+  `/reload`, and turns combat logging on inside instances. Its panel is `/ryna`.
 - `agent/`: the agent, a Rust workspace (`Cargo.toml` at the root). `agent/core` is the library:
   the SavedVariables reader, install discovery, the sign-in (OAuth device grant: the agent never
   sees your password), the pusher, and the watch loop. `agent/cli` is a command line over it for
   developers; the desktop app (`agent/app`) that people install runs the same core while it is
-  open. `agent/fixtures` holds scrubbed test files. The combat-log parser comes in stage 2.
+  open. `agent/fixtures` holds scrubbed test files.
 - `scripts/capture.sh`: turns a real `Ryna.lua` into a scrubbed fixture (the original stays in the
   gitignored `captures/`).
+
+## Releases and updates
+
+The desktop app, the addon zip and the CLI come from GitHub Releases, built by
+`.github/workflows/release.yml` from a `vX.Y.Z` tag once the addon's TOC, the app and the crates
+all carry that version (`scripts/check-versions.mjs`). An installed app checks for a newer release
+at launch and every 6 hours and offers to update and restart; the addon comes inside the app, so
+that's the addon's update too. Each update is verified against a signing key before it installs.
+How to cut one, and the optional signing secrets: `agent/README.md`, "Releasing".
 
 ## What leaves your computer
 

@@ -137,7 +137,7 @@ cd agent/app
 pnpm install
 pnpm tauri dev        # the window, with the frontend hot-reloading
 pnpm test             # the frontend's tests; `cargo test -p ryna-wow-app` for the Rust side
-pnpm tauri build      # the installer for this OS, in target/release/bundle/
+pnpm tauri build      # the installer for this OS, in target/release/bundle/ (see "Updates" for what it adds)
 ```
 
 A bare `cargo build` or `cargo test` at the root covers the core and the CLI only
@@ -154,6 +154,92 @@ core's, shared with the CLI.
 The icons in `app/src-tauri/icons` are placeholders: `pnpm icon` draws `app/app-icon.png` with a
 small Node script and runs `tauri icon` on it. Replace the PNG and run `pnpm tauri icon app-icon.png`
 for real artwork.
+
+## Updates
+
+The app checks this repository's GitHub Releases at launch and every 6 hours
+(`plugins.updater.endpoints`: `releases/latest/download/latest.json`). When a newer release is
+there, a banner says "Ryna x.y.z is available" with **Update and restart** (download, verify,
+install, start the new version) and **Later** (hides it until a newer one, or a check from
+Settings). Settings has **Check for updates**. Each finding goes to the activity log. The app
+carries the addon, so an app update is also the addon update: the Installs list then offers it.
+
+Every download is checked against the updater's public key, baked in at build time, and the
+signature must name the version `latest.json` announces (`requireSignedVersion`, so an old signed
+build can't be passed off as a new one). `pnpm tauri …` runs `app/scripts/tauri.mjs`, which merges
+this build's additions into `tauri.conf.json` as `--config <json>` (`app/scripts/release-config.mjs`
+decides them, and prints a `[ryna]` line for each):
+
+| What exists | What the build gets |
+|---|---|
+| no `app/updater.pub` | an empty `pubkey`: the app never checks, and its button says "Updates aren't set up in this build" |
+| `app/updater.pub` | the key, so the app can update itself |
+| `app/updater.pub` and `TAURI_SIGNING_PRIVATE_KEY` | also `createUpdaterArtifacts` (and the `app` target on macOS): `Ryna.app.tar.gz` + `.sig`, or the NSIS installer's `.sig` |
+| all six Azure values (below) | `bundle.windows.signCommand`: `artifact-signing-cli` signs the exe and the installer, before the updater signs the installer |
+
+A plain `cargo build -p ryna-wow-app` reads `tauri.conf.json` alone, so it's always the build
+without a key.
+
+## Releasing
+
+1. Bump the version everywhere: `version` in the root `Cargo.toml` (`[workspace.package]`, every
+   crate takes it), `version` in `app/package.json`, and `## Version:` in `addon/Ryna/Ryna.toc`.
+   Run `cargo check` so `Cargo.lock` follows, then `node scripts/check-versions.mjs`, which fails
+   and names each file when they disagree (CI runs it on every push too).
+2. Commit, then tag and push the tag: `git tag -s vX.Y.Z && git push origin vX.Y.Z`.
+3. `.github/workflows/release.yml` checks the tag against the files (a mismatch stops it before
+   anything builds), then builds and attaches to one GitHub Release, with generated notes:
+   - the CLI: `ryna-wow-aarch64-apple-darwin`, `ryna-wow-x86_64-apple-darwin`,
+     `ryna-wow-x86_64-pc-windows-msvc.exe` (each smoke-tested where the runner can run it);
+   - the app: `Ryna_X.Y.Z_aarch64.dmg`, `Ryna_X.Y.Z_x64.dmg`, `Ryna_X.Y.Z_x64-setup.exe`;
+   - the addon: `Ryna-X.Y.Z.zip` (`addon/Ryna`, for a manual install or CurseForge);
+   - with the updater key: `Ryna_X.Y.Z_<arch>.app.tar.gz` and their `.sig`s, the installer's
+     `.sig`, and `latest.json` (`scripts/latest-json.mjs`);
+   - `SHA256SUMS` over all of it.
+4. Every running app finds it within 6 hours (or at its next launch) and offers it. A tag with a
+   `-` (`v0.3.0-rc.1`) is a pre-release, which is never "latest", so no app is offered it.
+
+To try a release without publishing, run the `release` workflow by hand (Actions → release →
+Run workflow): everything builds and lands as the `release-X.Y.Z` workflow artifact. From a
+branch it is always a dry run; from a tag, untick `dry_run` to publish that tag.
+
+### Secrets
+
+All optional: without them the release is unsigned and can't update anyone, and still builds.
+Maddison creates each one, keeps it in 1Password, and adds it as a repository secret in GitHub
+(Settings → Secrets and variables → Actions). Each group is used only when all of it is set.
+
+| Secret | What it does |
+|---|---|
+| `TAURI_SIGNING_PRIVATE_KEY` | The updater's private key (the file's contents). Signs `Ryna.app.tar.gz` and the installer so apps accept them as updates. Needs `app/updater.pub` committed. |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | That key's password (leave unset for a key made without one). |
+| `APPLE_CERTIFICATE` | A Developer ID Application certificate, exported as `.p12` and base64-encoded. Signs the macOS app. |
+| `APPLE_CERTIFICATE_PASSWORD` | The `.p12`'s export password. |
+| `APPLE_SIGNING_IDENTITY` | The certificate's name, `Developer ID Application: <name> (<team id>)`. |
+| `APPLE_ID` | The Apple account that notarizes (only with the three above). |
+| `APPLE_PASSWORD` | An app-specific password for it (appleid.apple.com), not the account password. |
+| `APPLE_TEAM_ID` | The developer team's id. |
+| `AZURE_TRUSTED_SIGNING_ENDPOINT` | Azure Artifact Signing (formerly Trusted Signing): the account's region endpoint, e.g. `https://eus.codesigning.azure.net`. |
+| `AZURE_TRUSTED_SIGNING_ACCOUNT` | The Artifact Signing account's name. |
+| `AZURE_TRUSTED_SIGNING_PROFILE` | The certificate profile's name. |
+| `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_SECRET` | An app registration with the "Artifact Signing Certificate Profile Signer" role on that account; `artifact-signing-cli` signs in as it. |
+
+The macOS values are the Tauri bundler's own environment (the same names tauri-action passes):
+it imports the certificate into a temporary keychain, signs, and notarizes and staples when the
+`APPLE_ID` trio is there.
+
+### The updater keypair
+
+Made once, by Maddison, and never again: a new key means every installed app refuses every
+later update, and the only way forward is a manual reinstall.
+
+```bash
+cargo tauri signer generate -w ~/.tauri/ryna.key     # asks for a password; writes ryna.key and ryna.key.pub
+```
+
+Store both halves (and the password) in 1Password. Put the private key's contents in the
+`TAURI_SIGNING_PRIVATE_KEY` secret and the password in `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Copy
+`ryna.key.pub` to `agent/app/updater.pub` and commit only that file. Then delete the local copies.
 
 ## Use (developers)
 
