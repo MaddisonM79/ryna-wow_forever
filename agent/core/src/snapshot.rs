@@ -10,6 +10,7 @@
 //! index can come out sparse, so every list field here accepts an array, an object keyed by index,
 //! or nothing, and every table field accepts an empty list as "empty".
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::de::{DeserializeOwned, Error as _};
@@ -165,6 +166,87 @@ pub struct Character {
     pub containers: Vec<ContainerItem>,
     #[serde(default)]
     pub bank_as_of: Option<i64>,
+    /// Creatures killed by the character or its group, by npc id (section 12.1).
+    #[serde(
+        default,
+        deserialize_with = "map",
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
+    pub kills: BTreeMap<String, KillStat>,
+    /// Items looted, by item id.
+    #[serde(
+        default,
+        deserialize_with = "map",
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
+    pub loot: BTreeMap<String, LootStat>,
+    /// Game objects opened (chests, veins, herbs, pools), by object id.
+    #[serde(
+        default,
+        deserialize_with = "map",
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
+    pub objects: BTreeMap<String, ObjectStat>,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+/// `kills[npcId]`: kills the character took part in, its killing blows, the xp they gave and the
+/// corpses it opened.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KillStat {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub n: i64,
+    #[serde(default)]
+    pub own: i64,
+    #[serde(default)]
+    pub xp: i64,
+    #[serde(default)]
+    pub looted: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zone: Option<String>,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+/// `loot[itemId]`: how often it dropped, how many pieces, and from what (`c:<npcId>`,
+/// `o:<objectId>`, `i:<itemId>`, `f`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LootStat {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality: Option<i64>,
+    #[serde(default)]
+    pub n: i64,
+    #[serde(default)]
+    pub qty: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last: Option<i64>,
+    #[serde(default, deserialize_with = "map")]
+    pub from: BTreeMap<String, i64>,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+/// `objects[objectId]`: times opened, and where last.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ObjectStat {
+    #[serde(default)]
+    pub n: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zone: Option<String>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -738,6 +820,33 @@ where
     serde_json::from_value(v).map_err(D::Error::custom)
 }
 
+/// A string-keyed map. An empty Lua table parses as `[]`, so that is the empty map; a list (an
+/// addon that wrote integer keys 1..n) is keyed by position.
+fn map<'de, D, T>(d: D) -> Result<BTreeMap<String, T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    let entries: Vec<(String, Value)> = match Value::deserialize(d)? {
+        Value::Null => Vec::new(),
+        Value::Object(m) => m.into_iter().collect(),
+        Value::Array(a) => a
+            .into_iter()
+            .enumerate()
+            .map(|(i, v)| ((i + 1).to_string(), v))
+            .collect(),
+        other => return Err(D::Error::custom(format!("`{other}` is not a table"))),
+    };
+    entries
+        .into_iter()
+        .map(|(k, v)| {
+            serde_json::from_value(v)
+                .map(|v| (k.clone(), v))
+                .map_err(|e| D::Error::custom(format!("`{k}`: {e}")))
+        })
+        .collect()
+}
+
 fn opt_table<'de, D, T>(d: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
@@ -1052,6 +1161,100 @@ mod tests {
             c.gear.iter().map(|g| g.slot.unwrap()).collect::<Vec<_>>(),
             vec![1, 5, 16]
         );
+    }
+
+    #[test]
+    fn kills_loot_and_objects() {
+        let v = db(r#"characters = { ["Player-1-00000001"] = {
+            kills = {
+                ["6"] = { name = "Kobold Vermin", n = 43, own = 40, xp = 1720, looted = 38,
+                          last = 1762464000, zone = "Elwynn Forest" },
+                ["40"] = { n = 2 },
+            },
+            loot = {
+                ["2589"] = { name = "Linen Cloth", link = "|cffffffff|Hitem:2589::::::::5:::::::|h[Linen Cloth]|h|r",
+                             quality = 1, n = 30, qty = 45, last = 1762464000,
+                             from = { ["c:6"] = 22, ["c:40"] = 8 }, future = true },
+            },
+            objects = { ["1731"] = { n = 5, last = 1762464000, zone = "Elwynn Forest" } },
+        } }"#);
+        let c = &build(&v, &source("A")).unwrap().snapshot.characters[0];
+        assert_eq!(
+            c.kills["6"],
+            KillStat {
+                name: Some("Kobold Vermin".into()),
+                n: 43,
+                own: 40,
+                xp: 1720,
+                looted: 38,
+                last: Some(1_762_464_000),
+                zone: Some("Elwynn Forest".into()),
+                extra: Map::new(),
+            }
+        );
+        assert_eq!(
+            c.kills["40"],
+            KillStat {
+                n: 2,
+                ..KillStat::default()
+            },
+            "missing counters are 0"
+        );
+        let l = &c.loot["2589"];
+        assert_eq!((l.n, l.qty, l.quality), (30, 45, Some(1)));
+        assert_eq!(
+            l.from,
+            BTreeMap::from([("c:40".to_string(), 8), ("c:6".to_string(), 22)])
+        );
+        assert_eq!(c.objects["1731"].n, 5);
+
+        let wire = serde_json::to_value(c).unwrap();
+        assert_eq!(
+            wire["kills"],
+            json!({
+                "6": { "name": "Kobold Vermin", "n": 43, "own": 40, "xp": 1720, "looted": 38,
+                       "last": 1_762_464_000, "zone": "Elwynn Forest" },
+                "40": { "n": 2, "own": 0, "xp": 0, "looted": 0 },
+            })
+        );
+        assert_eq!(
+            wire["loot"]["2589"],
+            json!({
+                "name": "Linen Cloth",
+                "link": "|cffffffff|Hitem:2589::::::::5:::::::|h[Linen Cloth]|h|r",
+                "quality": 1, "n": 30, "qty": 45, "last": 1_762_464_000,
+                "from": { "c:6": 22, "c:40": 8 }, "future": true,
+            })
+        );
+        assert_eq!(
+            wire["objects"],
+            json!({ "1731": { "n": 5, "last": 1_762_464_000, "zone": "Elwynn Forest" } })
+        );
+        let text = serde_json::to_string(c).unwrap();
+        assert!(text.contains(r#""kills":{"40":{"#), "{text}");
+        assert!(text.contains(r#""6":{"name":"Kobold Vermin""#), "{text}");
+    }
+
+    #[test]
+    fn empty_kills_loot_and_objects() {
+        let v = db(
+            r#"characters = { ["Player-1-00000001"] = { kills = {}, loot = { ["1"] = { from = {} } }, objects = {} } }"#,
+        );
+        let c = &build(&v, &source("A")).unwrap().snapshot.characters[0];
+        assert!(c.kills.is_empty() && c.objects.is_empty());
+        assert!(c.loot["1"].from.is_empty());
+        let wire = serde_json::to_value(c).unwrap();
+        assert!(wire.get("kills").is_none() && wire.get("objects").is_none());
+        assert_eq!(wire["loot"]["1"]["from"], json!({}));
+
+        let v = db(r#"characters = { ["Player-1-00000001"] = { level = 1 } }"#);
+        let c = &build(&v, &source("A")).unwrap().snapshot.characters[0];
+        assert!(c.kills.is_empty() && c.loot.is_empty() && c.objects.is_empty());
+        let wire = serde_json::to_value(c).unwrap();
+        assert!(wire.get("kills").is_none() && wire.get("loot").is_none());
+
+        let v = db(r#"characters = { ["Player-1-00000001"] = { kills = 5 } }"#);
+        assert!(build(&v, &source("A")).is_err());
     }
 
     #[test]

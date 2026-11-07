@@ -138,6 +138,21 @@ L["%d guild members"] = true
 L["Journal: %s, %d kept in all (last 30 days)"] = true
 L["%d event this session"] = true
 L["%d events this session"] = true
+-- The status tab's Chronicle line: "Chronicle: 41 creatures, 112 items" (kinds of creature killed and
+-- kinds of item looted, lifetime, this character). %s: the pairs below.
+L["Chronicle: %s, %s"] = true
+L["Chronicle: off"] = true
+L["%d creature"] = true
+L["%d creatures"] = true
+L["%d item"] = true
+L["%d items"] = true
+L["Record kills and loot"] = true
+L["Counts the creatures you and your group kill, the experience they give and what you loot from them, "
+  .. "as running totals on the character (not journal events). Off: nothing is counted, and the totals so "
+  .. "far are kept."] = true
+L["Show my numbers on tooltips"] = true
+L["Adds your own kills and drops to creature and item tooltips: how many you killed, what they dropped "
+  .. "for you and how often."] = true
 L["Session: %s"] = true
 L["not started"] = true
 L["Combat log: %s right now. Mode: %s"] = true
@@ -151,6 +166,26 @@ L["No messages"] = true
 L["%s: "] = true
 L["the settings open after combat."] = true
 L["no settings panel on this client; /ryna status prints the status."] = true
+
+-- Tooltip.lua: lines added to creature and item tooltips, the player's own numbers.
+-- "Ryna: killed 43 (40 yours), last Elwynn Forest 2 hours ago": %d kills, %d my killing blows,
+-- then the zone and how long ago ("%d hours ago", Status.lua). The second has no zone.
+L["Ryna: killed %d (%d yours), last %s %s"] = true
+L["Ryna: killed %d (%d yours), last %s"] = true
+-- "Linen Cloth: 22 of 38 corpses (58%)": an item, how many corpses dropped it, corpses looted, percent.
+L["%s: %d of %d corpses (%d%%)"] = true
+-- "Ryna: looted 30 times (45), mostly from Kobold Vermin (22)": "%d times" (below), pieces in all,
+-- the biggest source and how many times it dropped from there.
+L["Ryna: looted %s (%d), mostly from %s (%d)"] = true
+L["Ryna: looted %s (%d)"] = true
+L["%d time"] = true
+L["%d times"] = true
+-- Loot sources without a name of their own (%s: the game's id for it).
+L["fishing"] = true
+L["a container"] = true
+L["creature %s"] = true
+L["object %s"] = true
+L["item %s"] = true
 
 -- Minimap.lua
 L["Update available"] = true

@@ -870,6 +870,12 @@ mod tests {
         assert_eq!(one(r#"{ ["a"] = 1, ["a"] = 2 }"#), json!({ "a": 2 }));
         assert_eq!(one(r#"{ ["a"] = 1, ["a"] = nil }"#), json!([]));
         assert_eq!(one(r#"{ [ "spaced" ] = 1 }"#), json!({ "spaced": 1 }));
+        // Numeric-looking string keys stay strings and never make an array.
+        assert_eq!(
+            one(r#"{ ["1"] = { n = 1 }, ["2"] = 2 }"#),
+            json!({ "1": { "n": 1 }, "2": 2 })
+        );
+        assert_eq!(one(r#"{ ["6"] = 1 }"#), json!({ "6": 1 }));
     }
 
     #[test]

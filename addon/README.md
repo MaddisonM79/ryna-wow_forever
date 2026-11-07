@@ -25,6 +25,21 @@ Per character (keyed by its GUID):
 - The quest log (titles, levels, objectives, when accepted) and the ids of completed quests.
 - Your guild's roster (names, levels, classes, ranks, zones, notes, online status; officer notes only
   if your rank can see them), refreshed at login and every 10 minutes.
+- Kills and loot (the Chronicle, below).
+
+**Kills and loot** are running totals on the character record, not journal events: a session has
+thousands of kills, and an event each would make the file large and logout slow. `kills` counts
+each kind of creature you or your group killed (by creature id: how many, how many were your or your
+pet's killing blow, the experience they gave you, how many of their corpses you opened, and the last
+kill's time and zone); `loot` counts each item you looted (how often, how many in all, and from what:
+up to 8 sources, a creature, a game object, a container item or fishing); `objects` counts the chests,
+veins, herbs and pools you opened. A corpse reopened isn't counted twice. Money and currency aren't
+counted (gold is the journal's). Caps keep the file small: 2000 creatures, 3000 items and 2000
+objects per character, the least recent dropped first. **Record kills and loot** (Recording tab, on)
+turns the counting off; the totals so far are kept. **Show my numbers on tooltips** (on) adds your
+own numbers to tooltips in game: a creature's "Ryna: killed 43 (40 yours), last Elwynn Forest 2 hours
+ago" and its top three drops ("Linen Cloth: 22 of 38 corpses (58%)"), and an item's "Ryna: looted 30
+times (45), mostly from Kobold Vermin (22)". Only this character's numbers, never anyone else's.
 
 A **journal** of events, kept for 30 days and at most 100,000 events (when it goes past that, the
 oldest are dropped). The cap is high on purpose: the addon may be installed days before the companion
@@ -183,14 +198,15 @@ plain buttons with the selected one lit where it doesn't.
 
 **Status**: the character you're on; what's been recorded (items in your bags and bank, equipped
 gear, quests in your log and completed, guild members); how many journal events this session and in
-all, and the session id; whether combat logging is on right now and the mode; the last census sweep
+all, and the session id; the Chronicle's totals ("Chronicle: 41 creatures, 112 items", or "Chronicle:
+off"); whether combat logging is on right now and the mode; the last census sweep
 ("Last census sweep: 412 players, 20 minutes ago", the running one's progress, or "Census: off");
 and the companion app: "Synced 12 minutes ago as <name>", or "Not synced yet. Sign in from the Ryna
 companion app.", its version, and "Update available" when the app knows of a newer addon or app.
 Signing in happens in the companion app, never in the game: an addon can't reach the network.
 
-**Recording**: one line on what the addon records about your own characters, the combat-log mode and
-Advanced combat logging.
+**Recording**: one line on what the addon records about your own characters, the combat-log mode,
+Advanced combat logging, Record kills and loot, and Show my numbers on tooltips.
 
 **Census**: Take part in the census, with its four switches under it (greyed while it's off): chat,
 your group, players nearby and the city sweep. Under players nearby, a note that the game draws
@@ -218,6 +234,8 @@ The settings (saved in `RynaDB.settings`; if the game loses them, the defaults c
 |---|---|---|---|
 | Turn on the game's combat log | Recording | In dungeons and raids only | When the addon turns combat logging on (see below). Same as `/ryna combatlog`. |
 | Advanced combat logging | Recording | on | Sets the game's `advancedCombatLogging`, so fights are logged with positions and health (see below). |
+| Record kills and loot | Recording | on | Counts kills, the experience they give, and loot into the character record (see "Kills and loot"). Off: nothing is counted; the totals so far are kept. |
+| Show my numbers on tooltips | Recording | on | Adds your own kill and loot numbers to creature and item tooltips. |
 | Take part in the census | Census | on | Records the other players you see. Off: **no** `seen` events at all, from chat, players nearby, your group or your guild roster; the addon records only your own characters (and still your guild's roster, which is your guild's own list). |
 | Record who I see in chat | Census | on | Part of the census. A `seen` event for who speaks in chat (only who, never what). Off: chat isn't looked at. |
 | Record other players in my group | Census | on | Part of the census. Off: no `seen` events for group members, and `group` events say only that you joined, changed or left a group, without the member list. |

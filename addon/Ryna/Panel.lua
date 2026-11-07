@@ -221,6 +221,15 @@ local function censusLine()
     ns.Plural(l.players or 0, L["%d player"], L["%d players"]), St.Ago(l.at) or "?")
 end
 
+-- The status tab's Chronicle line: "Chronicle: 41 creatures, 112 items", or off.
+local function chronicleLine()
+  if not ns.db.settings.chronicle then return L["Chronicle: off"] end
+  local creatures, items = 0, 0
+  if ns.Chronicle then creatures, items = ns.Chronicle.Counts() end
+  return string.format(L["Chronicle: %s, %s"], ns.Plural(creatures, L["%d creature"], L["%d creatures"]),
+    ns.Plural(items, L["%d item"], L["%d items"]))
+end
+
 local function statusText()
   local lines = {}
   local rec, c = ns.rec, St.Counts()
@@ -233,6 +242,7 @@ local function statusText()
     ns.Plural(c.items, L["%d item in bags and bank"], L["%d items in bags and bank"]), c.gear,
     ns.Plural(c.active, L["%d quest in the log"], L["%d quests in the log"]), c.completed,
     ns.Plural(c.roster, L["%d guild member"], L["%d guild members"]))
+  lines[#lines + 1] = chronicleLine()
   lines[#lines + 1] = string.format(L["Journal: %s, %d kept in all (last 30 days)"],
     ns.Plural(c.session, L["%d event this session"], L["%d events this session"]), c.journal)
   lines[#lines + 1] = string.format(L["Session: %s"], tostring(ns.Journal.session or L["not started"]))
@@ -318,6 +328,15 @@ function build.recording(f)
     L["Sets the game's advanced combat logging on, so fights are logged with positions and health. "
     .. "Needed for Ryna's timelines and deaths."])
   toggle(P.acl, "advancedCombatLog", function() ns.Zone.ApplyAdvancedLogging() end)
+  P.chronicle = checkbox(f, L["Record kills and loot"],
+    L["Counts the creatures you and your group kill, the experience they give and what you loot from them, "
+    .. "as running totals on the character (not journal events). Off: nothing is counted, and the totals so "
+    .. "far are kept."])
+  toggle(P.chronicle, "chronicle")
+  P.tooltips = checkbox(f, L["Show my numbers on tooltips"],
+    L["Adds your own kills and drops to creature and item tooltips: how many you killed, what they dropped "
+    .. "for you and how often."])
+  toggle(P.tooltips, "tooltips")
 end
 
 function layout.recording(s, settings)
@@ -328,6 +347,10 @@ function layout.recording(s, settings)
   P.mode.sync()
   P.acl:SetChecked(settings.advancedCombatLog)
   P.acl.place(s, 4)
+  P.chronicle:SetChecked(settings.chronicle)
+  P.chronicle.place(s, 4)
+  P.tooltips:SetChecked(settings.tooltips)
+  P.tooltips.place(s, 4)
 end
 
 function build.census(f)

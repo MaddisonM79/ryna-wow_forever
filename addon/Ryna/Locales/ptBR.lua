@@ -147,6 +147,21 @@ L["%d guild members"] = nil
 L["Journal: %s, %d kept in all (last 30 days)"] = nil
 L["%d event this session"] = nil
 L["%d events this session"] = nil
+-- The status tab's Chronicle line: "Chronicle: 41 creatures, 112 items" (kinds of creature killed and
+-- kinds of item looted, lifetime, this character). %s: the pairs below.
+L["Chronicle: %s, %s"] = nil
+L["Chronicle: off"] = nil
+L["%d creature"] = nil
+L["%d creatures"] = nil
+L["%d item"] = nil
+L["%d items"] = nil
+L["Record kills and loot"] = nil
+L["Counts the creatures you and your group kill, the experience they give and what you loot from them, "
+  .. "as running totals on the character (not journal events). Off: nothing is counted, and the totals so "
+  .. "far are kept."] = nil
+L["Show my numbers on tooltips"] = nil
+L["Adds your own kills and drops to creature and item tooltips: how many you killed, what they dropped "
+  .. "for you and how often."] = nil
 L["Session: %s"] = nil
 L["not started"] = nil
 L["Combat log: %s right now. Mode: %s"] = nil
@@ -160,6 +175,26 @@ L["No messages"] = nil
 L["%s: "] = nil
 L["the settings open after combat."] = nil
 L["no settings panel on this client; /ryna status prints the status."] = nil
+
+-- Tooltip.lua: lines added to creature and item tooltips, the player's own numbers.
+-- "Ryna: killed 43 (40 yours), last Elwynn Forest 2 hours ago": %d kills, %d my killing blows,
+-- then the zone and how long ago ("%d hours ago", Status.lua). The second has no zone.
+L["Ryna: killed %d (%d yours), last %s %s"] = nil
+L["Ryna: killed %d (%d yours), last %s"] = nil
+-- "Linen Cloth: 22 of 38 corpses (58%)": an item, how many corpses dropped it, corpses looted, percent.
+L["%s: %d of %d corpses (%d%%)"] = nil
+-- "Ryna: looted 30 times (45), mostly from Kobold Vermin (22)": "%d times" (below), pieces in all,
+-- the biggest source and how many times it dropped from there.
+L["Ryna: looted %s (%d), mostly from %s (%d)"] = nil
+L["Ryna: looted %s (%d)"] = nil
+L["%d time"] = nil
+L["%d times"] = nil
+-- Loot sources without a name of their own (%s: the game's id for it).
+L["fishing"] = nil
+L["a container"] = nil
+L["creature %s"] = nil
+L["object %s"] = nil
+L["item %s"] = nil
 
 -- Minimap.lua
 L["Update available"] = nil

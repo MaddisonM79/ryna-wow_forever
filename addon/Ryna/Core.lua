@@ -7,7 +7,7 @@
 local addonName, ns = ...
 
 ns.NAME = addonName
-ns.VERSION = "0.2.1"
+ns.VERSION = "0.2.2"
 ns.SCHEMA = 1
 ns.FLAVOR = "wowf"
 ns.COMBAT_LOG_MODES = { instances = true, always = true, never = true }
@@ -259,13 +259,15 @@ end)
 --   groupMembers    record the other players in my group (needs census)
 --   nearbyPlayers   record players whose nameplate, target or mouseover I see (needs census)
 --   censusSweep     run a /who census sweep every 30 minutes while parked in a city (needs census)
+--   chronicle       count kills and loot into the character record (Chronicle.lua)
+--   tooltips        show my own kill and loot numbers on creature and item tooltips (Tooltip.lua)
 --   debug           print what the addon is doing to chat (ns.Debug)
 --   minimap         { shown = true, angle = <degrees> } for the minimap button
 --   panelTab        the options panel's selected tab ("status", "recording", "census", "messages",
 --                   "advanced"); Panel.lua checks it and falls back to "status", and Defaults keeps it
 ns.SETTING_DEFAULTS = {
   chatSightings = true, census = true, groupMembers = true, nearbyPlayers = true, advancedCombatLog = true,
-  censusSweep = true, debug = false,
+  censusSweep = true, chronicle = true, tooltips = true, debug = false,
 }
 ns.MINIMAP_DEFAULT_ANGLE = 225
 

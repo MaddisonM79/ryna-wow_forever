@@ -3424,7 +3424,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "ryna-wow"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -3434,7 +3434,7 @@ dependencies = [
 
 [[package]]
 name = "ryna-wow-app"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "ryna-wow-core",
  "serde",
@@ -3450,7 +3450,7 @@ dependencies = [
 
 [[package]]
 name = "ryna-wow-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "directories",

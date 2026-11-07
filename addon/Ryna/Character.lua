@@ -1,7 +1,7 @@
 -- Character: the character record (docs/wow.md section 2, `characters[]`), keyed by GUID.
 -- Identity, level, xp, gold, played time, gear, talents, professions (with known recipes),
 -- reputations and the guild membership. Bags and bank are Containers.lua, quests Quests.lua,
--- the zone Zone.lua.
+-- the zone Zone.lua, kills and loot Chronicle.lua.
 
 local _, ns = ...
 
@@ -104,6 +104,10 @@ function C.Login()
     quests = type(prev.quests) == "table" and prev.quests or { active = {}, completed = {} },
     containers = type(prev.containers) == "table" and prev.containers or {},
     bankAsOf = prev.bankAsOf,
+    -- Chronicle (Chronicle.lua): lifetime tallies, string-keyed so they're never read as arrays.
+    kills = type(prev.kills) == "table" and prev.kills or {},
+    loot = type(prev.loot) == "table" and prev.loot or {},
+    objects = type(prev.objects) == "table" and prev.objects or {},
   }
   if type(rec.quests.active) ~= "table" then rec.quests.active = {} end
   if type(rec.quests.completed) ~= "table" then rec.quests.completed = {} end
