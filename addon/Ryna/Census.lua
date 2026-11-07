@@ -4,13 +4,20 @@
 -- `who`, the same batch id). Runs from /ryna census, the panel's "Run census now" button, and,
 -- with the censusSweep setting on, every 30 minutes while the player is parked in a city.
 --
+-- Some clients (Forever 1.60.1 on the 12.x engine) treat SendWho as a hardware-event call: it
+-- works only inside a click or a typed command, and is refused from a timer. So a manual sweep
+-- sends its first query synchronously from the click or /ryna census, and learns the client's
+-- mode (C.Mode: timer, click or blocked) from what happens to it and to the first timer-sent
+-- query; see C.MODES below.
+--
 -- Privacy: the queries are level brackets, class names and zone names, never a person's name, and
 -- nothing about the player is sent. A /who row has no GUID, so the shared 10-minute window keys it
 -- by name (Sightings.lua), and a name met twice in one sweep is one sighting.
 --
 -- The server caps an answer at 50 rows and throttles /who, so one query goes out every 4 seconds,
--- 10 after an empty, errored or missing answer. Every client call is looked up and pcall'd; a
--- client that blocks the call from a timer stops the sweep for the session instead of retrying.
+-- 10 after an empty, errored or missing answer (in click mode, at most one per click and none
+-- within 4 seconds of the last). Every client call is looked up and pcall'd, and a refused query
+-- is never retried from a timer.
 
 local _, ns = ...
 local L, N = ns.L, ns.N
@@ -62,7 +69,6 @@ C.NEUTRAL_TOWNS = {
 -- The running sweep, or nil. Callbacks hold the table they were scheduled for and do nothing once
 -- it is no longer C.sweep, so a cancelled sweep's timers die quietly.
 C.sweep = nil
-C.blocked = false -- set when the client refused /who from the addon; no sweep for the session
 
 -- Localized class and race names <-> English tokens, from the client where it has them.
 local classLocal, classToken, raceToken
@@ -180,9 +186,10 @@ local function readResults()
   return rows, n, total
 end
 
--- The Who frame: open (by the player) means no sweep; while a sweep runs, the friends frame stops
--- listening for WHO_LIST_UPDATE so the addon's answers never pop it open or redraw it, and gets
--- the event back when the sweep ends, along with SetWhoToUi as it was.
+-- The Who frame: open (by the player) means no sweep; while a query is out, the friends frame
+-- stops listening for WHO_LIST_UPDATE so the addon's answers never pop it open or redraw it, and
+-- gets the event back when the sweep ends (or, in click mode, between clicks), along with
+-- SetWhoToUi as it was.
 local function whoFrameOpen()
   local wf = _G.WhoFrame
   if type(wf) ~= "table" or type(wf.IsVisible) ~= "function" then return false end
@@ -202,9 +209,12 @@ local function quietWhoUi(sweep)
     local ok, registered = pcall(ff.IsEventRegistered, ff, "WHO_LIST_UPDATE")
     if ok and registered and pcall(ff.UnregisterEvent, ff, "WHO_LIST_UPDATE") then sweep.friendsMuted = ff end
   end
+  sweep.quiet = true
 end
 
 local function restoreWhoUi(sweep)
+  if not sweep.quiet then return end
+  sweep.quiet = nil
   local F = api()
   if F.toUi then pcall(F.toUi, sweep.toUiWas and true or false) end
   local ff = sweep.friendsMuted
@@ -234,6 +244,37 @@ local function store()
   return ns.db.census
 end
 
+-- What this client lets the addon do with /who, once learned (RynaDB.census.mode):
+--   "timer"    a query sent from a timer is answered: a sweep paces itself, and automatic sweeps run
+--   "click"    only a query sent from a click (or /ryna census) is answered: one query per click
+--   "blocked"  even a query sent from a click was refused (RynaDB.census.whoBlocked says when, and
+--              which function the game named): no sweep until the Census tab's "Try again"
+--   nil        not learned yet: a sweep starts as "timer" and learns
+C.MODES = { timer = true, click = true, blocked = true }
+
+function C.Mode()
+  local c = ns.db and ns.db.census
+  local m = type(c) == "table" and c.mode
+  if C.MODES[m] then return m end
+  return nil
+end
+
+local function learn(mode)
+  local c = store()
+  if c.mode == mode then return end
+  c.mode = mode
+  ns.Debug("census sweep: /who on this client works in %s mode", mode)
+end
+
+-- Forgets what was learned (the Census tab's "Try again"): the next sweep asks the way an
+-- unknown client is asked.
+function C.TryAgain()
+  local c = store()
+  c.mode, c.whoBlocked = nil, nil
+  ns.Debug("census sweep: forgot the /who mode; the next sweep learns it again")
+  refreshPanel()
+end
+
 -- The last sweep's summary: { at, players, new, queries, seconds, complete, stopped }.
 function C.LastSweep()
   local c = ns.db and ns.db.census
@@ -246,24 +287,39 @@ function C.Running()
   return C.sweep ~= nil
 end
 
+-- A click sweep waiting for the click that sends its next query (not for an answer).
+function C.Stepping()
+  local sw = C.sweep
+  return sw ~= nil and sw.byClicks and not sw.awaiting and true or false
+end
+
+-- The next query's place in the plan and the plan's length, for "Next census query (2 of 7)".
+function C.NextStep()
+  local sw = C.sweep
+  if sw then return sw.next, #sw.queue end
+  return 1, #BRACKETS
+end
+
+local BLOCKED = N("the game doesn't let addons ask /who here; the census uses what you see instead")
+
 -- "Last sweep: 412 players, 20 minutes ago", or the running sweep's progress, for the panel.
 function C.StatusLine()
   local sw = C.sweep
   if sw then
     return string.format(L["Sweeping: %d of %d queries, %s so far"], sw.done, #sw.queue, players(sw.players))
   end
-  if C.blocked then return L["The game blocked /who from Ryna this session."] end
+  if C.Mode() == "blocked" then return L[BLOCKED] end
   local l = C.LastSweep()
   if not l then return L["No sweep yet."] end
   return string.format(l.complete and L["Last sweep: %s, %s"] or L["Last sweep: %s, %s (stopped early)"],
     players(l.players or 0), ns.Status.Ago(l.at) or "?")
 end
 
-local finish, sendNext
+local finish, sendOne
 
 local function schedule(sweep, delay)
   ns.After(delay, "census sweep", function()
-    if C.sweep == sweep then sendNext(sweep) end
+    if C.sweep == sweep and not sweep.byClicks then sendOne(sweep, false) end
   end)
 end
 
@@ -311,14 +367,96 @@ local function split(sweep, item, rows)
   end
 end
 
+-- After an answer or a miss: done when the plan is, else the next query, from a timer (timer
+-- mode, or not learned yet) or from the next click (click mode). Between clicks the Who window
+-- gets its events back, so the player's own /who works while a click sweep waits.
+local function advance(sweep, delay)
+  if not sweep.queue[sweep.next] then return finish(sweep, nil) end
+  if sweep.byClicks or C.Mode() == "click" then
+    sweep.byClicks = true
+    restoreWhoUi(sweep)
+    if sweep.manual then
+      ns.Print(string.format(L["census sweep: %s; the next query on your next click or /ryna census."],
+        progress(sweep)))
+    end
+    refreshPanel()
+    return
+  end
+  refreshPanel()
+  schedule(sweep, delay)
+end
+
+-- A query sent from a timer was refused or went unanswered while the timer isn't known to work:
+-- the client allows /who only from a click. A sweep you started goes on one query per click,
+-- from that query; an automatic one stops (it can't click).
+local function toClickMode(sweep, item)
+  learn("click")
+  sweep.awaiting = nil
+  if sweep.queue[item.pos] == item then sweep.next = item.pos end
+  if not sweep.manual then
+    ns.Print(L["the game allows /who only from a click on this client, so the automatic census is off; "
+      .. "the Census tab's button asks one query per click."])
+    return finish(sweep, N("the game allows /who only from a click"), true)
+  end
+  sweep.byClicks = true
+  restoreWhoUi(sweep)
+  ns.Print(string.format(L["the game allows /who only from a click on this client, so the census goes one "
+    .. "query per click: press Next census query on the Census tab, or type /ryna census (%d of %d next)."],
+    sweep.next, #sweep.queue))
+  refreshPanel()
+end
+
+-- Even a query sent from a click was refused (or got no answer on a client where nothing has
+-- worked yet): stop, remember it, and say so once. No query is sent after this.
+local function block(sweep, fn, noAnswer)
+  local c = store()
+  c.mode = "blocked"
+  c.whoBlocked = { at = ns.Now(), fn = fn, noAnswer = noAnswer or nil }
+  ns.Debug("census sweep: /who is blocked on this client (%s)", noAnswer and "no answer" or tostring(fn))
+  finish(sweep, BLOCKED, true)
+  ns.Print(L[BLOCKED])
+end
+
+-- The game refused the query just sent (ADDON_ACTION_BLOCKED or _FORBIDDEN, or the call raised).
+local function refused(sweep, item, fn)
+  sweep.awaiting = nil
+  ns.Debug("census sweep: the game refused %q (%s), sent from %s", item.text, tostring(fn),
+    item.byClick and "a click" or "a timer")
+  if item.byClick then return block(sweep, fn, false) end
+  toClickMode(sweep, item)
+end
+
+local function onTimeout(sweep, item, sentAt)
+  if C.sweep ~= sweep or sweep.awaiting ~= item or sweep.sentAt ~= sentAt then return end
+  ns.Debug("census sweep: no answer to %q in %ds (sent from %s)", item.text, ANSWER_TIMEOUT,
+    item.byClick and "a click" or "a timer")
+  local mode = C.Mode()
+  if sweep.answered == 0 then
+    -- The first query got no answer. Where /who has worked before this is the server
+    -- throttling: stop for now. Where nothing has worked yet, the game is dropping the call.
+    sweep.awaiting = nil
+    if mode == "timer" or (mode == "click" and item.byClick) then
+      return finish(sweep, N("the server didn't answer /who"))
+    end
+    if item.byClick then return block(sweep, nil, true) end
+    return toClickMode(sweep, item)
+  end
+  if not item.byClick and mode ~= "timer" then return toClickMode(sweep, item) end
+  sweep.awaiting = nil
+  sweep.done = sweep.done + 1
+  sweep.missed = sweep.missed + 1
+  advance(sweep, BACKOFF)
+end
+
 local function onAnswer(sweep, item)
   sweep.awaiting = nil
+  sweep.answered = sweep.answered + 1
+  if not item.byClick then learn("timer") end
   local rows, n, total = readResults()
   sweep.done = sweep.done + 1
   if not rows then
     ns.Debug("census sweep: %q answered, but the who list couldn't be read", item.text)
-    schedule(sweep, BACKOFF)
-    return
+    return advance(sweep, BACKOFF)
   end
   ns.Journal.Add("who", { query = item.text, count = n, batch = sweep.batch }, true)
   local fresh, repeated, skipped = 0, 0, 0
@@ -346,11 +484,10 @@ local function onAnswer(sweep, item)
   ns.Debug("census sweep: %q answered %d (of %d), %d recorded, %d already seen in the last 10 minutes, "
     .. "%d already in this sweep", item.text, n, total, fresh, skipped, repeated)
   if n >= CAP or total > n then split(sweep, item, rows) end
-  if sweep.manual and (sweep.done % PROGRESS_EVERY == 0) and sweep.done < #sweep.queue then
+  if sweep.manual and not sweep.byClicks and (sweep.done % PROGRESS_EVERY == 0) and sweep.done < #sweep.queue then
     ns.Print(string.format(L["census sweep: %s"], progress(sweep)))
   end
-  refreshPanel()
-  schedule(sweep, n == 0 and BACKOFF or GAP)
+  advance(sweep, n == 0 and BACKOFF or GAP)
 end
 
 -- Why a sweep can't go on right now, or nil. Reasons stay English (they are kept in
@@ -363,48 +500,42 @@ local function stopReason()
   return nil
 end
 
-sendNext = function(sweep)
+-- Sends the plan's next query. byClick: called synchronously from a click or /ryna census (the
+-- only place some clients accept /who from), else from a timer. The sweep notes what it is
+-- waiting for before the call, since the game can raise ADDON_ACTION_BLOCKED during it; the Who
+-- UI is quietened only after the call, so nothing else runs between the click and SendWho.
+sendOne = function(sweep, byClick)
   local why = stopReason()
   if why then return finish(sweep, why) end
   local item = sweep.queue[sweep.next]
   if not item then return finish(sweep, nil) end
   local F = api()
   if not F.send then return finish(sweep, N("this client has no /who")) end
-  if F.toUi then pcall(F.toUi, true) end
-  local ok, err = pcall(F.send, item.text)
-  if not ok then
-    ns.Debug("census sweep: sending %q failed: %s", item.text, tostring(err))
-    sweep.errors = sweep.errors + 1
-    if sweep.errors >= 2 then
-      C.blocked = true
-      return finish(sweep, N("the game refused /who from Ryna"))
-    end
-    schedule(sweep, BACKOFF)
-    return
-  end
+  item.pos, item.byClick = sweep.next, byClick and true or false
   sweep.next = sweep.next + 1
   sweep.awaiting = item
   sweep.sentAt = GetTime()
-  ns.Debug("census sweep: sent %q (%d of %d)", item.text, sweep.next - 1, #sweep.queue)
   local sentAt = sweep.sentAt
-  ns.After(ANSWER_TIMEOUT, "census sweep", function()
-    if C.sweep ~= sweep or sweep.awaiting ~= item or sweep.sentAt ~= sentAt then return end
-    sweep.awaiting = nil
-    sweep.done = sweep.done + 1
-    sweep.missed = sweep.missed + 1
-    ns.Debug("census sweep: no answer to %q in %ds", item.text, ANSWER_TIMEOUT)
-    -- The first two queries got no answer: the server is throttling or the client is dropping
-    -- the call; either way, stop rather than keep asking.
-    if sweep.missed >= 2 and sweep.answered == 0 then
-      return finish(sweep, N("the server didn't answer /who"))
-    end
-    schedule(sweep, BACKOFF)
-  end)
+  local ok, err = pcall(F.send, item.text)
+  -- Refused during the call: the event handler has already stopped the sweep or switched it.
+  if C.sweep ~= sweep or sweep.awaiting ~= item then return end
+  if not ok then return refused(sweep, item, "SendWho: " .. tostring(err)) end
+  if sweep.quiet then
+    if F.toUi then pcall(F.toUi, true) end
+  else
+    quietWhoUi(sweep)
+  end
+  ns.Debug("census sweep: sent %q (%d of %d) from %s", item.text, item.pos, #sweep.queue,
+    byClick and "a click" or "a timer")
+  refreshPanel()
+  ns.After(ANSWER_TIMEOUT, "census sweep", function() onTimeout(sweep, item, sentAt) end)
 end
 
-finish = function(sweep, why)
+-- message: true when the caller has printed (or will print) its own line instead of the summary.
+finish = function(sweep, why, message)
   if C.sweep ~= sweep then return end
   C.sweep = nil
+  sweep.awaiting = nil
   restoreWhoUi(sweep)
   local seconds = math.floor(GetTime() - sweep.startedAt + 0.5)
   local complete = why == nil
@@ -412,7 +543,10 @@ finish = function(sweep, why)
     at = ns.Now(), players = sweep.players, new = sweep.new, queries = sweep.done, seconds = seconds,
     complete = complete, stopped = why, manual = sweep.manual,
   }
-  if sweep.manual and complete then
+  if message then
+    ns.Debug("census sweep stopped (%s): %d players, %d new to this sweep's window, in %ds",
+      why, sweep.players, sweep.new, seconds)
+  elseif sweep.manual and complete then
     ns.Print(string.format(L["census sweep done: %s, %d new to this sweep's window, in %ds"],
       players(sweep.players), sweep.new, seconds))
   elseif sweep.manual then
@@ -440,8 +574,10 @@ local function refuse(manual, msg, arg)
   return false
 end
 
--- Starts a sweep. manual: from /ryna census or the panel's button (prints progress and the
--- summary); otherwise automatic (debug lines only). Returns true when a sweep started.
+-- Starts a sweep. manual: from /ryna census or the panel's button, which call it synchronously
+-- from the keypress or click, so the first query goes out inside it (prints progress and the
+-- summary); otherwise automatic, from the ticker (debug lines only). Returns true when a sweep
+-- started.
 function C.Start(manual)
   if not ns.db or not ns.rec then return refuse(manual, N("census sweep: not ready yet.")) end
   if C.sweep then
@@ -449,30 +585,54 @@ function C.Start(manual)
     ns.Print(string.format(L["census sweep: one is already running. %s"], progress(C.sweep)))
     return false
   end
-  if C.blocked then
-    return refuse(manual, N("census sweep: the game blocked /who from Ryna earlier this session; "
-      .. "/reload to try again."))
+  local mode = C.Mode()
+  if mode == "blocked" then
+    return refuse(manual, N("census sweep: the game doesn't let addons ask /who here. "
+      .. "The Census tab's Try again asks once more."))
   end
+  if not manual and mode == "click" then return refuse(false, "census sweep: click mode, no automatic sweep") end
   if not C.Available() then return refuse(manual, N("census sweep: this client has no /who for addons.")) end
   local why = stopReason()
   if why then return refuse(manual, N("census sweep: not now, %s."), why) end
   C.count = (C.count or 0) + 1
   local sweep = {
     batch = string.format("%d-%d", ns.Now(), C.count), manual = manual and true or false,
-    queue = {}, next = 1, done = 0, players = 0, new = 0, names = {}, errors = 0, missed = 0,
-    answered = 0, startedAt = GetTime(),
+    queue = {}, next = 1, done = 0, players = 0, new = 0, names = {}, missed = 0,
+    answered = 0, startedAt = GetTime(), byClicks = mode == "click" or nil,
   }
   for _, bracket in ipairs(BRACKETS) do
     sweep.queue[#sweep.queue + 1] = { bracket = bracket, text = bracket }
   end
   C.sweep = sweep
   store().lastAttemptAt = ns.Now()
-  quietWhoUi(sweep)
-  ns.Debug("census sweep %s started (%s): %d level brackets to ask", sweep.batch,
-    manual and "by you" or "automatic, in a city", #sweep.queue)
-  if manual then ns.Print(L["census sweep started: asking the server who is online, one query every 4s."]) end
+  ns.Debug("census sweep %s started (%s, %s mode): %d level brackets to ask", sweep.batch,
+    manual and "by you" or "automatic, in a city", mode or "unlearned", #sweep.queue)
+  if manual and mode == "click" then
+    ns.Print(L["census sweep started: one query per click (Next census query, or /ryna census again)."])
+  elseif manual then
+    ns.Print(L["census sweep started: asking the server who is online, one query every 4s."])
+  end
+  sendOne(sweep, manual)
   refreshPanel()
-  sendNext(sweep)
+  return true
+end
+
+-- The panel's button and /ryna census: the next query of a click sweep, else a new sweep. Called
+-- synchronously from the click or the slash command, never from a timer.
+function C.Request()
+  local sw = C.sweep
+  if not (sw and sw.byClicks) then return C.Start(true) end
+  if sw.awaiting then
+    ns.Print(L["census sweep: waiting for the server's answer to the last query."])
+    return false
+  end
+  local wait = math.ceil(GAP - (GetTime() - (sw.sentAt or 0)))
+  if wait > 0 then
+    ns.Print(string.format(L["census sweep: the server takes one query every few seconds; "
+      .. "try again in %ds."], wait))
+    return false
+  end
+  sendOne(sw, true)
   return true
 end
 
@@ -484,17 +644,18 @@ end
 ns.On("WHO_LIST_UPDATE", function()
   local sweep = C.sweep
   if not (sweep and sweep.awaiting) then return end
-  sweep.answered = sweep.answered + 1
   onAnswer(sweep, sweep.awaiting)
 end)
 
--- The client refusing the call (an action only the Blizzard UI may take, e.g. /who outside a
--- click): stop, and don't try again this session.
-local function onBlocked(_, addon, fn)
-  if addon ~= ns.NAME or not C.sweep then return end
-  if type(fn) == "string" and not fn:find("Who", 1, true) then return end
-  C.blocked = true
-  finish(C.sweep, N("the game blocked /who from Ryna"))
+-- The client refusing a call (args: the addon it blames, the function): Ryna named, or SendWho,
+-- while a query is out means that query was refused.
+local function onBlocked(event, addon, fn)
+  local who = type(fn) == "string" and fn:find("SendWho", 1, true) ~= nil
+  if addon ~= ns.NAME and not who then return end
+  ns.Debug("census sweep: %s (%s, %s)", event, tostring(addon), tostring(fn))
+  local sweep = C.sweep
+  if not (sweep and sweep.awaiting) then return end
+  refused(sweep, sweep.awaiting, type(fn) == "string" and fn or event)
 end
 ns.On("ADDON_ACTION_BLOCKED", onBlocked)
 ns.On("ADDON_ACTION_FORBIDDEN", onBlocked)
@@ -542,7 +703,10 @@ function C.AutoCheck()
     return
   end
   if city.zone ~= zone then city.zone, city.since = zone, GetTime() end
-  if not (ns.Setting("census") and ns.Setting("censusSweep")) or C.sweep or C.blocked then return end
+  if not (ns.Setting("census") and ns.Setting("censusSweep")) or C.sweep then return end
+  -- Only a client that answers /who sent from a timer can run a sweep by itself.
+  local mode = C.Mode()
+  if mode == "click" or mode == "blocked" then return end
   if GetTime() - city.since < CITY_DWELL then return end
   local c = ns.db.census
   local lastAt = type(c) == "table" and type(c.lastAttemptAt) == "number" and c.lastAttemptAt or nil

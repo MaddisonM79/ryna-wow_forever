@@ -83,6 +83,14 @@ L["Every 30 minutes while you're parked in a capital, Ryna asks the server who i
   .. "a few queries at a time, to count the realm's players by level, class and zone. "
   .. "Nothing about you is sent."] = true
 L["Run census now"] = true
+-- The same button where the game allows /who only from a click (%d of %d: the next query's place
+-- in the plan and the plan's length), and where it doesn't allow it at all; then a link that
+-- forgets that and asks again.
+L["Next census query (%d of %d)"] = true
+L["Census: not allowed by the game"] = true
+L["Try again"] = true
+-- Replaces the city census switch's description where the game allows /who only from a click.
+L["The game only allows /who from a click on this client."] = true
 L["Advanced combat logging"] = true
 L["Sets the game's advanced combat logging on, so fights are logged with positions and health. "
   .. "Needed for Ryna's timelines and deaths."] = true
@@ -148,7 +156,6 @@ L["%d player"] = true
 L["%d players"] = true
 -- %s here and in the census lines below: "%d player" / "%d players" (above).
 L["Sweeping: %d of %d queries, %s so far"] = true
-L["The game blocked /who from Ryna this session."] = true
 L["No sweep yet."] = true
 L["Last sweep: %s, %s"] = true
 L["Last sweep: %s, %s (stopped early)"] = true
@@ -161,19 +168,32 @@ L["in combat"] = true
 L["in an instance"] = true
 L["the Who window is open"] = true
 L["this client has no /who"] = true
-L["the game refused /who from Ryna"] = true
+L["the game allows /who only from a click"] = true
 L["the server didn't answer /who"] = true
 L["census sweep done: %s, %d new to this sweep's window, in %ds"] = true
 L["census sweep stopped (%s): %s, %d new to this sweep's window, in %ds"] = true
 L["census sweep: not ready yet."] = true
 L["census sweep: one is already running. %s"] = true
-L["census sweep: the game blocked /who from Ryna earlier this session; "
-  .. "/reload to try again."] = true
+-- The census modes: some clients answer /who only when it is sent from a click or a typed command.
+-- Also the Census tab's status line on such a client.
+L["the game doesn't let addons ask /who here; the census uses what you see instead"] = true
+L["census sweep: the game doesn't let addons ask /who here. "
+  .. "The Census tab's Try again asks once more."] = true
+L["the game allows /who only from a click on this client, so the automatic census is off; "
+  .. "the Census tab's button asks one query per click."] = true
+-- %d of %d: the next query's place in the plan and the plan's length.
+L["the game allows /who only from a click on this client, so the census goes one "
+  .. "query per click: press Next census query on the Census tab, or type /ryna census (%d of %d next)."] = true
+-- %s: "%d of %d queries, %s so far" (above).
+L["census sweep: %s; the next query on your next click or /ryna census."] = true
+L["census sweep started: one query per click (Next census query, or /ryna census again)."] = true
+L["census sweep: waiting for the server's answer to the last query."] = true
+L["census sweep: the server takes one query every few seconds; "
+  .. "try again in %ds."] = true
 L["census sweep: this client has no /who for addons."] = true
 L["census sweep: not now, %s."] = true
 L["census sweep started: asking the server who is online, one query every 4s."] = true
 L["stopped"] = true
-L["the game blocked /who from Ryna"] = true
 L["combat started"] = true
 L["entered an instance"] = true
 
@@ -190,11 +210,11 @@ L["/ryna status: what is recorded, the journal's size, combat logging"] = true
 L["/ryna combatlog instances||always||never: when the addon turns combat logging on"] = true
 L["/ryna debug on||off||toggle: print what Ryna is doing to chat "
   .. "(/ryna debug alone: which it is)"] = true
-L["/ryna census: run a realm census now (/who, a few queries at a time); "
-  .. "/ryna census stop ends it"] = true
+L["/ryna census: run a realm census now (/who, a few queries at a time, or one per "
+  .. "/ryna census where the game allows /who only from a click); /ryna census stop ends it"] = true
 L["stopped by you"] = true
 L["no census sweep is running."] = true
-L["usage: /ryna census (runs a sweep now) or /ryna census stop"] = true
+L["usage: /ryna census (runs a sweep now, or its next query) or /ryna census stop"] = true
 L["debug messages are %s. /ryna debug on||off||toggle changes it."] = true
 L["usage: /ryna debug on||off||toggle (now %s)"] = true
 L["debug messages are already %s."] = true

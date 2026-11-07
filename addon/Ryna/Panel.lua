@@ -64,6 +64,20 @@ local function button(parent, label, w, h)
   return b
 end
 
+-- A text-only button that reads like a link ("Try again").
+local function link(parent, label)
+  local b = create("Button", parent)
+  if not b then return nil end
+  local fs = text(b, "GameFontHighlightSmall", 11)
+  fs:SetText("|cff7fb2ff" .. label .. "|r")
+  local w = (fs.GetStringWidth and fs:GetStringWidth()) or 60
+  fs:SetWidth(w + 2)
+  fs:SetPoint("LEFT", b, "LEFT", 0, 0)
+  b:SetSize(w + 4, 18)
+  if b.SetHighlightFontObject then pcall(b.SetHighlightFontObject, b, "GameFontNormalSmall") end
+  return b
+end
+
 -- Lays children out top to bottom inside `content`.
 local function stack(content)
   local s = { y = -12 }
@@ -200,7 +214,7 @@ local function censusLine()
   local C = ns.Census
   if not C then return nil end
   if not ns.db.settings.census then return L["Census: off"] end
-  if C.Running() or C.blocked then return string.format(L["Census: %s"], C.StatusLine()) end
+  if C.Running() or C.Mode() == "blocked" then return string.format(L["Census: %s"], C.StatusLine()) end
   local l = C.LastSweep()
   if not l then return L["Last census sweep: none yet"] end
   return string.format(L["Last census sweep: %s, %s"],
@@ -340,26 +354,37 @@ function build.census(f)
       end)
     end)
   end
-  P.sweep = checkbox(f, L["Run a realm census while I'm in a city"],
-    L["Every 30 minutes while you're parked in a capital, Ryna asks the server who is online (/who), "
+  P.sweepHelp = L["Every 30 minutes while you're parked in a capital, Ryna asks the server who is online (/who), "
     .. "a few queries at a time, to count the realm's players by level, class and zone. "
-    .. "Nothing about you is sent."])
+    .. "Nothing about you is sent."]
+  P.sweep = checkbox(f, L["Run a realm census while I'm in a city"], P.sweepHelp)
   toggle(P.census, "census")
   toggle(P.chat, "chatSightings")
   toggle(P.group, "groupMembers")
   toggle(P.nearby, "nearbyPlayers")
   toggle(P.sweep, "censusSweep")
-  P.sweepButton = button(f, L["Run census now"], 140, 22)
+  -- The click itself sends the query (C.Request runs synchronously inside OnClick): some clients
+  -- accept /who only from a hardware event.
+  P.sweepButton = button(f, L["Run census now"], 220, 22)
   if P.sweepButton then
     P.sweepButton:SetScript("OnClick", function()
       ns.Run("census sweep", function()
-        ns.Census.Start(true)
+        ns.Census.Request()
         P.Refresh()
       end)
     end)
+    P.sweepRetry = link(f, L["Try again"])
+    if P.sweepRetry then
+      P.sweepRetry:SetPoint("LEFT", P.sweepButton, "RIGHT", 8, 0)
+      P.sweepRetry:SetScript("OnClick", function()
+        ns.Run("census try again", function()
+          ns.Census.TryAgain()
+          P.Refresh()
+        end)
+      end)
+    end
     P.sweepText = text(f, "GameFontHighlightSmall", 11)
-    P.sweepText:SetWidth(WIDTH - 230)
-    P.sweepText:SetPoint("LEFT", P.sweepButton, "RIGHT", 8, 0)
+    P.sweepText:SetWidth(WIDTH - 320)
   end
   P.privacy = text(f, "GameFontDisableSmall", 10)
   P.privacy:SetText(L["The census keeps who was seen, never what they said. "
@@ -372,9 +397,15 @@ function layout.census(s, settings)
   P.group:SetChecked(settings.groupMembers)
   P.nearby:SetChecked(settings.nearbyPlayers)
   P.sweep:SetChecked(settings.censusSweep)
+  local C = ns.Census
+  local mode = C and C.Mode()
+  -- Automatic sweeps send from a timer, which a click-only or blocked client refuses.
+  local clickOnly = mode == "click" or mode == "blocked"
+  P.sweep.help:SetText(clickOnly and L["The game only allows /who from a click on this client."] or P.sweepHelp)
   P.census.place(s, 4)
   for _, cb in ipairs({ P.chat, P.group, P.nearby, P.sweep }) do
-    cb.setActive(settings.census)
+    cb.setActive(settings.census and not (cb == P.sweep and clickOnly))
+    if cb == P.sweep and clickOnly and settings.census then cb.help:SetAlpha(1) end
     cb.place(s, 30)
     if cb == P.nearby then
       P.nameplateHint:SetAlpha(settings.census and 1 or 0.5)
@@ -388,9 +419,26 @@ function layout.census(s, settings)
     end
   end
   if P.sweepButton then
-    local C = ns.Census
-    local usable = settings.census and C and not C.Running() and not C.blocked and C.Available()
+    local label, usable = L["Run census now"], false
+    if C then
+      usable = settings.census and C.Available() and true or false
+      if mode == "blocked" then
+        label, usable = L["Census: not allowed by the game"], false
+      elseif mode == "click" or C.Stepping() or (C.Running() and C.sweep.byClicks) then
+        label = string.format(L["Next census query (%d of %d)"], C.NextStep())
+        usable = usable and (not C.Running() or C.Stepping())
+      else
+        usable = usable and not C.Running()
+      end
+    end
+    P.sweepButton:SetText(label)
     if usable then P.sweepButton:Enable() else P.sweepButton:Disable() end
+    local retry = P.sweepRetry and mode == "blocked"
+    if P.sweepRetry then
+      if retry then P.sweepRetry:Show() else P.sweepRetry:Hide() end
+    end
+    P.sweepText:ClearAllPoints()
+    P.sweepText:SetPoint("LEFT", retry and P.sweepRetry or P.sweepButton, "RIGHT", 8, 0)
     P.sweepText:SetText(C and C.StatusLine() or "")
     s.add(P.sweepButton, 22, 34, 14)
   end

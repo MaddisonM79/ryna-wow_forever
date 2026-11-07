@@ -30,8 +30,8 @@ local function help()
   ns.Print("  " .. L["/ryna combatlog instances||always||never: when the addon turns combat logging on"])
   ns.Print("  " .. L["/ryna debug on||off||toggle: print what Ryna is doing to chat "
     .. "(/ryna debug alone: which it is)"])
-  ns.Print("  " .. L["/ryna census: run a realm census now (/who, a few queries at a time); "
-    .. "/ryna census stop ends it"])
+  ns.Print("  " .. L["/ryna census: run a realm census now (/who, a few queries at a time, or one per "
+    .. "/ryna census where the game allows /who only from a click); /ryna census stop ends it"])
 end
 
 local function censusCommand(arg)
@@ -42,9 +42,11 @@ local function censusCommand(arg)
       ns.Print(L["no census sweep is running."])
     end
   elseif arg == "" then
-    ns.Census.Start(true)
+    -- Synchronous, inside the typed command: the first (or, in click mode, the next) query goes
+    -- out from here, which is where clients that restrict /who accept it.
+    ns.Census.Request()
   else
-    ns.Print(L["usage: /ryna census (runs a sweep now) or /ryna census stop"])
+    ns.Print(L["usage: /ryna census (runs a sweep now, or its next query) or /ryna census stop"])
   end
 end
 

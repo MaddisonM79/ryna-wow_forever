@@ -80,9 +80,36 @@ person's name, and nothing about you is sent.**
   (`60 c-"Mage" z-"Orgrimmar"`, at most 10 zones). A sweep sends at most 80 queries.
 - **The pace**: the server throttles `/who`, so one query goes out every 4 seconds, and the next
   waits 10 seconds after an empty, failed or unanswered one (8 seconds without an answer counts as
-  unanswered). An uncapped sweep is 7 queries, about half a minute. If the first two queries get no
-  answer, or the game refuses the call, the sweep stops, and after a refusal no sweep runs again
-  until `/reload`.
+  unanswered). An uncapped sweep is 7 queries, about half a minute. A query the game refuses is
+  never sent again from a timer (see "Three modes" below).
+- **Three modes**: some clients (Forever 1.60.1 on the 12.x engine) treat `C_FriendList.SendWho` as
+  a hardware-event call: the game accepts it only inside a click or a typed command, and refuses it
+  from a timer ("Interface action failed because of an AddOn"). So **the first query of a sweep you
+  start is sent from the click itself** (the button's `OnClick`, or the `/ryna census` command as it
+  runs), never from a timer, and the sweep learns which kind of client it is on, kept in
+  `RynaDB.census.mode`:
+  - `timer`: a query sent from a timer was answered. A sweep paces itself as above, and the
+    automatic city sweep can run. The Census tab's button reads **Run census now**.
+  - `click`: the first query (from the click) was answered, but a timer-sent one was refused or got
+    no answer in 8 seconds. The sweep goes on **one query per click**: the button reads **Next
+    census query (2 of 7)**, and each press, or each `/ryna census`, sends exactly one query (not
+    within 4 seconds of the last, and not while one is waiting for its answer); the status beside
+    it shows the progress, and the sweep is done when its plan is. Between clicks the Who window
+    gets its events back, so your own `/who` works meanwhile. The automatic sweep can't click, so
+    the "Run a realm census while I'm in a city" switch is greyed with the note "The game only
+    allows /who from a click on this client" and the city check does nothing (the setting is kept
+    for clients where it works). An automatic sweep that finds this out stops and says so once.
+  - `blocked`: even the query sent from the click was refused (`ADDON_ACTION_BLOCKED` or
+    `ADDON_ACTION_FORBIDDEN` naming Ryna or `SendWho`), or got no answer in 8 seconds on a client
+    where `/who` has never worked. The sweep stops at once, Ryna says once "the game doesn't let
+    addons ask /who here; the census uses what you see instead", and `RynaDB.census.whoBlocked`
+    keeps `{ at, fn }` (the function the game named; `noAnswer = true` instead when it was the
+    silence). The button reads **Census: not allowed by the game**, greyed, with a **Try again**
+    link beside it that forgets the mode, so the next sweep learns it again.
+
+  Until a mode is learned the sweep starts as `timer`. Where `/who` has worked before, a first
+  query with no answer is the server throttling: that sweep stops ("the server didn't answer
+  /who") and the mode stays.
 - **What it records**: per answer, one `who` journal event `{ query, count, batch }` (`count` is how
   many players the server returned); per player in it, a `seen` event (source `who`, with the same
   `batch`, which names the sweep): name, level, class (the English token), race, guild and zone, no
@@ -91,8 +118,9 @@ person's name, and nothing about you is sent.**
 - **The Who window**: while a sweep runs the answers go to Ryna, not the Who window; the friends
   frame stops listening for who results and gets them back, with the game's who-to-window setting,
   as soon as the sweep ends or is stopped, so your own `/who` works as before.
-- **When it runs**: `/ryna census` or the Census tab's **Run census now** button runs one now; with the
-  setting "Run a realm census while I'm in a city" on, one runs every 30 minutes while you're in a
+- **When it runs**: `/ryna census` or the Census tab's **Run census now** button runs one now (in
+  `click` mode, each press asks the next query); with the setting "Run a realm census while I'm in
+  a city" on, and the mode `timer` or not learned yet, one runs every 30 minutes while you're in a
   city for at least a minute. A capital is recognised by its map id
   (`C_Map.GetBestMapForUnit("player")`, the same in every client language; a sub-map of a capital
   counts too), using the Classic world's ids: Stormwind City 1453, Orgrimmar 1454, Ironforge 1455,
@@ -103,10 +131,11 @@ person's name, and nothing about you is sent.**
   stops a running sweep, and it isn't resumed), never while you have the Who window open (opening
   it stops one before its next query), and never with the census setting off. `/ryna census stop` stops one.
 - A sweep you start prints its progress ("census sweep: 8 of 12 queries, 214 players so far", every
-  fourth answer) and a summary ("census sweep done: 412 players, 380 new to this sweep's window, in
-  52s": the players it found, and how many of them weren't already seen in the last 10 minutes). An
-  automatic sweep prints only debug lines. The last sweep's summary is kept in `RynaDB.census` and
-  shown beside the Census tab's button and on the Status tab ("Last sweep: 412 players, 20 minutes ago").
+  fourth answer, or after every answer in `click` mode) and a summary ("census sweep done: 412
+  players, 380 new to this sweep's window, in 52s": the players it found, and how many of them
+  weren't already seen in the last 10 minutes). An automatic sweep prints only debug lines. The
+  last sweep's summary is kept in `RynaDB.census` and shown beside the Census tab's button and on
+  the Status tab ("Last sweep: 412 players, 20 minutes ago").
 
 `RynaDB.client` holds the client's version and Interface number and how it returned your character's
 name parts, overwritten each login, so the format can be checked against a real client.
@@ -147,7 +176,9 @@ your group, players nearby and the city sweep. Under players nearby, a note that
 nameplates for enemies only unless friendly nameplates are on (Shift+V), and the **Turn friendly
 nameplates on** button ("Friendly nameplates are on", greyed, once they are). Then the **Run census
 now** button (greyed while a
-sweep runs) with the last sweep's summary beside it, and the census's promise: who was seen, never
+sweep runs; **Next census query (2 of 7)** or **Census: not allowed by the game** with a **Try
+again** link on clients that restrict `/who`, see "Three modes") with the last sweep's summary
+beside it, and the census's promise: who was seen, never
 what they said, and the data is never sold or used for advertising.
 
 **Messages**: up to 10 notices from the companion app, newest first ("No messages" when there are
@@ -169,7 +200,7 @@ The settings (saved in `RynaDB.settings`; if the game loses them, the defaults c
 | Record who I see in chat | Census | on | Part of the census. A `seen` event for who speaks in chat (only who, never what). Off: chat isn't looked at. |
 | Record other players in my group | Census | on | Part of the census. Off: no `seen` events for group members, and `group` events say only that you joined, changed or left a group, without the member list. |
 | Record players I see nearby | Census | on | Part of the census. Players whose nameplates, target or mouseover you see, of either faction: their level, class, guild and faction, and where. Off: those three sources are ignored. Friendly nameplates are the game's own setting (Shift+V); the button under this one turns them on. |
-| Run a realm census while I'm in a city | Census | on | Part of the census. Every 30 minutes while you're parked in a city, a `/who` sweep (see "The census sweep"). Off: sweeps run only when you start one. |
+| Run a realm census while I'm in a city | Census | on | Part of the census. Every 30 minutes while you're parked in a city, a `/who` sweep (see "The census sweep"). Off: sweeps run only when you start one. Greyed, and doing nothing, on a client that allows `/who` only from a click. |
 | Debug messages | Advanced | off | Prints what Ryna is doing to the chat window, one dimmed `Ryna debug:` line each: scans as they run (played time, gear, professions, reputations, bags and bank, quest log, group, guild roster), every journal event, every sighting and every sighting skipped, each census-sweep query and answer (by the 10-minute window or a census setting; nearby players print at most one line per 5 seconds, a count with the names when there are 5 or fewer), combat-log decisions and settings changes. For checking that it works. Same as `/ryna debug`. |
 | Show the minimap button | Advanced | on | Hides or shows the button. `/ryna` still opens the panel. |
 
@@ -227,7 +258,8 @@ positions and health in the log, turn on **Advanced Combat Logging** in the game
   print as one summary line per scan, and nearby players at most one line per 5 seconds.
   A census sweep prints each query it sends and each answer (its count, how many were recorded,
   skipped by the window or already in the sweep, and any split), and its summary.
-- `/ryna census`: runs a census sweep now; `/ryna census stop` stops it.
+- `/ryna census`: runs a census sweep now (its first query sent from the command itself), or, in
+  `click` mode, sends the running sweep's next query; `/ryna census stop` stops it.
 - `/ryna help`: the commands.
 
 ## Installing by hand

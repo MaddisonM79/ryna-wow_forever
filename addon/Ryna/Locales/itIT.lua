@@ -92,6 +92,14 @@ L["Every 30 minutes while you're parked in a capital, Ryna asks the server who i
   .. "a few queries at a time, to count the realm's players by level, class and zone. "
   .. "Nothing about you is sent."] = nil
 L["Run census now"] = nil
+-- The same button where the game allows /who only from a click (%d of %d: the next query's place
+-- in the plan and the plan's length), and where it doesn't allow it at all; then a link that
+-- forgets that and asks again.
+L["Next census query (%d of %d)"] = nil
+L["Census: not allowed by the game"] = nil
+L["Try again"] = nil
+-- Replaces the city census switch's description where the game allows /who only from a click.
+L["The game only allows /who from a click on this client."] = nil
 L["Advanced combat logging"] = nil
 L["Sets the game's advanced combat logging on, so fights are logged with positions and health. "
   .. "Needed for Ryna's timelines and deaths."] = nil
@@ -157,7 +165,6 @@ L["%d player"] = nil
 L["%d players"] = nil
 -- %s here and in the census lines below: "%d player" / "%d players" (above).
 L["Sweeping: %d of %d queries, %s so far"] = nil
-L["The game blocked /who from Ryna this session."] = nil
 L["No sweep yet."] = nil
 L["Last sweep: %s, %s"] = nil
 L["Last sweep: %s, %s (stopped early)"] = nil
@@ -170,19 +177,32 @@ L["in combat"] = nil
 L["in an instance"] = nil
 L["the Who window is open"] = nil
 L["this client has no /who"] = nil
-L["the game refused /who from Ryna"] = nil
+L["the game allows /who only from a click"] = nil
 L["the server didn't answer /who"] = nil
 L["census sweep done: %s, %d new to this sweep's window, in %ds"] = nil
 L["census sweep stopped (%s): %s, %d new to this sweep's window, in %ds"] = nil
 L["census sweep: not ready yet."] = nil
 L["census sweep: one is already running. %s"] = nil
-L["census sweep: the game blocked /who from Ryna earlier this session; "
-  .. "/reload to try again."] = nil
+-- The census modes: some clients answer /who only when it is sent from a click or a typed command.
+-- Also the Census tab's status line on such a client.
+L["the game doesn't let addons ask /who here; the census uses what you see instead"] = nil
+L["census sweep: the game doesn't let addons ask /who here. "
+  .. "The Census tab's Try again asks once more."] = nil
+L["the game allows /who only from a click on this client, so the automatic census is off; "
+  .. "the Census tab's button asks one query per click."] = nil
+-- %d of %d: the next query's place in the plan and the plan's length.
+L["the game allows /who only from a click on this client, so the census goes one "
+  .. "query per click: press Next census query on the Census tab, or type /ryna census (%d of %d next)."] = nil
+-- %s: "%d of %d queries, %s so far" (above).
+L["census sweep: %s; the next query on your next click or /ryna census."] = nil
+L["census sweep started: one query per click (Next census query, or /ryna census again)."] = nil
+L["census sweep: waiting for the server's answer to the last query."] = nil
+L["census sweep: the server takes one query every few seconds; "
+  .. "try again in %ds."] = nil
 L["census sweep: this client has no /who for addons."] = nil
 L["census sweep: not now, %s."] = nil
 L["census sweep started: asking the server who is online, one query every 4s."] = nil
 L["stopped"] = nil
-L["the game blocked /who from Ryna"] = nil
 L["combat started"] = nil
 L["entered an instance"] = nil
 
@@ -199,11 +219,11 @@ L["/ryna status: what is recorded, the journal's size, combat logging"] = nil
 L["/ryna combatlog instances||always||never: when the addon turns combat logging on"] = nil
 L["/ryna debug on||off||toggle: print what Ryna is doing to chat "
   .. "(/ryna debug alone: which it is)"] = nil
-L["/ryna census: run a realm census now (/who, a few queries at a time); "
-  .. "/ryna census stop ends it"] = nil
+L["/ryna census: run a realm census now (/who, a few queries at a time, or one per "
+  .. "/ryna census where the game allows /who only from a click); /ryna census stop ends it"] = nil
 L["stopped by you"] = nil
 L["no census sweep is running."] = nil
-L["usage: /ryna census (runs a sweep now) or /ryna census stop"] = nil
+L["usage: /ryna census (runs a sweep now, or its next query) or /ryna census stop"] = nil
 L["debug messages are %s. /ryna debug on||off||toggle changes it."] = nil
 L["usage: /ryna debug on||off||toggle (now %s)"] = nil
 L["debug messages are already %s."] = nil
