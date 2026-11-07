@@ -98,7 +98,7 @@ async function copy(url: string): Promise<void> {
 
   <section class="card wide">
     <h2>Credits</h2>
-    <p>Made by Maddison Markham, with Nyx (Claude).</p>
+    <p>Made by MaddisonM79, with Nyx (Claude).</p>
     <ul v-if="credits.length" class="credits">
       <li v-for="c in credits" :key="c.name">
         <strong>{{ c.name }}</strong> <span class="muted">· {{ c.role }}</span>

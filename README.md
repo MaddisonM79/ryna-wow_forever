@@ -137,7 +137,7 @@ and `latest.json`.
 
 ## Thanks
 
-Ryna is made by Maddison Markham, with Nyx (Claude). The people who tested it and made it better are in
+Ryna is made by MaddisonM79, with Nyx (Claude). The people who tested it and made it better are in
 `CREDITS.md`, which the app's About tab and the addon's panel also show: first among them Rencas Copperbeard.
 
 ## Licence

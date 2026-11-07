@@ -1,6 +1,6 @@
 # Thanks
 
-Ryna is made by Maddison Markham, with Nyx (Claude). These people made it better.
+Ryna is made by MaddisonM79, with Nyx (Claude). These people made it better.
 
 `credits.json` at the repository root is the one list; the app's About tab, the addon's panel and this
 file all read from it (`scripts/credits.test.mjs` holds them together).
