@@ -65,3 +65,16 @@ end)
 ns.On("PLAYER_LOGOUT", function()
   ns.Character.Logout()
 end)
+
+-- When the client blocks or forbids something this addon did (the "blocked from an action only
+-- available to the Blizzard UI" dialog), say which call it was, in chat and in RynaDB.blocked, so it
+-- can be found without a taint log.
+local function noteBlocked(event, addon, fn)
+  if addon ~= ns.NAME then return end
+  local what = tostring(fn)
+  ns.db.blocked = { event = event, fn = what, at = ns.Now(), addon = ns.VERSION }
+  ns.PrintRaw(string.format("|cffff6060Ryna|r: the client %s a call to %s (version %s). Please report this line.",
+    event == "ADDON_ACTION_FORBIDDEN" and "forbade" or "blocked", what, ns.VERSION))
+end
+ns.On("ADDON_ACTION_FORBIDDEN", noteBlocked)
+ns.On("ADDON_ACTION_BLOCKED", noteBlocked)
