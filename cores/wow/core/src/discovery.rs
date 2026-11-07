@@ -35,7 +35,23 @@ pub struct Discovery {
     pub accounts: Vec<AccountFile>,
 }
 
-/// Where the game installs by default on this OS.
+/// The Wine prefixes the game is usually in on Linux, from the home folder: plain Wine, Lutris
+/// (a prefix per game under `~/Games`, its default), Bottles (the Flatpak, then a native install),
+/// and Steam's Proton prefixes (`compatdata/<appid>/pfx`, in the usual Steam folder, the folder
+/// `~/.steam/steam` links to, and the Flatpak's). A `*` is one path component: each folder there.
+pub const LINUX_PREFIXES: &[&str] = &[
+    ".wine",
+    "Games/*",
+    ".var/app/com.usebottles.bottles/data/bottles/bottles/*",
+    ".local/share/bottles/bottles/*",
+    ".steam/steam/steamapps/compatdata/*/pfx",
+    ".local/share/Steam/steamapps/compatdata/*/pfx",
+    ".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/compatdata/*/pfx",
+];
+
+/// Where the game installs by default on this OS. On Linux the game runs under Wine or Proton,
+/// so the roots are the usual prefixes' `drive_c/Program Files` ([`LINUX_PREFIXES`]); a `*`
+/// component in one stands for every folder there, and [`find_installs`] expands it.
 pub fn default_roots() -> Vec<PathBuf> {
     let mut roots = Vec::new();
     if cfg!(target_os = "macos") {
@@ -54,8 +70,42 @@ pub fn default_roots() -> Vec<PathBuf> {
                 roots.push(root);
             }
         }
+    } else if cfg!(target_os = "linux") {
+        if let Some(home) = std::env::var_os("HOME") {
+            let home = PathBuf::from(home);
+            for prefix in LINUX_PREFIXES {
+                for program_files in ["Program Files (x86)", "Program Files"] {
+                    roots.push(
+                        home.join(prefix)
+                            .join("drive_c")
+                            .join(program_files)
+                            .join("World of Warcraft"),
+                    );
+                }
+            }
+        }
     }
     roots
+}
+
+/// `root` with each `*` component replaced by every folder there, in name order: a root with
+/// none is itself; one whose `*` matches nothing is gone. A `*` is only ever a whole component
+/// (`Games/*/drive_c`), never part of a name.
+pub fn expand_root(root: &Path) -> Vec<PathBuf> {
+    let mut out = vec![PathBuf::new()];
+    for component in root.components() {
+        if component.as_os_str() == "*" {
+            out = out.iter().flat_map(|p| sorted_dirs(p)).collect();
+            if out.is_empty() {
+                break;
+            }
+        } else {
+            for p in &mut out {
+                p.push(component);
+            }
+        }
+    }
+    out
 }
 
 /// The product named by a `.flavor.info`: `Product Flavor!STRING:0` then the flavor.
@@ -96,22 +146,28 @@ fn sorted_dirs(path: &Path) -> Vec<PathBuf> {
     dirs
 }
 
-/// The product folders under each root. A root that is itself a product folder (the person
-/// pointed `--install` at `_forever_`) counts as one.
+/// The product folders under each root (a `*` component expanded, [`expand_root`]). A root
+/// that is itself a product folder (the person pointed `--install` at `_forever_`) counts as
+/// one. One folder reached by two names (Steam's `~/.steam/steam` is a link to
+/// `~/.local/share/Steam`) counts once, under the first.
 pub fn find_installs(roots: &[PathBuf]) -> Vec<Install> {
     let mut out: Vec<Install> = Vec::new();
     let mut add = |path: PathBuf| {
-        if !out.iter().any(|i| i.path == path) {
+        let real = path.canonicalize().ok();
+        let seen = out
+            .iter()
+            .any(|i| i.path == path || (real.is_some() && i.path.canonicalize().ok() == real));
+        if !seen {
             let flavor = read_flavor(&path);
             out.push(Install { path, flavor });
         }
     };
-    for root in roots {
-        if is_product_folder(root) {
-            add(root.clone());
+    for root in roots.iter().flat_map(|r| expand_root(r)) {
+        if is_product_folder(&root) {
+            add(root);
             continue;
         }
-        for dir in sorted_dirs(root) {
+        for dir in sorted_dirs(&root) {
             let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
             if name.len() > 2
                 && name.starts_with('_')
@@ -293,8 +349,96 @@ mod tests {
             assert_eq!(roots[0], PathBuf::from("/Applications/World of Warcraft"));
         } else if cfg!(windows) {
             assert!(roots.iter().any(|r| r.ends_with("World of Warcraft")));
+        } else if cfg!(target_os = "linux") {
+            let home = PathBuf::from(std::env::var_os("HOME").unwrap());
+            assert_eq!(
+                roots[0],
+                home.join(".wine/drive_c/Program Files (x86)/World of Warcraft")
+            );
+            assert_eq!(
+                roots[1],
+                home.join(".wine/drive_c/Program Files/World of Warcraft")
+            );
+            // Every prefix, both Program Files, and the wildcard ones as patterns to expand.
+            assert_eq!(roots.len(), LINUX_PREFIXES.len() * 2);
+            assert!(
+                roots.contains(&home.join("Games/*/drive_c/Program Files (x86)/World of Warcraft"))
+            );
+            assert!(roots.contains(&home.join(
+                ".local/share/Steam/steamapps/compatdata/*/pfx/drive_c/Program Files (x86)/World of Warcraft"
+            )));
+            assert!(roots.iter().all(|r| r.ends_with("World of Warcraft")));
         } else {
             assert!(roots.is_empty());
         }
+    }
+
+    #[test]
+    fn a_wildcard_stands_for_each_folder_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        // Lutris: a prefix per game; one has the game, one doesn't. Steam: a Proton prefix.
+        let lutris = home.join("Games/battlenet/drive_c/Program Files (x86)/World of Warcraft");
+        product(&lutris, "_forever_", "wowf", &[("LUTRIS", "")]);
+        std::fs::create_dir_all(home.join("Games/other/drive_c/Program Files (x86)")).unwrap();
+        let steam = home.join(
+            ".local/share/Steam/steamapps/compatdata/123/pfx/drive_c/Program Files (x86)/World of Warcraft",
+        );
+        product(&steam, "_forever_", "wowf", &[("STEAM", "")]);
+
+        let roots = vec![
+            home.join(".wine/drive_c/Program Files (x86)/World of Warcraft"),
+            home.join("Games/*/drive_c/Program Files (x86)/World of Warcraft"),
+            home.join(".local/share/bottles/bottles/*/drive_c/Program Files (x86)/World of Warcraft"),
+            home.join(
+                ".local/share/Steam/steamapps/compatdata/*/pfx/drive_c/Program Files (x86)/World of Warcraft",
+            ),
+        ];
+        // A literal root is itself; a wildcard with nothing under it is gone.
+        assert_eq!(expand_root(&roots[0]), vec![roots[0].clone()]);
+        assert_eq!(
+            expand_root(&roots[1]),
+            vec![
+                lutris.clone(),
+                home.join("Games/other/drive_c/Program Files (x86)/World of Warcraft")
+            ]
+        );
+        assert!(expand_root(&roots[2]).is_empty());
+
+        let installs = find_installs(&roots);
+        assert_eq!(
+            installs.iter().map(|i| i.path.clone()).collect::<Vec<_>>(),
+            vec![lutris.join("_forever_"), steam.join("_forever_")]
+        );
+        let accounts: Vec<String> = installs
+            .iter()
+            .flat_map(find_accounts)
+            .map(|a| a.account)
+            .collect();
+        assert_eq!(accounts, vec!["LUTRIS", "STEAM"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn one_folder_by_two_names_counts_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let real = home.join(".local/share/Steam/steamapps/compatdata/123/pfx/drive_c/Program Files (x86)/World of Warcraft");
+        let p = product(&real, "_forever_", "wowf", &[]);
+        std::fs::create_dir_all(home.join(".steam")).unwrap();
+        std::os::unix::fs::symlink(home.join(".local/share/Steam"), home.join(".steam/steam"))
+            .unwrap();
+        let roots = vec![
+            home.join(".steam/steam/steamapps/compatdata/*/pfx/drive_c/Program Files (x86)/World of Warcraft"),
+            home.join(".local/share/Steam/steamapps/compatdata/*/pfx/drive_c/Program Files (x86)/World of Warcraft"),
+        ];
+        let installs = find_installs(&roots);
+        assert_eq!(installs.len(), 1);
+        // Under the name it was first reached by.
+        assert!(installs[0].path.starts_with(home.join(".steam/steam")));
+        assert_eq!(
+            installs[0].path.canonicalize().unwrap(),
+            p.canonicalize().unwrap()
+        );
     }
 }

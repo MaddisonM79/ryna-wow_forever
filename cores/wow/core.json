@@ -10,7 +10,21 @@
       "/Applications/World of Warcraft",
       "~/Applications/World of Warcraft",
       "C:\\Program Files (x86)\\World of Warcraft",
-      "C:\\Program Files\\World of Warcraft"
+      "C:\\Program Files\\World of Warcraft",
+      "~/.wine/drive_c/Program Files (x86)/World of Warcraft",
+      "~/.wine/drive_c/Program Files/World of Warcraft",
+      "~/Games/*/drive_c/Program Files (x86)/World of Warcraft",
+      "~/Games/*/drive_c/Program Files/World of Warcraft",
+      "~/.var/app/com.usebottles.bottles/data/bottles/bottles/*/drive_c/Program Files (x86)/World of Warcraft",
+      "~/.var/app/com.usebottles.bottles/data/bottles/bottles/*/drive_c/Program Files/World of Warcraft",
+      "~/.local/share/bottles/bottles/*/drive_c/Program Files (x86)/World of Warcraft",
+      "~/.local/share/bottles/bottles/*/drive_c/Program Files/World of Warcraft",
+      "~/.steam/steam/steamapps/compatdata/*/pfx/drive_c/Program Files (x86)/World of Warcraft",
+      "~/.steam/steam/steamapps/compatdata/*/pfx/drive_c/Program Files/World of Warcraft",
+      "~/.local/share/Steam/steamapps/compatdata/*/pfx/drive_c/Program Files (x86)/World of Warcraft",
+      "~/.local/share/Steam/steamapps/compatdata/*/pfx/drive_c/Program Files/World of Warcraft",
+      "~/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/compatdata/*/pfx/drive_c/Program Files (x86)/World of Warcraft",
+      "~/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/compatdata/*/pfx/drive_c/Program Files/World of Warcraft"
     ]
   },
   "data": {
