@@ -15,6 +15,9 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{App, AppHandle, Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 
+/// Whether the tray icon exists. Without one, closing the window quits (there'd be no way back).
+struct Tray(bool);
+
 fn show_main(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
@@ -49,6 +52,25 @@ fn build_tray(app: &App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// The tray, if the system can show one. On Linux the tray library loads
+/// libayatana-appindicator3 (or libappindicator3) at run time and panics when neither is
+/// installed; the app goes on without a tray then, and says so (agent/README.md "Linux").
+fn try_build_tray(app: &App) -> bool {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| build_tray(app))) {
+        Ok(Ok(())) => true,
+        Ok(Err(e)) => {
+            eprintln!("ryna: no tray icon ({e}); closing the window will quit");
+            false
+        }
+        Err(_) => {
+            eprintln!(
+                "ryna: no tray icon: no appindicator library (on Linux, install libayatana-appindicator); closing the window will quit"
+            );
+            false
+        }
+    }
+}
+
 fn on_run_event(app: &AppHandle, event: &RunEvent) {
     if matches!(event, RunEvent::Exit) {
         agent::shutdown(app);
@@ -81,17 +103,21 @@ fn main() {
             let signed_in = agent::signed_in(&config);
             app.manage(agent::Agent::new(config, app.path().app_config_dir().ok()));
             app.manage(updates::Updates::default());
-            build_tray(app)?;
+            let tray = try_build_tray(app);
+            app.manage(Tray(tray));
             if signed_in {
                 agent::start_watch(app.handle());
             }
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the window keeps the app (and the syncing) running in the tray.
+            // Closing the window keeps the app (and the syncing) running in the tray; with no
+            // tray to come back from, it quits (RunEvent::Exit stops the loop).
             if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+                if window.try_state::<Tray>().is_none_or(|t| t.0) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![

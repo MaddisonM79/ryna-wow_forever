@@ -37,7 +37,8 @@ export function releaseConfig({ command, pubkey, env, platform = process.platfor
   if (key && privateKey) {
     bundle.createUpdaterArtifacts = true;
     // macOS's updater artifact is the .app as a .tar.gz, made only when "app" is a target
-    // (tauri.conf.json asks for the .dmg alone). Windows' is the NSIS installer itself.
+    // (tauri.conf.json asks for the .dmg alone). Windows' is the NSIS installer itself, and
+    // Linux's the AppImage (the bundler keeps only the targets for the OS it runs on).
     if (platform === "darwin") bundle.targets = ["app", "dmg"];
     notes.push("updater: key found, making signed updater artifacts");
   } else if (key) {

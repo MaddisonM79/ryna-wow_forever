@@ -4,8 +4,9 @@
 
 use std::process::Command;
 
-/// The game's executables on Windows (Forever, retail, Classic, the test realms).
-#[cfg_attr(not(windows), allow(dead_code))]
+/// The game's executables on Windows (Forever, retail, Classic, the test realms), and so under
+/// Wine or Proton on Linux.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 const WINDOWS_EXES: &[&str] = &["wow.exe", "wowclassic.exe", "wowt.exe", "wowb.exe"];
 
 /// Whether `tasklist /FO CSV /NH` output lists one of the game's executables.
@@ -39,22 +40,58 @@ pub fn game_running() -> bool {
 }
 
 #[cfg(not(windows))]
+fn pgrep(args: &[&str]) -> bool {
+    Command::new("pgrep")
+        .args(args)
+        .output()
+        .is_ok_and(|o| o.status.success())
+}
+
+#[cfg(target_os = "macos")]
 pub fn game_running() -> bool {
-    let pgrep = |args: &[&str]| {
-        Command::new("pgrep")
-            .args(args)
-            .output()
-            .is_ok_and(|o| o.status.success())
-    };
     // The process by name, or any executable inside a "World of Warcraft…" app bundle.
     pgrep(&["-x", "World of Warcraft"])
         || pgrep(&["-x", "World of Warcraft Classic"])
         || pgrep(&["-f", r"World of Warcraft[^/]*\.app/Contents/MacOS/"])
 }
 
+/// `wow.exe` as a pattern for `pgrep -x` that matches it in any case (`Wow.exe`, `WoW.exe`);
+/// procps's pgrep has no case-insensitive flag.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn any_case(name: &str) -> String {
+    name.chars()
+        .map(|c| match c {
+            c if c.is_ascii_alphabetic() => {
+                format!("[{}{}]", c.to_ascii_uppercase(), c.to_ascii_lowercase())
+            }
+            '.' => r"\.".to_string(),
+            c => c.to_string(),
+        })
+        .collect()
+}
+
+/// Under Wine or Proton the game is its Windows executable, and that's the process name.
+#[cfg(target_os = "linux")]
+pub fn game_running() -> bool {
+    WINDOWS_EXES
+        .iter()
+        .any(|exe| pgrep(&["-x", &any_case(exe)]))
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+pub fn game_running() -> bool {
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_wine_process_pattern_matches_any_case() {
+        assert_eq!(any_case("wow.exe"), r"[Ww][Oo][Ww]\.[Ee][Xx][Ee]");
+        assert_eq!(any_case("wowt.exe"), r"[Ww][Oo][Ww][Tt]\.[Ee][Xx][Ee]");
+    }
 
     #[test]
     fn reads_the_game_out_of_tasklist() {

@@ -38,7 +38,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["dmg", "nsis"],
+    "targets": ["dmg", "nsis", "appimage"],
     "category": "Utility",
     "shortDescription": "The World of Warcraft: Forever companion: syncs your characters to ryna.io while it is open.",
     "icon": [
