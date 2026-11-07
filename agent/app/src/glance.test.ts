@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AccountView, CombatStatus, InstallView, UploadedFight } from "./api";
-import { accountsLine, combatState, FIGHTS_LABEL, fightWords, gameLine, lastFightLine } from "./describe";
+import { accountChip, accountsLine, combatState, FIGHTS_LABEL, fightWords, gameLine, lastFightLine } from "./describe";
 import { logText } from "./clipboard";
 import { checkResult } from "./updateWords";
 
@@ -121,5 +121,36 @@ describe("copying the activity log", () => {
       { at: 1, text: "Pushing MAIN…" },
     ];
     expect(logText(lines, (at) => `t${at}`)).toBe("t1 Pushing MAIN…\nt2 Pushed MAIN: 3 characters");
+  });
+});
+
+describe("an account row's chip", () => {
+  const a: AccountView = {
+    path: "p",
+    install: "i",
+    key: "k",
+    label: "MAIN",
+    savedAt: NOW - 3 * 3600,
+    pushedAt: NOW - 3600,
+    characters: 3,
+    lastError: null,
+    phase: "waiting",
+  };
+
+  it("says Pushed, not Waiting, for an account pushed after its last save", () => {
+    expect(accountChip(a)).toEqual({ text: "Pushed", chip: "pushed" });
+    expect(accountChip({ ...a, savedAt: a.pushedAt })).toEqual({ text: "Pushed", chip: "pushed" });
+  });
+
+  it("says Waiting only when the game saved after the last push, or nothing was pushed yet", () => {
+    expect(accountChip({ ...a, savedAt: NOW - 600 })).toEqual({ text: "Waiting", chip: "waiting" });
+    expect(accountChip({ ...a, pushedAt: null })).toEqual({ text: "Waiting", chip: "waiting" });
+    expect(accountChip({ ...a, savedAt: null, pushedAt: null })).toEqual({ text: "Waiting", chip: "waiting" });
+  });
+
+  it("keeps the loop's own phase while it has one", () => {
+    expect(accountChip({ ...a, phase: "pushing" })).toEqual({ text: "Pushing", chip: "pushing" });
+    expect(accountChip({ ...a, phase: "pushed", savedAt: NOW })).toEqual({ text: "Pushed", chip: "pushed" });
+    expect(accountChip({ ...a, phase: "error" })).toEqual({ text: "Error", chip: "error" });
   });
 });

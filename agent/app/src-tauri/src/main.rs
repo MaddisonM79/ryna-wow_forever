@@ -6,6 +6,7 @@
 
 mod agent;
 mod commands;
+mod frame;
 mod game;
 mod settings;
 mod updates;
@@ -14,6 +15,7 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{App, AppHandle, Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_window_state::StateFlags;
 
 /// Whether the tray icon exists. Without one, closing the window quits (there'd be no way back).
 struct Tray(bool);
@@ -98,6 +100,13 @@ fn main() {
             MacosLauncher::AppleScript,
             None,
         ))
+        // The window's size and position come back next time. Not whether it was visible: it
+        // is hidden to the tray at quit more often than not, and must still open at launch.
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
+                .build(),
+        )
         .setup(|app| {
             let config = agent::config();
             let signed_in = agent::signed_in(&config);
@@ -107,6 +116,11 @@ fn main() {
             app.manage(Tray(tray));
             if signed_in {
                 agent::start_watch(app.handle());
+            }
+            // The window is created hidden (tauri.conf.json `visible: false`) and the plugin has
+            // restored its frame by now; show it once the frame is known to fit a monitor.
+            if let Some(window) = app.get_webview_window("main") {
+                frame::place_and_show(&window);
             }
             Ok(())
         })

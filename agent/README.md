@@ -156,19 +156,33 @@ with every mod that's on (Chronicle, `mods/wow/chronicle/addon/Ryna_Chronicle`, 
 watch loop on its own thread, showing each install's addon version, each account's last save and
 push, and a log of what the loop did. It shows status, not charts: those live on the portal.
 
-The window is tabs under the header (sign-in, Sync now) and the update banner: **Status** (the
-default: sign-in and last sync, the game and its addon, accounts, the combat log, fights in the last
-12 hours and the last one, and Check for updates), **Game**, **Accounts**, **Settings**,
+The window is a sidebar under the header (sign-in, Sync now) and the update banner: **Status**
+(the default: the agent's card with the account, whether it's syncing, the last sync, the version
+and Check for updates, then a card per core with the game and its addon, the accounts, the combat
+log, fights in the last 12 hours and the last one, and a button to the core's page), then **one
+entry per core** (today World of Warcraft: Forever), then the agent's **Settings** (open at login),
 **Activity** (the session's log, which scrolls in its own panel, with Copy and Clear) and **About**
-(versions, links, credits, licence and the third-party list). The chosen tab is remembered in the
-webview's `localStorage`; the arrow keys, Home and End move between tabs. The window can open only
-ryna.io/wow and the sign-in page, so About's other links are text to copy.
+(versions, links, credits, licence and the third-party list). A core's page is a row of tabs:
+**Game** (each install and its addon, with the install button), **Accounts**, **Combat** (the log's
+state and file, what it saw last, fights waiting to upload, fights in the last 12 hours and the last
+one), **Mods** (a toggle per mod and its state in each install) and the core's own **Settings**
+(the game folder, fight digests, raw logs). Under 700 px wide the sidebar is icons with tooltips.
+The chosen page and each core's tab are remembered in the webview's `localStorage`; the arrow
+keys, Home and End move along the sidebar (up and down) and a core's tabs (left and right). The
+window can open only ryna.io/wow and the sign-in page, so About's other links are text to copy.
 
 It holds no logic of its own over the core's: `get_status` is the core's `status` plus the loop's
 live state; `start_login` returns the core's `DeviceLogin` (and the link to open) and polls on a
 thread with a cancel token it keeps, `cancel_login` fires it, and `login-finished` says how it
 ended (`ok`, `cancelled`, `error`, `fix`); `sync_now` wakes the running loop
 (`WatchControl::request_pass`) rather than restarting it. Errors show the core's words.
+
+The window opens at 820×560 the first time and remembers the size and position it was left at
+(`tauri-plugin-window-state`, in `window-state.json` in the app's config folder); it opens hidden
+and shows once that frame has been checked against the monitors (`src-tauri/src/frame.rs`): a frame
+whose centre is on no monitor, or that is larger than its monitor's work area, goes back to 820×560
+centred on the primary monitor. Whether it was visible isn't remembered, since it's usually hidden
+to the tray at quit.
 
 **Nothing runs when it's closed.** Closing the window hides it to the tray (menu bar on macOS),
 where it keeps syncing; Quit, in the tray menu, stops the loop and exits. There is no service,

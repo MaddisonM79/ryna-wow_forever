@@ -1,15 +1,6 @@
 <script setup lang="ts">
-import type { Phase } from "../api";
-import { ago, when } from "../describe";
-import CombatLine from "./CombatLine.vue";
+import { accountChip, ago, when } from "../describe";
 import { now, status } from "../store";
-
-const PHASE_WORDS: Record<Phase, string> = {
-  waiting: "Waiting",
-  pushing: "Pushing",
-  pushed: "Pushed",
-  error: "Error",
-};
 </script>
 
 <template>
@@ -37,10 +28,9 @@ const PHASE_WORDS: Record<Phase, string> = {
           <td :title="when(a.savedAt)">{{ ago(a.savedAt, now) }}</td>
           <td :title="when(a.pushedAt)">{{ ago(a.pushedAt, now) }}</td>
           <td>{{ a.characters ?? "–" }}</td>
-          <td><span class="chip" :class="a.phase">{{ PHASE_WORDS[a.phase] }}</span></td>
+          <td><span class="chip" :class="accountChip(a).chip">{{ accountChip(a).text }}</span></td>
         </tr>
       </tbody>
     </table>
-    <p class="muted fights"><CombatLine /></p>
   </section>
 </template>

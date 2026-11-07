@@ -29,6 +29,9 @@ tauri-plugin-opener = "=2.7.2"
 # The in-app updater (GitHub Releases latest.json, minisign-verified): driven from Rust only, so
 # it has no npm package. The relaunch after a macOS install is the core AppHandle::restart.
 tauri-plugin-updater = "=2.14.1"
+# Remembers the window's size and position between runs (Rust side only: no npm package, no
+# capability). 2.5 is the line built against Tauri 2.12; `frame.rs` checks what it restores.
+tauri-plugin-window-state = "=2.5.0"
 
 [dev-dependencies]
 tempfile.workspace = true
