@@ -147,8 +147,8 @@ SlashCmdList.RYNA = function(msg) ns.Run("/ryna", ns.Slash, msg) end
 -- The key binding (Bindings.xml): Key Bindings -> AddOns -> Ryna -> Next census query. A key press
 -- is a hardware event, like a click, so the query goes out from here, synchronously; never move this
 -- call behind a timer. The names are the game's BINDING_* globals, set here so they're localised.
-_G.BINDING_HEADER_RYNA = L["Ryna"]
-_G.BINDING_NAME_RYNA_CENSUS_NEXT = L["Next census query"]
+BINDING_HEADER_RYNA = L["Ryna"]
+BINDING_NAME_RYNA_CENSUS_NEXT = L["Next census query"]
 
 function Ryna_CensusNext()
   ns.Run("census key", ns.Census.Request, true)

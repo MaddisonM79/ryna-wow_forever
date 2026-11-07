@@ -20,8 +20,6 @@ local NonEmpty = ns.NonEmpty
 
 local CAP = { kills = 2000, loot = 3000, objects = 2000 }
 local MAX_FROM = 8
-local XP_WINDOW = 5      -- seconds between a kill and its experience message
-local RECENT_KILLS = 16  -- kills remembered for the experience message (parallel arrays, reused)
 local SEEN_RING = 200    -- loot source GUIDs remembered, so a corpse reopened isn't counted twice
 local LOOT_SLOT_ITEM = 1 -- GetLootSlotType: 0 none, 1 item, 2 money, 3 currency
 
