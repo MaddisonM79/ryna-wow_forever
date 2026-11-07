@@ -18,6 +18,7 @@ local function onLogin()
   ns.Debug("login: record built for %s, level %s %s, in %s", rec.fullName, rec.level, rec.class, rec.zone)
   ns.Run("nearby sightings", ns.Sightings.RegisterNearby)
   ns.Session.Start(rec.guid)
+  ns.Run("session strip", ns.Strip.Create)
 end
 
 ns.API.RegisterMod({
@@ -30,6 +31,8 @@ ns.API.RegisterMod({
     ns.Character.Logout()
     ns.Session.Save()
   end,
+  -- The panel's Defaults: the strip shows and unlocks again, in the place it had.
+  onDefaults = function() ns.Strip.OnDefaults() end,
 })
 
 local deferred = false

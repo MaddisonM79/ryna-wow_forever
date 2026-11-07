@@ -124,3 +124,42 @@ L["Session: not started"] = true
 L["Session: %s, %s XP/h"] = true
 L["%d kill"] = true
 L["%d kills"] = true
+-- The session strip, one line joined by " · ": "Kills 42 · 3,120 XP/h · 1g 20s/h · 2 quests · 1h 12m".
+-- "%s/h" is an amount of money per hour ("1g 20s/h"); keep it short, the strip is one line.
+L["Kills %s"] = true
+L["%s XP/h"] = true
+L["%s/h"] = true
+L["%d quest"] = true
+L["%d quests"] = true
+-- The strip's tooltip: its title, then "Since 14:02 (1h 12m)" (the clock time the session started,
+-- how long ago), then label / value rows ("Kills: 42 (35/h)").
+L["Chronicle: this session"] = true
+L["Since %s (%s)"] = true
+L["Kills"] = true
+L["%s (%s/h)"] = true
+L["Experience"] = true
+L["Levels gained"] = true
+-- Money: the net change this session; "Gained / spent": "3g 10s / 1g 50s".
+L["Money"] = true
+L["Gained / spent"] = true
+L["%s / %s"] = true
+L["Quests turned in"] = true
+L["Items looted"] = true
+L["Deaths"] = true
+-- The tooltip's list of creatures killed most this session: "Kobold Vermin   12 (480 XP)".
+L["Top kills this session"] = true
+L["%s (%s XP)"] = true
+L["Click: the Chronicle window. Right-click: lock or unlock."] = true
+L["Shift-drag to move."] = true
+-- Printed in chat ("Ryna: the session strip is locked. ...") when the strip is right-clicked.
+L["the session strip is locked. Right-click it to unlock."] = true
+L["the session strip is unlocked: Shift-drag to move it."] = true
+-- The Recording tab: a heading over the strip and window settings, then those settings.
+L["In game"] = true
+L["Show the session strip"] = true
+L["One line on screen with this session's kills, experience and money per hour, quests and time. "
+  .. "Hover it for more; click it for the Chronicle window."] = true
+L["Lock the strip"] = true
+L["Unlocked, Shift-drag moves it. Right-clicking the strip locks or unlocks it too."] = true
+-- A button: the strip back to its default place (top of the screen).
+L["Reset position"] = true
