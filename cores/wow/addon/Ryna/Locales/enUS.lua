@@ -60,6 +60,8 @@ L["From the companion app, newest first, as of your last login or /reload."] = t
 L["Defaults"] = true
 L["Every setting back to its default. The minimap button keeps its place."] = true
 L["Ryna addon version: %s"] = true
+-- The credits line at the foot of the Advanced tab: a name, then their line from credits.json.
+L["Thanks to %s: %s"] = true
 -- %s: a date and time ("2026-11-06 14:02"), then how long ago ("12 minutes ago").
 L["Companion app status file: as of %s (%s)"] = true
 L["Companion app status file: nothing in it yet"] = true

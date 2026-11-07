@@ -262,6 +262,10 @@ local function versionsText()
   else
     lines[2] = L["Companion app status file: nothing in it yet"]
   end
+  for _, c in ipairs(ns.CREDITS or {}) do
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = string.format(L["Thanks to %s: %s"], c.name, c.line)
+  end
   return table.concat(lines, "\n")
 end
 

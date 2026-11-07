@@ -20,6 +20,7 @@ Locales\zhTW.lua
 Journal.lua
 Status.lua
 CombatLog.lua
+Credits.lua
 Panel.lua
 Minimap.lua
 Slash.lua

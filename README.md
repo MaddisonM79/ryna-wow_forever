@@ -135,6 +135,11 @@ Releases are built by `.github/workflows/release.yml` from a `vX.Y.Z` tag: macOS
 Windows and Linux (an AppImage), the addon zip, `SHA256SUMS`, and the updater's signed artifacts
 and `latest.json`.
 
+## Thanks
+
+Ryna is made by Maddison Markham, with Nyx (Claude). The people who tested it and made it better are in
+`CREDITS.md`, which the app's About tab and the addon's panel also show: first among them Rencas Copperbeard.
+
 ## Licence
 
 MIT. See `LICENSE`.

@@ -565,3 +565,12 @@ button.small {
   align-items: flex-start;
   gap: 2px;
 }
+
+.credits {
+  list-style: none;
+  margin: 4px 0 8px;
+  padding: 0;
+}
+.credits li + li {
+  margin-top: 6px;
+}

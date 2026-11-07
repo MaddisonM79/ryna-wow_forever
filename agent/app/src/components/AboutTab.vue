@@ -5,6 +5,7 @@ import { api, errorText } from "../api";
 import { copyText } from "../clipboard";
 import { status } from "../store";
 import UpdateControl from "./UpdateControl.vue";
+import credits from "../../../../credits.json";
 
 const REPO = "https://github.com/MaddisonM79/ryna_agent";
 
@@ -98,6 +99,12 @@ async function copy(url: string): Promise<void> {
   <section class="card wide">
     <h2>Credits</h2>
     <p>Made by Maddison Markham, with Nyx (Claude).</p>
+    <ul v-if="credits.length" class="credits">
+      <li v-for="c in credits" :key="c.name">
+        <strong>{{ c.name }}</strong> <span class="muted">· {{ c.role }}</span>
+        <div class="muted">{{ c.line }}</div>
+      </li>
+    </ul>
     <p>
       MIT licence: <button class="link" type="button" @click="open(LICENSE_URL)">{{ LICENSE_URL }}</button>
     </p>
