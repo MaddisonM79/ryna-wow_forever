@@ -8,6 +8,7 @@ import type {
   ModChange,
   ModToggleResult,
   ModView,
+  Phase,
   Status,
   UploadedFight,
 } from "./api";
@@ -314,4 +315,25 @@ export function headerState(s: HeaderStatus): HeaderState {
     return { state: "problem", text: "Problem", detail, chip: "error" };
   }
   return { state: "connected", text: "Connected", detail: null, chip: "pushed" };
+}
+
+/** An account row's chip words by phase. */
+export const PHASE_WORDS: Record<Phase, string> = {
+  waiting: "Waiting",
+  pushing: "Pushing",
+  pushed: "Pushed",
+  error: "Error",
+};
+
+/**
+ * An account row's chip. The loop's own phase wins while it has one (pushing, pushed, error);
+ * before it has touched the account this session the phase is "waiting", which only means
+ * something when the game saved after the last push. `savedAt` and `pushedAt` are both Unix
+ * seconds (the file's mtime and the push state's clock).
+ */
+export function accountChip(a: Pick<AccountView, "phase" | "savedAt" | "pushedAt">): { text: string; chip: Phase } {
+  if (a.phase !== "waiting") return { text: PHASE_WORDS[a.phase], chip: a.phase };
+  const savedAfterPush = a.savedAt !== null && (a.pushedAt === null || a.savedAt > a.pushedAt);
+  if (!savedAfterPush && a.pushedAt !== null) return { text: PHASE_WORDS.pushed, chip: "pushed" };
+  return { text: PHASE_WORDS.waiting, chip: "waiting" };
 }
