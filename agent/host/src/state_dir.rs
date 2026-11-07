@@ -124,6 +124,10 @@ mod tests {
         // A stale line from an earlier holder is replaced, not appended to.
         std::fs::write(dir.path().join(LOCK_FILE), "stale stale stale stale stale").unwrap();
         let held = try_lock(dir.path()).unwrap().expect("first lock");
+        let busy = try_lock(dir.path()).unwrap().err().expect("held");
+        // Windows refuses reads of a locked file (so there the holder is unknown, and the file is
+        // read only once the lock is gone); Unix reads it while held.
+        drop(held);
         let written = std::fs::read_to_string(dir.path().join(LOCK_FILE)).unwrap();
         let parts: Vec<&str> = written.splitn(3, ' ').collect();
         assert_eq!(parts[0], std::process::id().to_string(), "{written}");
@@ -135,8 +139,6 @@ mod tests {
             !parts[2].is_empty() && !written.contains("stale"),
             "{written}"
         );
-        let busy = try_lock(dir.path()).unwrap().err().expect("held");
-        // Windows refuses reads of a locked file, so there the holder is unknown.
         if cfg!(unix) {
             assert_eq!(busy.holder.as_deref(), Some(written.as_str()));
             let words = busy.to_string();
@@ -144,8 +146,9 @@ mod tests {
                 words.starts_with(&format!("held by pid {} since ", std::process::id())),
                 "{words}"
             );
+        } else {
+            assert!(busy.holder.is_none());
         }
-        drop(held);
         assert_eq!(
             Busy {
                 holder: Some("1234 1762464000 main".into())
