@@ -2,7 +2,7 @@
 ## Title: Ryna
 ## Notes: Records your characters, bags, bank, quests, guild roster and a session journal for the Ryna companion app. /ryna for settings.
 ## Author: Ryna contributors
-## Version: 0.2.3
+## Version: 0.2.4
 ## SavedVariables: RynaDB
 
 Core.lua

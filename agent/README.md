@@ -119,6 +119,14 @@ the game, installs the bundled addon (`addon/Ryna`, carried as a resource), and 
 watch loop on its own thread, showing each install's addon version, each account's last save and
 push, and a log of what the loop did. It shows status, not charts: those live on the portal.
 
+The window is tabs under the header (sign-in, Sync now) and the update banner: **Status** (the
+default: sign-in and last sync, the game and its addon, accounts, the combat log, fights in the last
+12 hours and the last one, and Check for updates), **Game**, **Accounts**, **Settings**,
+**Activity** (the session's log, which scrolls in its own panel, with Copy and Clear) and **About**
+(versions, links, credits, licence and the third-party list). The chosen tab is remembered in the
+webview's `localStorage`; the arrow keys, Home and End move between tabs. The window can open only
+ryna.io/wow and the sign-in page, so About's other links are text to copy.
+
 It holds no logic of its own over the core's: `get_status` is the core's `status` plus the loop's
 live state; `start_login` returns the core's `DeviceLogin` (and the link to open) and polls on a
 thread with a cancel token it keeps, `cancel_login` fires it, and `login-finished` says how it

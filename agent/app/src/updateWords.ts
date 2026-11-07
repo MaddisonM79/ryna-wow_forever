@@ -40,3 +40,17 @@ export function progressText(p: UpdateProgress | null): string {
   }
   return `Downloading ${mb(p.downloaded)} MB`;
 }
+
+/** What the last check found, for beside the button: null before the first one finishes. */
+export function checkResult(
+  check: UpdateCheck | null,
+  phase: UpdatePhase,
+  error: string | null,
+): { text: string; chip: "pushed" | "waiting" | "update" | "error" } | null {
+  if (phase === "error" && error) return { text: `Couldn't check: ${error}`, chip: "error" };
+  if (phase === "checking") return { text: "Checking…", chip: "waiting" };
+  if (!check) return null;
+  if (!check.configured) return { text: "Updates aren't set up in this build", chip: "waiting" };
+  if (check.available) return { text: `Ryna ${check.available.version} is available`, chip: "update" };
+  return { text: "Up to date", chip: "pushed" };
+}

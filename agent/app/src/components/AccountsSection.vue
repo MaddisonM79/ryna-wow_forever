@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Phase } from "../api";
-import { ago, fightWords, when } from "../describe";
+import { ago, when } from "../describe";
+import CombatLine from "./CombatLine.vue";
 import { now, status } from "../store";
 
 const PHASE_WORDS: Record<Phase, string> = {
@@ -40,17 +41,6 @@ const PHASE_WORDS: Record<Phase, string> = {
         </tr>
       </tbody>
     </table>
-    <p class="muted fights">
-      <template v-if="status.combat.file">
-        Fights tonight: <strong>{{ status.combat.fightsTonight }}</strong>
-        <template v-if="status.combat.lastFight">
-          · last: {{ fightWords(status.combat.lastFight.zone, status.combat.lastFight.name, status.combat.lastFight.durationMs, status.combat.lastFight.players) }}
-          ({{ ago(status.combat.lastFight.at, now) }})
-        </template>
-        <template v-if="status.combat.pending"> · {{ status.combat.pending }} waiting</template>
-        <span v-if="status.combat.lastError" class="error-text"> · {{ status.combat.lastError }}</span>
-      </template>
-      <template v-else>Fights: no combat log yet. Type /combatlog in the game to start one.</template>
-    </p>
+    <p class="muted fights"><CombatLine /></p>
   </section>
 </template>

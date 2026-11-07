@@ -39,6 +39,11 @@ export function log(text: string, level: LogLine["level"] = "info"): void {
   activity.value = [{ id: nextId++, at: Date.now() / 1000, text, level }, ...activity.value].slice(0, LOG_SIZE);
 }
 
+/** Empty the activity log (this window's copy: nothing is stored anywhere else). */
+export function clearActivity(): void {
+  activity.value = [];
+}
+
 export async function refresh(): Promise<void> {
   try {
     const s = await api.status();

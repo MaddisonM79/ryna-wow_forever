@@ -1,5 +1,5 @@
 // Agent events in plain words, for the activity log. Null means "not worth a line".
-import type { AgentEvent, InstallResult, InstallView } from "./api";
+import type { AccountView, AgentEvent, CombatStatus, InstallResult, InstallView, UploadedFight } from "./api";
 
 const FLAVORS: Record<string, string> = {
   wowf: "World of Warcraft: Forever",
@@ -65,10 +65,53 @@ export function describe(e: AgentEvent): string | null {
 
 /** "Zephras Isle, 3 min, 2 players" (the core's `combat::describe`). */
 export function fightWords(zone: string | null, name: string | null, durationMs: number, players: number): string {
+  return fightParts(zone, name, durationMs, players).join(", ");
+}
+
+/** The label for `CombatStatus.fightsTonight`: fights uploaded in the last 12 hours. */
+export const FIGHTS_LABEL = "Fights, last 12 h";
+
+/** "Zephras Isle", "4 min", "1 player": a fight's words, as separate pieces. */
+export function fightParts(zone: string | null, name: string | null, durationMs: number, players: number): string[] {
   const place = name ?? zone ?? "Somewhere";
   const secs = Math.max(0, Math.floor(durationMs / 1000));
   const length = secs < 90 ? `${secs} s` : `${Math.floor((secs + 30) / 60)} min`;
-  return `${place}, ${length}, ${plural(players, "player")}`;
+  return [place, length, plural(players, "player")];
+}
+
+/** "Zephras Isle · 4 min · 1 player · 2 minutes ago": the last fight, one separator throughout. */
+export function lastFightLine(f: UploadedFight, now = Date.now() / 1000): string {
+  return [...fightParts(f.zone, f.name, f.durationMs, f.players), ago(f.at, now)].join(" · ");
+}
+
+/** One line for the combat log's state: off, waiting, or fights going up. */
+export function combatState(c: CombatStatus): { text: string; chip: "pushed" | "waiting" | "error" } {
+  if (!c.file) return { text: "No combat log yet: type /combatlog in the game", chip: "waiting" };
+  if (c.lastError) return { text: c.lastError, chip: "error" };
+  const parts = [c.active ? "Reading" : "Idle", c.file];
+  if (c.pending) parts.push(`${c.pending.toLocaleString("en")} waiting`);
+  return { text: parts.join(" · "), chip: c.active ? "pushed" : "waiting" };
+}
+
+/** The Status tab's game line: the Forever install (or the first one) and its addon. */
+export function gameLine(installs: InstallView[], bundled: string | null): { text: string; chip: AddonRow["chip"] } {
+  const main = installs.find((i) => i.forever) ?? installs[0];
+  if (!main) return { text: "Not found in the usual place", chip: "waiting" };
+  const row = main.forever || main.hasAddon ? addonRow(main, bundled) : null;
+  const parts = [flavorName(main.flavor), row ? row.text : "No addon here"];
+  if (installs.length > 1) parts.push(`${installs.length - 1} more`);
+  return { text: parts.join(" · "), chip: row ? row.chip : "waiting" };
+}
+
+/** The Status tab's accounts line: how many, and the newest push. */
+export function accountsLine(accounts: AccountView[], now = Date.now() / 1000): { text: string; chip: "pushed" | "waiting" | "error" } {
+  if (!accounts.length) return { text: "No saved data yet", chip: "waiting" };
+  const pushed = accounts.map((a) => a.pushedAt).filter((t): t is number => t !== null);
+  const newest = pushed.length ? Math.max(...pushed) : null;
+  const failed = accounts.filter((a) => a.phase === "error" || a.lastError).length;
+  const parts = [plural(accounts.length, "account"), `last pushed ${ago(newest, now)}`];
+  if (failed) parts.push(`${failed.toLocaleString("en")} with an error`);
+  return { text: parts.join(" · "), chip: failed ? "error" : newest !== null ? "pushed" : "waiting" };
 }
 
 /** "3 minutes ago", "just now", "never". */

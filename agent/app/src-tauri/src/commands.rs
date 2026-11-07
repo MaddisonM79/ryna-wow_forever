@@ -129,6 +129,26 @@ pub async fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String
     .await
 }
 
+/// Where "Open" links may point: the project's own pages, nothing else, so the page can't be made to
+/// open an arbitrary URL.
+const OPENABLE: [&str; 2] = [
+    "https://github.com/MaddisonM79/ryna-wow_forever",
+    "https://ryna.io",
+];
+
+#[tauri::command]
+pub fn open_link(app: AppHandle, url: String) -> Result<(), String> {
+    let allowed = OPENABLE.iter().any(|base| {
+        url == *base || url.starts_with(&format!("{base}/")) || url.starts_with(&format!("{base}#"))
+    });
+    if !allowed {
+        return Err(format!("not a link this app opens: {url}"));
+    }
+    app.opener()
+        .open_url(&url, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn open_portal(app: AppHandle) -> Result<(), String> {
     app.opener()

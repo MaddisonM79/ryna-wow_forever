@@ -217,6 +217,8 @@ export const api = {
   installAddon: (path: string | null = null) => invoke<InstallResult>("install_addon", { path }),
   setAutostart: (enabled: boolean) => invoke<boolean>("set_autostart", { enabled }),
   openPortal: () => invoke<void>("open_portal"),
+  /** Opens one of the project's own pages (GitHub, ryna.io) in the browser; anything else is refused by the command. */
+  openLink: (url: string) => invoke<void>("open_link", { url }),
   checkForUpdate: () => invoke<UpdateCheck>("check_for_update"),
   /** Resolves only if it failed to install: on success the app restarts into the new version. */
   installUpdate: () => invoke<void>("install_update"),

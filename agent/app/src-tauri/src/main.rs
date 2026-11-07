@@ -108,6 +108,7 @@ fn main() {
             commands::install_addon,
             commands::set_autostart,
             commands::open_portal,
+            commands::open_link,
             commands::check_for_update,
             commands::install_update,
         ])

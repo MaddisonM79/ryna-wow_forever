@@ -56,10 +56,12 @@ body {
   color: var(--text);
 }
 
+/* The window doesn't scroll: the header, banner, tabs and footer stay put, and a tab's own
+   panel scrolls when its content is longer than the window. */
 #app {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
 }
 
 header {
@@ -91,7 +93,10 @@ header .actions,
 
 main {
   flex: 1;
-  padding: 8px 16px 16px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 16px 0;
 }
 
 section {
@@ -299,7 +304,8 @@ tr:last-child td {
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: 160px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -339,9 +345,11 @@ label.setting {
 }
 
 footer {
+  flex: none;
+  border-top: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
-  padding: 8px 16px 12px;
+  padding: 8px 16px 10px;
   font-size: 12px;
 }
 
@@ -352,4 +360,140 @@ code {
 /* The Accounts section's line about fights. */
 .fights {
   margin-top: 0.5rem;
+}
+
+/* The tab row: under the header, above the panel. */
+.tabs {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tabs [role="tab"] {
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 12px;
+  margin-bottom: -1px;
+}
+
+.tabs [role="tab"]:hover {
+  color: var(--text);
+}
+
+.tabs [role="tab"][aria-selected="true"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.tabs [role="tab"]:focus-visible,
+.tabpanel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.tabpanel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 12px;
+}
+
+/* Activity fills its panel, and only the log inside it scrolls. */
+.tabpanel.activity {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+section.activity {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.section-head h2 {
+  margin: 0;
+}
+
+/* "Label · value" rows: Status and About. */
+.glance {
+  margin: 0;
+}
+
+.glance > div {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.glance > div:last-child {
+  border-bottom: none;
+}
+
+.glance dt {
+  flex: none;
+  width: 9.5em;
+  color: var(--muted);
+}
+
+.glance dd {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.glance .chip {
+  white-space: normal;
+}
+
+.update-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+h2.sub {
+  margin-top: 12px;
+}
+
+/* About's links: shown as text to select, since the window can open only ryna.io/wow. */
+.url {
+  display: block;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--muted);
+  user-select: text;
+  -webkit-user-select: text;
+  word-break: break-all;
+}
+
+.third-party {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.third-party li {
+  padding: 1px 0;
 }
