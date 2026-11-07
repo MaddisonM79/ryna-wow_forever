@@ -10,7 +10,7 @@ const syncLabel = computed(() => (status.value?.watching ? "Syncing while open" 
 <template>
   <header>
     <div class="who">
-      <strong class="brand">Ryna</strong>
+      <strong class="brand">ryna</strong>
       <template v-if="status?.signedIn">
         <span>Signed in as <strong>{{ who }}</strong></span>
         <span class="chip" :class="status.watching ? 'pushed' : 'waiting'">{{ syncLabel }}</span>

@@ -82,7 +82,7 @@ onMounted(() => {
     <p v-else-if="!loadError" class="muted">Loading…</p>
   </main>
   <footer>
-    <span class="muted">Ryna {{ status?.appVersion ?? "" }} · agent {{ status?.agentVersion ?? "" }}</span>
+    <span class="muted">ryna {{ status?.appVersion ?? "" }} · agent {{ status?.agentVersion ?? "" }}</span>
     <button class="link" type="button" @click="api.openPortal()">Open ryna.io/wow</button>
   </footer>
 </template>
