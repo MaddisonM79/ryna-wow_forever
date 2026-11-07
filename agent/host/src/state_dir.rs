@@ -13,14 +13,26 @@ pub const STATE_DIR_ENV: &str = "RYNA_STATE_DIR";
 /// `io.ryna.app`, so on macOS the state sits beside the app's own settings.
 pub const PROJECT_DIRS: (&str, &str, &str) = ("io", "ryna", "app");
 
-/// `RYNA_STATE_DIR`, else the OS data directory (`~/Library/Application Support/io.ryna.app`,
-/// `%APPDATA%\ryna\app\data`, `~/.local/share/app`).
+/// `RYNA_STATE_DIR`, else the OS data directory ([`os_state_dir`]).
 pub fn state_dir() -> Option<PathBuf> {
     if let Some(d) = std::env::var_os(STATE_DIR_ENV).filter(|d| !d.is_empty()) {
         return Some(PathBuf::from(d));
     }
+    os_state_dir()
+}
+
+/// The OS data directory for the app: `~/Library/Application Support/io.ryna.app`,
+/// `%APPDATA%\ryna\app\data`, `~/.local/share/io.ryna.app`. Linux takes the application
+/// name alone, so there it gets the whole identifier (beside the app's own
+/// `~/.config/io.ryna.app`), not a folder called `app`.
+pub fn os_state_dir() -> Option<PathBuf> {
     let (q, o, a) = PROJECT_DIRS;
-    directories::ProjectDirs::from(q, o, a).map(|p| p.data_dir().to_path_buf())
+    let dirs = if cfg!(target_os = "linux") {
+        directories::ProjectDirs::from("", "", &format!("{q}.{o}.{a}"))
+    } else {
+        directories::ProjectDirs::from(q, o, a)
+    };
+    dirs.map(|p| p.data_dir().to_path_buf())
 }
 
 /// Held for the length of a run. The OS drops the lock when the process ends, however it ends.
@@ -108,6 +120,16 @@ pub fn try_lock_named(dir: &Path, name: &str) -> std::io::Result<Result<RunLock,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_state_folder_is_named_for_the_app() {
+        let dir = os_state_dir().unwrap();
+        if cfg!(windows) {
+            assert!(dir.ends_with(r"ryna\app\data"), "{}", dir.display());
+        } else {
+            assert!(dir.ends_with("io.ryna.app"), "{}", dir.display());
+        }
+    }
 
     #[test]
     fn one_lock_at_a_time() {
