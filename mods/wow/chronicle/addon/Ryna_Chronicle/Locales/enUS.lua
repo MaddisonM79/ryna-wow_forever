@@ -112,3 +112,105 @@ L["Counts the creatures you and your group kill, the experience they give and wh
 L["Show my numbers on tooltips"] = true
 L["Adds your own kills and drops to creature and item tooltips: how many you killed, what they dropped "
   .. "for you and how often."] = true
+
+-- Session.lua, Strip.lua, Window.lua: the session strip and the Chronicle window.
+-- Durations: "under a minute", "2d 3h" (days, hours), "1h 12m" (hours, minutes), "12m" (minutes).
+L["under a minute"] = true
+L["%dd %dh"] = true
+L["%dh %dm"] = true
+L["%dm"] = true
+-- The Status tab's session line: "Session: 42 kills, 3,120 XP/h" (experience per hour), or not started.
+L["Session: not started"] = true
+L["Session: %s, %s XP/h"] = true
+L["%d kill"] = true
+L["%d kills"] = true
+-- The session strip, one line joined by " · ": "Kills 42 · 3,120 XP/h · 1g 20s/h · 2 quests · 1h 12m".
+-- "%s/h" is an amount of money per hour ("1g 20s/h"); keep it short, the strip is one line.
+L["Kills %s"] = true
+L["%s XP/h"] = true
+L["%s/h"] = true
+L["%d quest"] = true
+L["%d quests"] = true
+-- The strip's tooltip: its title, then "Since 14:02 (1h 12m)" (the clock time the session started,
+-- how long ago), then label / value rows ("Kills: 42 (35/h)").
+L["Chronicle: this session"] = true
+L["Since %s (%s)"] = true
+L["Kills"] = true
+L["%s (%s/h)"] = true
+L["Experience"] = true
+L["Levels gained"] = true
+-- Money: the net change this session; "Gained / spent": "3g 10s / 1g 50s".
+L["Money"] = true
+L["Gained / spent"] = true
+L["%s / %s"] = true
+L["Quests turned in"] = true
+L["Items looted"] = true
+L["Deaths"] = true
+-- The tooltip's list of creatures killed most this session: "Kobold Vermin   12 (480 XP)".
+L["Top kills this session"] = true
+L["%s (%s XP)"] = true
+L["Click: the Chronicle window. Right-click: lock or unlock."] = true
+L["Shift-drag to move."] = true
+-- Printed in chat ("Ryna: the session strip is locked. ...") when the strip is right-clicked.
+L["the session strip is locked. Right-click it to unlock."] = true
+L["the session strip is unlocked: Shift-drag to move it."] = true
+-- The Recording tab: a heading over the strip and window settings, then those settings.
+L["In game"] = true
+L["Show the session strip"] = true
+L["One line on screen with this session's kills, experience and money per hour, quests and time. "
+  .. "Hover it for more; click it for the Chronicle window."] = true
+L["Lock the strip"] = true
+L["Unlocked, Shift-drag moves it. Right-clicking the strip locks or unlocks it too."] = true
+-- A button: the strip back to its default place (top of the screen).
+L["Reset position"] = true
+-- The Recording tab's button that opens the Chronicle window, and the line under it.
+L["Open the Chronicle window"] = true
+L["Also /chronicle. Your session, your kills with their drops, your loot and your "
+  .. "levels, in its own window."] = true
+-- The Chronicle window: its title (the mod's name) and its four tabs.
+L["Chronicle"] = true
+L["Session"] = true
+L["Loot"] = true
+L["Levels"] = true
+-- The Session tab: the column heading over its numbers, "Since" (when the session started), and the
+-- heading over this session's kills.
+L["This session"] = true
+L["Since"] = true
+L["Kills this session"] = true
+-- The Kills tab's columns: creature, kills, experience, the zone of the last kill, when ("2 hours ago").
+L["Creature"] = true
+L["Last zone"] = true
+L["Last"] = true
+-- A creature row's tooltip: "Killed: 42 (30 yours)", "Last: Westfall, 2 hours ago", "Corpses looted: 40",
+-- then "Drops" and per item "12 of 40 (30%)" (how many corpses dropped it; %% prints one %).
+L["Killed"] = true
+L["%s (%s yours)"] = true
+L["%s, %s"] = true
+L["Corpses looted"] = true
+L["Drops"] = true
+L["%d of %d (%d%%)"] = true
+-- The Loot tab's columns: item, times looted, how many in all, where from, when.
+L["Item"] = true
+L["Looted"] = true
+L["Count"] = true
+L["From"] = true
+-- Where loot came from, besides a creature's name and fishing: a chest, vein, herb or pool, or a
+-- container item (a bag or box opened).
+L["object"] = true
+L["container"] = true
+L["From: %s"] = true
+-- The Levels tab's columns: the level, the date it was reached, the time played at it, and the total
+-- played time when it was reached. "before the journal": reached more than 30 days ago (no date).
+L["Level"] = true
+L["Reached"] = true
+L["Time at the level"] = true
+L["Played when reached"] = true
+L["before the journal"] = true
+-- A list with nothing in it: the search matched nothing, or nothing is recorded yet.
+L["Nothing matches."] = true
+L["Nothing recorded yet."] = true
+L["Your own numbers for this character. Hover a row for more."] = true
+-- /ryna help's line for the window's command. Keep /ryna chronicle, /chronicle and the tab words
+-- (kills, loot, levels, session) in English: they are what the player types.
+L["/ryna chronicle (or /chronicle): the Chronicle window; "
+  .. "/chronicle kills, loot, levels or session opens that tab"] = true

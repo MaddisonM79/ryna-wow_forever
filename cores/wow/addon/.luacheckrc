@@ -13,6 +13,7 @@ globals = {
   "RynaAgentStatus",
   "RynaDB",
   "SLASH_RYNA1",
+  "SLASH_RYNACHRONICLE1", -- Chronicle's /chronicle (mods/wow/chronicle, Window.lua)
   "SlashCmdList",
 }
 

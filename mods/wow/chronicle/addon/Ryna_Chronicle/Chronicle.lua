@@ -188,7 +188,16 @@ local function mark(name, from)
   if #list > 8 then table.remove(list, 1) end
 end
 
-local function addKill(id, name, xp, n, own)
+-- The session's numbers (Session.lua) and the window's caches hear of every count.
+Ch.killsVersion = 0
+
+local function changed()
+  Ch.killsVersion = Ch.killsVersion + 1
+  if ns.Session then ns.Session.Changed() end
+end
+
+-- `settled`: kills counted earlier by name (pendingByName), which the session already has.
+local function addKill(id, name, xp, n, own, settled)
   local e = entry("kills", id)
   if not e then return end
   e.n = num(e.n) + n
@@ -199,6 +208,15 @@ local function addKill(id, name, xp, n, own)
   e.zone = ns.rec.zone
   if name then e.name = name end
   ns.Debug("chronicle: killed %s (%s)%s, %d in all", name or "?", id, own and ", mine" or "", e.n)
+  if settled then
+    if ns.Session then ns.Session.Settle(name, id) end
+    changed()
+  elseif ns.Session then
+    ns.Session.Kill(id, name, xp, n) -- calls Changed
+    Ch.killsVersion = Ch.killsVersion + 1
+  else
+    changed()
+  end
 end
 
 -- A unit seen: remember its creature id by name, and settle any kills waiting on that name.
@@ -219,7 +237,7 @@ function Ch.LearnUnit(unit)
   if waiting then
     pendingByName[name] = nil
     pendingCount = pendingCount - 1
-    addKill(id, name, waiting.xp, waiting.n, waiting.own)
+    addKill(id, name, waiting.xp, waiting.n, waiting.own, true)
   end
 end
 
@@ -278,6 +296,8 @@ function Ch.OnXpMessage(text)
     -- The target's death already counted this kill: only its experience is new.
     local e = id and ns.rec and type(ns.rec.kills) == "table" and ns.rec.kills[id]
     if type(e) == "table" then e.xp = num(e.xp) + xp end
+    if ns.Session then ns.Session.Kill(id, name, xp, 0) end
+    Ch.killsVersion = Ch.killsVersion + 1
     ns.Debug("chronicle: %s's experience line, the kill already counted from the target", name)
     return
   end
@@ -286,6 +306,8 @@ function Ch.OnXpMessage(text)
     addKill(id, name, xp, 1, own)
     return
   end
+  -- Not known yet: the session counts it by name now, the record once the id is seen.
+  if ns.Session then ns.Session.Kill(nil, name, xp, 1) end
   local w = pendingByName[name]
   if w then
     w.n, w.xp, w.own = w.n + 1, w.xp + xp, w.own and own
@@ -401,6 +423,7 @@ local function countSource(guid)
     if not e then return end
     e.n, e.own, e.xp = num(e.n), num(e.own), num(e.xp)
     e.looted = num(e.looted) + 1
+    Ch.killsVersion = Ch.killsVersion + 1
   elseif kind == "GameObject" then
     local e = entry("objects", id)
     if not e then return end
@@ -491,6 +514,7 @@ function Ch.OnSlotCleared(i)
   if s.quality then e.quality = s.quality end
   addFrom(e, s.source)
   Ch.lootVersion = (Ch.lootVersion or 0) + 1
+  if ns.Session then ns.Session.Loot(s.quantity) end
   ns.Debug("chronicle: looted %s x%d from %s, %d in all", s.name or s.itemId, s.quantity, s.source, e.n)
 end
 

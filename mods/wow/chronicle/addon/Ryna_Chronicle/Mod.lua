@@ -2,9 +2,11 @@
 -- Mods.lua). Chronicle is everything Ryna records about a character: the record (Character.lua),
 -- the zone and deaths (Zone.lua), bags and bank (Containers.lua), quests (Quests.lua), the guild
 -- roster (Guild.lua), other players seen, the answers to the player's own /who among them
--- (Sightings.lua, Census.lua), kills and loot (Chronicle.lua) and the tooltips (Tooltip.lua). It
--- writes the same RynaDB the core addon carried before the split (docs/wow.md section 2), so the
--- companion app and ryna.io see no change.
+-- (Sightings.lua, Census.lua), kills and loot (Chronicle.lua), the tooltips (Tooltip.lua), and the
+-- in-game live view: this session's numbers (Session.lua), the session strip (Strip.lua) and the
+-- Chronicle window (Window.lua). It writes the same RynaDB the core addon carried before the split
+-- (docs/wow.md section 2), so the companion app and ryna.io see no change; the live view adds only
+-- RynaDB.chronicle.session (a session kept across a /reload) and its own settings.
 --
 -- The files below call ns.Try, ns.On, ns.Journal.Add and so on as they always have: here those are
 -- the API's functions, so nothing reaches into the core's own namespace. ns.db reads Ryna.DB() each

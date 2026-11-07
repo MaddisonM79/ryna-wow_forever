@@ -43,6 +43,14 @@ local function chronicleLine()
     ns.Plural(items, L["%d item"], L["%d items"]))
 end
 
+-- The Status tab's session line: "Session: 42 kills, 3,120 XP/h" (Session.lua).
+function St.SessionLine()
+  local s = ns.Session and ns.Session.Get()
+  if not s then return L["Session: not started"] end
+  return string.format(L["Session: %s, %s XP/h"], ns.Plural(s.kills, L["%d kill"], L["%d kills"]),
+    ns.Session.Number(s.xpPerHour))
+end
+
 -- The Status tab: the character and what is recorded (20, before the core's journal lines), then
 -- the census (40, after the core's combat-log line and before the companion app's).
 ns.API.Panel.AddStatusLines(20, function()
@@ -58,6 +66,7 @@ ns.API.Panel.AddStatusLines(20, function()
     ns.Plural(c.active, L["%d quest in the log"], L["%d quests in the log"]), c.completed,
     ns.Plural(c.roster, L["%d guild member"], L["%d guild members"]))
   lines[#lines + 1] = chronicleLine()
+  lines[#lines + 1] = St.SessionLine()
   return lines
 end)
 
