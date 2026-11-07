@@ -3,7 +3,7 @@
   "core": "wow",
   "name": "Automation",
   "version": "0.3.4",
-  "summary": "Does the chores you tick: accepts and turns in quests, skips quest-only gossip, sells greys and repairs at vendors. Nothing until you turn it on.",
+  "summary": "Does the chores you tick: quests, vendors, trainers, mail, loot rolls, invites, resurrections, dialogs and cinematics. Nothing until you turn it on.",
   "kind": "addon",
   "actsInGame": true,
   "source": { "kind": "bundled" },

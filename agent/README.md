@@ -160,9 +160,14 @@ push, and a log of what the loop did. It shows status, not charts: those live on
 **Automation** is the first mod that acts in the game (`actsInGame`, so its switch says so): at
 quest givers it accepts and turns in quests, opens the one quest of an NPC who offers nothing else,
 leaves low-level quests alone and, if asked, takes the reward that sells for the most; at vendors
-it sells grey items and repairs (the guild bank first, if asked). It's off by default, and on it
-still does nothing until each chore is ticked in game (its Automation tab, or `/ryna auto`): every
-one starts unticked. Shift held at an NPC, or combat, pauses it. `mods/wow/automation/test` checks
+it sells grey items and the items marked as junk, and repairs (the guild bank first, if asked); at
+trainers it learns everything within a gold cap; at a mailbox it takes the gold and items from every
+mail that isn't cash on delivery. Around the world it accepts resurrections out of combat and group
+invites from friends and the guild, answers the bind and roll confirmations (and types DELETE),
+skips cinematics, tracks new quests, releases in battlegrounds, keeps the game's auto-loot on and
+rolls Greed or Pass (never Need) on group loot. It's off by default, and on it still does nothing
+until each chore is ticked in game (its Automation tab, or `/ryna auto`): every one starts
+unticked. Shift held, or combat, pauses it. `mods/wow/automation/test` checks
 its logic against a fake client; the game itself is the only test of the client's API.
 
 The window is a sidebar under the header (sign-in, Sync now) and the update banner: **Status**

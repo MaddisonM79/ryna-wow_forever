@@ -4,7 +4,12 @@
 -- `autoReport`, which acts on nothing (it prints what the others did), starts on.
 --
 -- Each feature has the short name `/ryna auto <name> on|off` takes (the brief's words), its setting,
--- its group and, for the ones that only matter under another, that one (`under`).
+-- its group and, for the ones that only matter under another, that one (`under`). `changed(on)`, where
+-- there is one, runs when the player ticks or unticks it (the tab or /ryna auto): auto-loot sets the
+-- game's own option then.
+--
+-- The trainer's gold cap is `autoTrainCap` in the same table, in copper (10 gold until it's set with
+-- /ryna auto traincap): the core's defaults hold booleans only, so it's read here with its default.
 
 local _, ns = ...
 if ns.off then return end
@@ -22,9 +27,21 @@ S.FEATURES = {
     label = L["pick the reward"] },
   { name = "skipGossip", key = "autoSkipGossip", group = "quests", label = L["skip quest-only gossip"] },
   { name = "sellGreys", key = "autoSellGreys", group = "vendor", label = L["greys"] },
+  { name = "sellJunk", key = "autoSellJunk", group = "vendor", label = L["marked junk"] },
   { name = "repair", key = "autoRepair", group = "vendor", label = L["repair"] },
   { name = "repairGuild", key = "autoRepairGuild", group = "vendor", under = "autoRepair",
     label = L["guild bank first"] },
+  { name = "trainAll", key = "autoTrainAll", group = "npcs", label = L["train"] },
+  { name = "mail", key = "autoMail", group = "npcs", label = L["mail"] },
+  { name = "acceptRes", key = "autoAcceptRes", group = "world", label = L["resurrections"] },
+  { name = "acceptInvites", key = "autoAcceptInvites", group = "world", label = L["invites"] },
+  { name = "confirmDialogs", key = "autoConfirmDialogs", group = "world", label = L["dialogs"] },
+  { name = "skipCinematics", key = "autoSkipCinematics", group = "world", label = L["cinematics"] },
+  { name = "trackQuests", key = "autoTrackQuests", group = "world", label = L["track quests"] },
+  { name = "releaseInBG", key = "autoReleaseInBG", group = "world", label = L["release in battlegrounds"] },
+  { name = "lootOn", key = "autoLootOn", group = "world", label = L["auto-loot"],
+    changed = function(on) return ns.Loot and ns.Loot.SetAutoLoot(on, true) end },
+  { name = "roll", key = "autoRoll", group = "world", label = L["loot rolls"] },
   { name = "report", key = "autoReport", group = "chat", label = L["chat lines"] },
 }
 
@@ -51,9 +68,30 @@ function S.Find(word)
   return nil
 end
 
+-- Ticks or unticks a feature, and runs its `changed` (the tab and /ryna auto both come here).
+function S.Changed(key, on)
+  for _, f in ipairs(S.FEATURES) do
+    if f.key == key and f.changed then ns.Run("automation " .. f.name, f.changed, on and true or false) end
+  end
+end
+
+-- The trainer's gold cap, in copper: 10 gold until it's set; 0 means train nothing.
+S.TRAIN_CAP_DEFAULT = 100000
+function S.TrainCap()
+  local all = ns.API.Settings.All and ns.API.Settings.All()
+  local v = type(all) == "table" and tonumber(all.autoTrainCap) or nil
+  if not v or v < 0 then return S.TRAIN_CAP_DEFAULT end
+  return math.floor(v)
+end
+
+function S.SetTrainCap(copper)
+  ns.API.Settings.Set("autoTrainCap", math.max(0, math.floor(copper)))
+end
+
 -- "quests (accept, turn in), vendor (greys)": what's on, by group; nil when nothing acts.
 function S.Summary()
-  local groups = { { id = "quests", label = L["quests (%s)"] }, { id = "vendor", label = L["vendor (%s)"] } }
+  local groups = { { id = "quests", label = L["quests (%s)"] }, { id = "vendor", label = L["vendor (%s)"] },
+    { id = "npcs", label = L["trainers and mail (%s)"] }, { id = "world", label = L["world (%s)"] } }
   local parts = {}
   for _, g in ipairs(groups) do
     local on = {}

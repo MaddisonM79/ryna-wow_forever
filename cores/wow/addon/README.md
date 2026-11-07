@@ -16,8 +16,9 @@ There are two, installed side by side by the companion app:
   panel's Recording and Census tabs. It builds on the core only through the mod API (below) and
   writes exactly the `RynaDB` the single addon wrote before the split (docs/wow.md section 2).
 - **Ryna Automation** (`mods/wow/automation/addon/Ryna_Automation`), off by default: chores at
-  quest givers and vendors, each its own setting that starts off, with its own Automation tab and
-  `/ryna auto` (`mods/wow/README.md`). Holding Shift at an NPC pauses it.
+  quest givers, vendors, trainers and the mailbox and around the world, each its own setting that
+  starts off, with its own Automation tab and `/ryna auto` (`mods/wow/README.md`). Holding Shift
+  pauses it.
 
 Together they have a small settings panel (in tabs), a minimap button, and a line in chat when you
 log in.
