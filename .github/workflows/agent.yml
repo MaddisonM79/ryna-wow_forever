@@ -44,7 +44,7 @@ jobs:
         run: scripts/smoke-cli.sh "target/debug/ryna-wow${{ runner.os == 'Windows' && '.exe' || '' }}"
       # The release scripts' tests, and that the versions agree (the tag is checked at release).
       - if: runner.os == 'Linux'
-        run: node --test scripts/
+        run: node --test scripts/release.test.mjs
       - if: runner.os == 'Linux'
         run: node scripts/check-versions.mjs
 
