@@ -170,6 +170,9 @@ L["%d player"] = nil
 L["%d players"] = nil
 -- %s here and in the census lines below: "%d player" / "%d players" (above).
 L["Sweeping: %d of %d queries, %s so far"] = nil
+-- %s: "Sweeping: %d of %d queries, %s so far" (above); %d: seconds until the next query may go.
+L["%s; next query in %ds"] = nil
+L["%s; ready for the next query"] = nil
 L["No sweep yet."] = nil
 L["Last sweep: %s, %s"] = nil
 L["Last sweep: %s, %s (stopped early)"] = nil
@@ -202,16 +205,19 @@ L["the game allows /who only from a click on this client, so the census goes one
 L["census sweep: %s; the next query on your next click or /ryna census."] = nil
 L["census sweep started: one query per click (Next census query, or /ryna census again)."] = nil
 L["census sweep: waiting for the server's answer to the last query."] = nil
-L["census sweep: the server takes one query every few seconds; "
-  .. "try again in %ds."] = nil
--- The same three, briefer, when the key binding is pressed (printed at most once per 4 seconds).
+-- The same two, briefer, when the key binding is pressed (printed at most once per 4 seconds).
 -- %s: "%d of %d queries, %s so far" (above).
 L["census sweep: running, %s"] = nil
 L["census sweep: waiting for the server."] = nil
+-- A press of the button or the key before the server takes the next query.
 L["census sweep: next query in %ds."] = nil
+-- The server said "You must wait a moment longer before using /who again.": the first %d is the
+-- seconds Ryna now leaves between queries, the second how long until the next one.
+L["census sweep: the server wants about %ds between queries; next query in %ds."] = nil
 L["census sweep: this client has no /who for addons."] = nil
 L["census sweep: not now, %s."] = nil
-L["census sweep started: asking the server who is online, one query every 4s."] = nil
+-- %d: seconds between queries (5 to start with; more once the server asks for it).
+L["census sweep started: asking the server who is online, one query every %ds."] = nil
 L["stopped"] = nil
 L["combat started"] = nil
 L["entered an instance"] = nil

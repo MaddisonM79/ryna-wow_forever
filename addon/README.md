@@ -78,10 +78,21 @@ person's name, and nothing about you is sent.**
   says there are more) is asked again once per class (`20-29 c-"Warrior"`, and so on for the nine
   classes), and a bracket-and-class that is still capped is asked once per zone its answer named
   (`60 c-"Mage" z-"Orgrimmar"`, at most 10 zones). A sweep sends at most 80 queries.
-- **The pace**: the server throttles `/who`, so one query goes out every 4 seconds, and the next
-  waits 10 seconds after an empty, failed or unanswered one (8 seconds without an answer counts as
-  unanswered). An uncapped sweep is 7 queries, about half a minute. A query the game refuses is
-  never sent again from a timer (see "Three modes" below).
+- **The pace**: the server throttles `/who` (on Forever a query under about 5 seconds after the
+  last one is turned away), so queries go out at least 5 seconds apart, measured from the send,
+  and the next waits 10 seconds after an empty, failed or unanswered one (no answer 8 seconds after
+  the send counts as unanswered). An uncapped sweep is 7 queries, about 35 seconds. A query the
+  game refuses is never sent again from a timer (see "Three modes" below).
+- **When the server says "too soon"**: a query sent too soon gets no answer, only the yellow system
+  line "You must wait a moment longer before using /who again." (the client's `WHO_COOLDOWN_SHORT`;
+  `WHO_COOLDOWN`, "You must wait %d seconds before using /who again.", is matched too, and its
+  seconds are waited out when they are longer). Ryna matches the line in the client's language from
+  those globals, and by the English text where a client lacks them. That query isn't a miss and
+  doesn't count against the mode: it goes back to the head of the queue, the answer timeout for it
+  is dropped, the spacing grows by 2 seconds (5 to start with, at most 12), and Ryna prints, once
+  per refusal, "census sweep: the server wants about 7s between queries; next query in 7s." (the
+  wait counts from the refusal). The learned spacing is kept in `RynaDB.census.paceSec`, so later
+  sessions start from it; it never shrinks by itself.
 - **Three modes**: some clients (Forever 1.60.1 on the 12.x engine) treat `C_FriendList.SendWho` as
   a hardware-event call: the game accepts it only inside a click or a typed command, and refuses it
   from a timer ("Interface action failed because of an AddOn"). So **the first query of a sweep you
@@ -93,8 +104,10 @@ person's name, and nothing about you is sent.**
   - `click`: the first query (from the click) was answered, but a timer-sent one was refused or got
     no answer in 8 seconds. The sweep goes on **one query per click**: the button reads **Next
     census query (2 of 7)**, and each press, or each `/ryna census`, sends exactly one query (not
-    within 4 seconds of the last, and not while one is waiting for its answer); the status beside
-    it shows the progress, and the sweep is done when its plan is. Between clicks the Who window
+    within the spacing of the last, and not while one is waiting for its answer); the status beside
+    it shows the progress and counts down to the next query ("Sweeping: 2 of 7 queries, 50 players
+    so far; next query in 3s", then "ready for the next query"), and the sweep is done when its
+    plan is. A press before then sends nothing and says "census sweep: next query in 3s.". Between clicks the Who window
     gets its events back, so your own `/who` works meanwhile. The automatic sweep can't click, so
     the "Run a realm census while I'm in a city" switch is greyed with the note "The game only
     allows /who from a click on this client" and the city check does nothing (the setting is kept
@@ -140,8 +153,8 @@ person's name, and nothing about you is sent.**
   game loads from the addon's folder by itself) does what the Census tab's button does: it starts a
   sweep, or in `click` mode sends its next query. A key press is a hardware event like a click, so
   the binding calls `Ryna_CensusNext()`, which sends the query right there, never from a timer; a
-  sweep in `click` mode runs with taps instead of clicks. Its pace is the button's (not within 4
-  seconds of the last query, not while one is waiting for its answer), so a held or hammered key
+  sweep in `click` mode runs with taps instead of clicks. Its pace is the button's (not within the
+  spacing of the last query, not while one is waiting for its answer), so a held or hammered key
   sends nothing extra, and its "not yet" lines are brief ("census sweep: next query in 3s.") and
   print at most once every 4 seconds. The Census tab says so under the button.
 

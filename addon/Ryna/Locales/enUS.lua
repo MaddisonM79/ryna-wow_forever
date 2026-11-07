@@ -161,6 +161,9 @@ L["%d player"] = true
 L["%d players"] = true
 -- %s here and in the census lines below: "%d player" / "%d players" (above).
 L["Sweeping: %d of %d queries, %s so far"] = true
+-- %s: "Sweeping: %d of %d queries, %s so far" (above); %d: seconds until the next query may go.
+L["%s; next query in %ds"] = true
+L["%s; ready for the next query"] = true
 L["No sweep yet."] = true
 L["Last sweep: %s, %s"] = true
 L["Last sweep: %s, %s (stopped early)"] = true
@@ -193,16 +196,19 @@ L["the game allows /who only from a click on this client, so the census goes one
 L["census sweep: %s; the next query on your next click or /ryna census."] = true
 L["census sweep started: one query per click (Next census query, or /ryna census again)."] = true
 L["census sweep: waiting for the server's answer to the last query."] = true
-L["census sweep: the server takes one query every few seconds; "
-  .. "try again in %ds."] = true
--- The same three, briefer, when the key binding is pressed (printed at most once per 4 seconds).
+-- The same two, briefer, when the key binding is pressed (printed at most once per 4 seconds).
 -- %s: "%d of %d queries, %s so far" (above).
 L["census sweep: running, %s"] = true
 L["census sweep: waiting for the server."] = true
+-- A press of the button or the key before the server takes the next query.
 L["census sweep: next query in %ds."] = true
+-- The server said "You must wait a moment longer before using /who again.": the first %d is the
+-- seconds Ryna now leaves between queries, the second how long until the next one.
+L["census sweep: the server wants about %ds between queries; next query in %ds."] = true
 L["census sweep: this client has no /who for addons."] = true
 L["census sweep: not now, %s."] = true
-L["census sweep started: asking the server who is online, one query every 4s."] = true
+-- %d: seconds between queries (5 to start with; more once the server asks for it).
+L["census sweep started: asking the server who is online, one query every %ds."] = true
 L["stopped"] = true
 L["combat started"] = true
 L["entered an instance"] = true

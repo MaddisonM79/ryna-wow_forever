@@ -15,10 +15,13 @@
 -- nothing about the player is sent. A /who row has no GUID, so the shared 10-minute window keys it
 -- by name (Sightings.lua), and a name met twice in one sweep is one sighting.
 --
--- The server caps an answer at 50 rows and throttles /who, so one query goes out every 4 seconds,
--- 10 after an empty, errored or missing answer (in click mode, at most one per click and none
--- within 4 seconds of the last). Every client call is looked up and pcall'd, and a refused query
--- is never retried from a timer.
+-- The server caps an answer at 50 rows and throttles /who, so queries go out at least the pace
+-- apart (5 seconds to start with), 10 after an empty, errored or missing answer (in click mode, at
+-- most one per click and none within the pace of the last). A query sent too soon is answered with
+-- the system line WHO_COOLDOWN_SHORT ("You must wait a moment longer before using /who again.") or
+-- WHO_COOLDOWN (with the seconds) and nothing else: the query goes back to the head of the queue,
+-- the pace grows by 2 seconds (at most 12, kept in RynaDB.census.paceSec), and it isn't a miss.
+-- Every client call is looked up and pcall'd, and a refused query is never retried from a timer.
 
 local _, ns = ...
 local L, N = ns.L, ns.N
@@ -34,9 +37,12 @@ local function players(n)
 end
 
 local CAP = 50              -- rows the server returns at most per query
-local GAP = 4               -- seconds between queries
+local PACE_START = 5        -- seconds between queries, until the server says it wants more
+local PACE_STEP = 2         -- added to the pace each time the server says "wait a moment longer"
+local PACE_MAX = 12         -- the pace never grows past this
+local NOTE_EVERY = 4        -- the key binding's "not yet" lines print at most once per this
 local BACKOFF = 10          -- seconds after an empty or errored answer
-local ANSWER_TIMEOUT = 8    -- seconds to wait for WHO_LIST_UPDATE before calling it errored
+local ANSWER_TIMEOUT = 8    -- seconds after the send to wait for WHO_LIST_UPDATE before calling it errored
 local MAX_QUERIES = 80      -- per sweep, whatever the splits ask for
 local MAX_ZONE_SPLITS = 10  -- zone queries per capped bracket-and-class answer
 local AUTO_EVERY = 1800     -- seconds between automatic sweeps (and since any sweep)
@@ -245,6 +251,63 @@ local function store()
   return ns.db.census
 end
 
+-- The least time between two queries: learned from the server's "wait a moment longer" lines and
+-- kept across sessions in RynaDB.census.paceSec (PACE_START to PACE_MAX).
+function C.Pace()
+  local c = ns.db and ns.db.census
+  local v = type(c) == "table" and c.paceSec
+  if type(v) ~= "number" or v ~= v then return PACE_START end
+  return math.max(PACE_START, math.min(PACE_MAX, v))
+end
+
+-- When the last query went out, and when the server said to wait until (GetTime()), across
+-- sweeps: a new sweep started right after one ends keeps the pace too.
+local lastSentAt, holdUntil
+
+-- Seconds until the next query may go, 0 when it may go now.
+function C.ReadyIn()
+  local now = GetTime()
+  local wait = 0
+  if lastSentAt then wait = lastSentAt + C.Pace() - now end
+  if holdUntil and holdUntil - now > wait then wait = holdUntil - now end
+  return wait > 0 and wait or 0
+end
+
+-- The server's "too soon" lines for /who, as Forever 1.60.1 has them in GlobalStrings
+-- (WHO_COOLDOWN_SHORT, and WHO_COOLDOWN with the seconds to wait), in the client's language, and
+-- the English text as a fallback for a client that lacks the globals.
+local WHO_COOLDOWN_SHORT_EN = "You must wait a moment longer before using /who again."
+local WHO_COOLDOWN_EN = "You must wait %d seconds before using /who again."
+
+local function trim(s)
+  return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+-- A format with one %d as an anchored pattern capturing the number, or nil.
+local function cooldownPattern(fmt)
+  if type(fmt) ~= "string" then return nil end
+  local at = fmt:find("%d", 1, true)
+  if not at then return nil end
+  local function esc(t) return (t:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0")) end
+  return "^" .. esc(trim(fmt:sub(1, at - 1))) .. "%s*(%d+)%s*" .. esc(trim(fmt:sub(at + 2))) .. "$"
+end
+
+-- true (and the seconds, when the line gives them) when a system line is the server refusing a
+-- /who sent too soon.
+function C.IsWhoThrottle(msg)
+  if type(msg) ~= "string" or ns.IsSecret(msg) then return false end
+  msg = trim(msg)
+  for _, short in ipairs({ _G.WHO_COOLDOWN_SHORT, WHO_COOLDOWN_SHORT_EN }) do
+    if type(short) == "string" and msg == trim(short) then return true, nil end
+  end
+  for _, fmt in ipairs({ _G.WHO_COOLDOWN, WHO_COOLDOWN_EN }) do
+    local pattern = cooldownPattern(fmt)
+    local secs = pattern and msg:match(pattern)
+    if secs then return true, tonumber(secs) end
+  end
+  return false
+end
+
 -- What this client lets the addon do with /who, once learned (RynaDB.census.mode):
 --   "timer"    a query sent from a timer is answered: a sweep paces itself, and automatic sweeps run
 --   "click"    only a query sent from a click (or /ryna census) is answered: one query per click
@@ -307,7 +370,12 @@ local BLOCKED = N("the game doesn't let addons ask /who here; the census uses wh
 function C.StatusLine()
   local sw = C.sweep
   if sw then
-    return string.format(L["Sweeping: %d of %d queries, %s so far"], sw.done, #sw.queue, players(sw.players))
+    local line = string.format(L["Sweeping: %d of %d queries, %s so far"], sw.done, #sw.queue, players(sw.players))
+    if sw.awaiting or not sw.queue[sw.next] then return line end
+    local wait = math.ceil(C.ReadyIn())
+    if wait > 0 then return string.format(L["%s; next query in %ds"], line, wait) end
+    if sw.byClicks then return string.format(L["%s; ready for the next query"], line) end
+    return line
   end
   if C.Mode() == "blocked" then return L[BLOCKED] end
   local l = C.LastSweep()
@@ -318,10 +386,34 @@ end
 
 local finish, sendOne
 
+-- delay: seconds from now at the least; the pace from the last send applies on top of it.
 local function schedule(sweep, delay)
+  local at = GetTime() + delay
+  if not holdUntil or at > holdUntil then holdUntil = at end
+  delay = C.ReadyIn()
   ns.After(delay, "census sweep", function()
     if C.sweep == sweep and not sweep.byClicks then sendOne(sweep, false) end
   end)
+end
+
+-- While a sweep waits out the pace, the Census tab's status line counts down: a refresh every
+-- second until the next query may go (one loop per sweep at a time).
+local function countdown(sweep)
+  if sweep.counting then return end
+  sweep.counting = true
+  local function tick()
+    if C.sweep ~= sweep or sweep.awaiting then
+      sweep.counting = nil
+      return
+    end
+    refreshPanel()
+    if C.ReadyIn() <= 0 then
+      sweep.counting = nil
+      return
+    end
+    ns.After(1, "census countdown", tick)
+  end
+  ns.After(1, "census countdown", tick)
 end
 
 -- "8 of 12 queries, 214 players so far", in the client's language (only manual sweeps print it).
@@ -381,10 +473,12 @@ local function advance(sweep, delay)
         progress(sweep)))
     end
     refreshPanel()
+    countdown(sweep)
     return
   end
   refreshPanel()
   schedule(sweep, delay)
+  countdown(sweep)
 end
 
 -- A query sent from a timer was refused or went unanswered while the timer isn't known to work:
@@ -405,6 +499,7 @@ local function toClickMode(sweep, item)
     .. "query per click: press Next census query on the Census tab, or type /ryna census (%d of %d next)."],
     sweep.next, #sweep.queue))
   refreshPanel()
+  countdown(sweep)
 end
 
 -- Even a query sent from a click was refused (or got no answer on a client where nothing has
@@ -425,6 +520,37 @@ local function refused(sweep, item, fn)
     item.byClick and "a click" or "a timer")
   if item.byClick then return block(sweep, fn, false) end
   toClickMode(sweep, item)
+end
+
+-- The server said the query just sent came too soon ("You must wait a moment longer before using
+-- /who again."): it won't answer it. Not a refusal by the game and not a miss: the query goes back
+-- to the head of the queue, the pace grows (and is kept for later sessions), and the next query
+-- waits the new pace from now, or the seconds the server named if longer. The answer timeout for
+-- it dies with sweep.awaiting.
+local function throttled(sweep, item, secs)
+  sweep.awaiting = nil
+  if sweep.queue[item.pos] == item then sweep.next = item.pos end
+  local c = store()
+  c.paceSec = math.min(PACE_MAX, C.Pace() + PACE_STEP)
+  local pace = C.Pace()
+  local wait = math.max(pace, secs or 0)
+  holdUntil = GetTime() + wait
+  ns.Debug("census sweep: the server said %q came too soon (%.1fs after it was sent); the pace is now %ds, "
+    .. "next query in %ds", item.text, GetTime() - (sweep.sentAt or 0), pace, wait)
+  if sweep.manual then
+    ns.Print(string.format(L["census sweep: the server wants about %ds between queries; next query in %ds."],
+      pace, wait))
+  end
+  if sweep.byClicks or C.Mode() == "click" then
+    sweep.byClicks = true
+    restoreWhoUi(sweep)
+    refreshPanel()
+    countdown(sweep)
+    return
+  end
+  refreshPanel()
+  schedule(sweep, wait)
+  countdown(sweep)
 end
 
 local function onTimeout(sweep, item, sentAt)
@@ -488,7 +614,8 @@ local function onAnswer(sweep, item)
   if sweep.manual and not sweep.byClicks and (sweep.done % PROGRESS_EVERY == 0) and sweep.done < #sweep.queue then
     ns.Print(string.format(L["census sweep: %s"], progress(sweep)))
   end
-  advance(sweep, n == 0 and BACKOFF or GAP)
+  -- An answer: the next query goes the pace after this one was sent (schedule adds it).
+  advance(sweep, n == 0 and BACKOFF or 0)
 end
 
 -- Why a sweep can't go on right now, or nil. Reasons stay English (they are kept in
@@ -516,6 +643,7 @@ sendOne = function(sweep, byClick)
   sweep.next = sweep.next + 1
   sweep.awaiting = item
   sweep.sentAt = GetTime()
+  lastSentAt, holdUntil = sweep.sentAt, nil
   local sentAt = sweep.sentAt
   local ok, err = pcall(F.send, item.text)
   -- Refused during the call: the event handler has already stopped the sweep or switched it.
@@ -611,7 +739,8 @@ function C.Start(manual)
   if manual and mode == "click" then
     ns.Print(L["census sweep started: one query per click (Next census query, or /ryna census again)."])
   elseif manual then
-    ns.Print(L["census sweep started: asking the server who is online, one query every 4s."])
+    ns.Print(string.format(L["census sweep started: asking the server who is online, one query every %ds."],
+      C.Pace()))
   end
   sendOne(sweep, manual)
   refreshPanel()
@@ -619,12 +748,12 @@ function C.Start(manual)
 end
 
 -- A key held down or tapped fast mustn't fill the chat: from the key binding, a refusal prints at
--- most once per GAP seconds. The pace itself is the checks in C.Request, whatever calls it.
+-- most once per NOTE_EVERY seconds. The pace itself is the checks in C.Request, whatever calls it.
 local lastKeyNote
 local function note(fromKey, msg)
   if fromKey then
     local now = GetTime()
-    if lastKeyNote and now - lastKeyNote < GAP then return end
+    if lastKeyNote and now - lastKeyNote < NOTE_EVERY then return end
     lastKeyNote = now
   end
   ns.Print(msg)
@@ -639,19 +768,19 @@ function C.Request(fromKey)
     note(true, string.format(L["census sweep: running, %s"], progress(sw)))
     return false
   end
-  if not (sw and sw.byClicks) then return C.Start(true) end
-  if sw.awaiting then
+  if sw and sw.byClicks and sw.awaiting then
     note(fromKey, fromKey and L["census sweep: waiting for the server."]
       or L["census sweep: waiting for the server's answer to the last query."])
     return false
   end
-  local wait = math.ceil(GAP - (GetTime() - (sw.sentAt or 0)))
-  if wait > 0 then
-    note(fromKey, fromKey and string.format(L["census sweep: next query in %ds."], wait)
-      or string.format(L["census sweep: the server takes one query every few seconds; "
-      .. "try again in %ds."], wait))
+  -- Not within the pace of the last query, this sweep's or the one before it: the server would
+  -- refuse it and the press would be wasted.
+  local wait = math.ceil(C.ReadyIn())
+  if wait > 0 and not (sw and not sw.byClicks) then
+    note(fromKey, string.format(L["census sweep: next query in %ds."], wait))
     return false
   end
+  if not (sw and sw.byClicks) then return C.Start(true) end
   sendOne(sw, true)
   return true
 end
@@ -679,6 +808,14 @@ local function onBlocked(event, addon, fn)
 end
 ns.On("ADDON_ACTION_BLOCKED", onBlocked)
 ns.On("ADDON_ACTION_FORBIDDEN", onBlocked)
+
+-- The server's "too soon" line for the query that is out: see throttled above.
+ns.On("CHAT_MSG_SYSTEM", function(_, msg)
+  local sweep = C.sweep
+  if not (sweep and sweep.awaiting) then return end
+  local yes, secs = C.IsWhoThrottle(msg)
+  if yes then throttled(sweep, sweep.awaiting, secs) end
+end)
 
 ns.On("PLAYER_REGEN_DISABLED", function() C.Stop(N("combat started")) end)
 
