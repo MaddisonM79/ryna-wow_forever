@@ -71,6 +71,9 @@ when. It is for the community that plays, and for nothing else.
 
 ## What is in here
 
+- `docs/ryna-agent-cores-mods.md`: the design for where this goes: Ryna is the agent, games are cores,
+  mods belong to cores, and a data layer carries game data into the game without an addon release.
+
 - `addon/`: the Lua addon, tagged for Forever (`addon/README.md`: what it records, settings, the
   census sweep, translations).
 - `agent/`: the app, a Rust workspace (`Cargo.toml` at the root). `agent/core` is the library:
