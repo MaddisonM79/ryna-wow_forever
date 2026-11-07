@@ -25,15 +25,40 @@ Pick one file:
 | A Mac with Apple silicon (M1 or later) | `Ryna_<version>_aarch64.dmg` |
 | A Mac with an Intel chip | `Ryna_<version>_x64.dmg` |
 | Windows | `Ryna_<version>_x64-setup.exe` |
+| Linux (x86_64: Arch, Omarchy, Ubuntu, …) | `Ryna_<version>_amd64.AppImage` |
 
 On a Mac, open the disk image and drag Ryna into Applications. The app is signed by Nyra Security
 LLC and notarized by Apple, so it opens like any other app. On Windows the installer isn't signed
 yet, so SmartScreen will say "Windows protected your PC": click *More info*, then *Run anyway*. The
 `SHA256SUMS` file on the release lets you check what you downloaded.
 
+**On Linux** the AppImage is the whole app: make it executable and run it, from wherever you keep
+such things.
+
+```bash
+chmod +x Ryna_<version>_amd64.AppImage && ./Ryna_<version>_amd64.AppImage
+```
+
+Linux builds aren't signed; check the download against `SHA256SUMS`. Ryna lives in the tray while
+you play, so your bar needs a tray that speaks StatusNotifierItem (Omarchy's bar has one; on another
+Hyprland or Sway setup, Waybar's `tray` module) and the system needs `libayatana-appindicator`
+(the Arch package of that name; Ubuntu's `libayatana-appindicator3-1`). Without it Ryna still runs,
+but has no tray icon, so closing the window quits it. On Hyprland, if you'd rather Ryna float than
+tile, its window class is `ryna-wow-app`:
+
+```
+windowrulev2 = float, class:^(ryna-wow-app)$
+```
+
+`agent/README.md` ("Linux") has the rest: where the game is found under Wine and Proton, opening
+Ryna at login under Hyprland, and what to do about a blank window.
+
 **2. Install the addon.** Open Ryna. The *Game* section finds World of Warcraft: Forever in its usual
 place (`/Applications/World of Warcraft/_forever_` on a Mac, `C:\Program Files (x86)\World of
-Warcraft\_forever_` on Windows); if yours is elsewhere, *Choose folder…*. Click **Install addon**.
+Warcraft\_forever_` on Windows, and on Linux the same `Program Files` inside the usual Wine and
+Proton prefixes: Lutris's `~/Games`, Bottles, Steam's `compatdata`, `~/.wine`); if yours is
+elsewhere, *Choose folder…* and pick the `World of Warcraft` folder (on Linux, the one under the
+prefix's `drive_c`). Click **Install addon**.
 It copies the addon that came inside the app into the game's `Interface/AddOns`: Ryna itself and
 its mods, of which there is one so far, **Chronicle** (what Ryna records about your characters; on
 by default, and listed under the install with a switch). If the game is already running, restart it
@@ -106,8 +131,9 @@ workspace (`Cargo.toml` at the root) holds the agent and the cores' Rust halves.
 - `scripts/`: version checks, the release manifest, the CLI smoke test, and `capture.sh`, which
   turns a real `Ryna.lua` into a scrubbed test fixture.
 
-Releases are built by `.github/workflows/release.yml` from a `vX.Y.Z` tag: macOS (both chips)
-and Windows, the addon zip, `SHA256SUMS`, and the updater's signed artifacts and `latest.json`.
+Releases are built by `.github/workflows/release.yml` from a `vX.Y.Z` tag: macOS (both chips),
+Windows and Linux (an AppImage), the addon zip, `SHA256SUMS`, and the updater's signed artifacts
+and `latest.json`.
 
 ## Licence
 

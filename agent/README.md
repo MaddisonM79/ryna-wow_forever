@@ -148,7 +148,7 @@ choices the app's Settings do. Combat fixtures come from `scripts/capture.sh --c
 ## The app
 
 `app/` is the product: the only thing a person installs (a `.dmg` on macOS, an NSIS installer on
-Windows). It signs in with the device grant (it shows the code and opens the sign-in page), finds
+Windows, an AppImage on Linux). It signs in with the device grant (it shows the code and opens the sign-in page), finds
 the game, installs the bundled addon (`cores/wow/addon/Ryna`, carried as the resource `addon/Ryna`)
 with every mod that's on (Chronicle, `mods/wow/chronicle/addon/Ryna_Chronicle`, carried beside it as
 `addon/Ryna_Chronicle`; each mod's switch under the install, kept in the app's `settings.json` as
@@ -173,7 +173,50 @@ ended (`ok`, `cancelled`, `error`, `fix`); `sync_now` wakes the running loop
 **Nothing runs when it's closed.** Closing the window hides it to the tray (menu bar on macOS),
 where it keeps syncing; Quit, in the tray menu, stops the loop and exits. There is no service,
 launchd job or scheduled task. "Open Ryna when I log in" is a setting, off by default; on macOS
-it's a login item (through System Events, which asks once for permission), not a launch agent.
+it's a login item (through System Events, which asks once for permission), not a launch agent; on
+Linux it's a `.desktop` file in `~/.config/autostart`. When there is no tray to come back from
+(Linux without an appindicator library, below), closing the window quits instead.
+
+### Linux
+
+The Linux build is `Ryna_<version>_amd64.AppImage`, x86_64 only and unsigned (`SHA256SUMS` on the
+release is the check). It carries WebKitGTK and GTK, so it runs on any current distribution:
+`chmod +x` it and run it. Arch and Omarchy are what it's tried for; Omarchy has no AUR by policy,
+and the AppImage needs nothing from it. What the system provides:
+
+- **The tray.** Tauri's tray is an appindicator, which the bar shows through StatusNotifierItem
+  (SNI): Omarchy's bar has a tray, and so does Waybar's `tray` module and most desktops' panels.
+  The library is loaded at run time: `libayatana-appindicator` (Arch), `libayatana-appindicator3-1`
+  (Ubuntu). Without it the app starts without a tray and says so on stderr, and closing the
+  window quits it (`try_build_tray` in `app/src-tauri/src/main.rs`).
+- **The window under Hyprland.** The window class is the binary's name, `ryna-wow-app` (GTK's
+  program name; the app sets no GTK application id, so it also matches the `StartupWMClass` in
+  the AppImage's desktop file); `hyprctl clients` shows it. To float it:
+
+  ```
+  windowrulev2 = float, class:^(ryna-wow-app)$
+  ```
+
+  A blank white window is WebKitGTK's DMA-BUF renderer failing on that GPU (NVIDIA, mostly):
+  run it with `WEBKIT_DISABLE_DMABUF_RENDERER=1`.
+- **Opening at login.** "Open Ryna when I log in" writes `~/.config/autostart/Ryna.desktop`,
+  which desktops read and Hyprland doesn't; there, `exec-once = <path to the AppImage>` in
+  `hyprland.conf` does the same.
+- **The game.** On Linux the game runs under Wine or Proton, so discovery (`default_roots` in
+  `../cores/wow/core/src/discovery.rs`, mirrored in `../cores/wow/core.json`) looks in the usual
+  prefixes' `drive_c/Program Files (x86)/World of Warcraft` and `Program Files/World of Warcraft`:
+  `~/.wine`; Lutris, a prefix per game under `~/Games`; Bottles, the Flatpak
+  (`~/.var/app/com.usebottles.bottles/data/bottles/bottles/*`) and a native install
+  (`~/.local/share/bottles/bottles/*`); and Steam's Proton prefixes
+  (`~/.steam/steam/steamapps/compatdata/*/pfx`, `~/.local/share/Steam/...`, and the Flatpak's).
+  A prefix elsewhere: *Choose folder…* in the Game tab and pick the `World of Warcraft` folder
+  under its `drive_c`. "The game is running" is `pgrep` for `Wow.exe` (any case).
+- **The sign-in.** The token is kept in the kernel keyring (`keyutils`, no D-Bus), which does not
+  survive a reboot: you sign in again after one. The state folder is `~/.local/share/io.ryna.app`,
+  the app's settings `~/.config/io.ryna.app`.
+
+Building it yourself needs Tauri's Ubuntu/Arch prerequisites (the webview and tray development
+libraries): the `apt-get` line in `.github/workflows/agent.yml` is the Ubuntu list.
 
 Run it in development (Node 24 and pnpm; the Rust toolchain above):
 
@@ -219,7 +262,7 @@ decides them, and prints a `[ryna]` line for each):
 |---|---|
 | no `app/updater.pub` | an empty `pubkey`: the app never checks, and its button says "Updates aren't set up in this build" |
 | `app/updater.pub` | the key, so the app can update itself |
-| `app/updater.pub` and `TAURI_SIGNING_PRIVATE_KEY` | also `createUpdaterArtifacts` (and the `app` target on macOS): `Ryna.app.tar.gz` + `.sig`, or the NSIS installer's `.sig` |
+| `app/updater.pub` and `TAURI_SIGNING_PRIVATE_KEY` | also `createUpdaterArtifacts` (and the `app` target on macOS): `Ryna.app.tar.gz` + `.sig`, the NSIS installer's `.sig`, or the AppImage's `.sig` |
 | all six Azure values (below) | `bundle.windows.signCommand`: `artifact-signing-cli` signs the exe and the installer, before the updater signs the installer |
 
 A plain `cargo build -p ryna-wow-app` reads `tauri.conf.json` alone, so it's always the build
@@ -239,12 +282,15 @@ without a key.
 3. `.github/workflows/release.yml` checks the tag against the files (a mismatch stops it before
    anything builds), then builds and attaches to one GitHub Release, with generated notes:
    - the CLI: `ryna-aarch64-apple-darwin`, `ryna-x86_64-apple-darwin`,
-     `ryna-x86_64-pc-windows-msvc.exe` (each smoke-tested where the runner can run it);
-   - the app: `Ryna_X.Y.Z_aarch64.dmg`, `Ryna_X.Y.Z_x64.dmg`, `Ryna_X.Y.Z_x64-setup.exe`;
+     `ryna-x86_64-pc-windows-msvc.exe`, `ryna-x86_64-unknown-linux-gnu` (each smoke-tested where
+     the runner can run it);
+   - the app: `Ryna_X.Y.Z_aarch64.dmg`, `Ryna_X.Y.Z_x64.dmg`, `Ryna_X.Y.Z_x64-setup.exe`,
+     `Ryna_X.Y.Z_amd64.AppImage`;
    - the addon: `Ryna-X.Y.Z.zip` (`Ryna` and `Ryna_Chronicle` at its top level, as the app carries
      them, for a manual install or CurseForge);
-   - with the updater key: `Ryna_X.Y.Z_<arch>.app.tar.gz` and their `.sig`s, the installer's
-     `.sig`, and `latest.json` (`scripts/latest-json.mjs`);
+   - with the updater key: `Ryna_X.Y.Z_<arch>.app.tar.gz` and their `.sig`s, the installer's and
+     the AppImage's `.sig`, and `latest.json` (`scripts/latest-json.mjs`: `darwin-aarch64`,
+     `darwin-x86_64`, `windows-x86_64`, `linux-x86_64`);
    - `SHA256SUMS` over all of it.
 4. Every running app finds it within 6 hours (or at its next launch) and offers it. A tag with a
    `-` (`v0.3.0-rc.1`) is a pre-release, which is never "latest", so no app is offered it.
@@ -311,7 +357,7 @@ tried again next run.
 
 The refresh token is kept in the OS keychain (service `ryna`), never in a file. What was
 pushed is kept in `state.json` in the OS data folder (`~/Library/Application Support/io.ryna.app`
-on macOS, `%APPDATA%\ryna\app\data` on Windows).
+on macOS, `%APPDATA%\ryna\app\data` on Windows, `~/.local/share/io.ryna.app` on Linux).
 
 ## Settings (environment)
 
@@ -321,7 +367,7 @@ on macOS, `%APPDATA%\ryna\app\data` on Windows).
 | `RYNA_API` (`--api`) | `https://api.ryna.io` | The backend. Point it at a local API to test. |
 | `RYNA_ISSUER` (`--issuer`) | `https://auth.nyratech.dev` | The sign-in provider. A sign-in to another issuer is kept under its own keychain name. |
 | `RYNA_RESOURCE` | `https://api.ryna.io/wow/ingest` | The audience the tokens are for (scope `wow:ingest`). |
-| `RYNA_INSTALL` (`--install`) | the OS default | The game folder (`World of Warcraft`) or one product folder (`_forever_`). Defaults: `/Applications/World of Warcraft` on macOS, `C:\Program Files (x86)\World of Warcraft` and `C:\Program Files\World of Warcraft` on Windows. |
+| `RYNA_INSTALL` (`--install`) | the OS default | The game folder (`World of Warcraft`) or one product folder (`_forever_`). Defaults: `/Applications/World of Warcraft` on macOS, `C:\Program Files (x86)\World of Warcraft` and `C:\Program Files\World of Warcraft` on Windows, and on Linux those two inside the usual Wine and Proton prefixes (`drive_c` under `~/.wine`, Lutris's `~/Games/*`, Bottles' and Steam's; "Linux" above). |
 | `RYNA_STATE_DIR` | the OS data folder | Where `state.json` and the run lock live. |
 | `RYNA_HOST` | the host name | What the heartbeat calls this computer. |
 
