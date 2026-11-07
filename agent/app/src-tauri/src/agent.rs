@@ -827,6 +827,29 @@ mod tests {
     use ryna_wow_core::wow_core::activity;
     use serde_json::json;
 
+    /// The app carries the core's addon and every bundled mod's addon folders beside it
+    /// (`addon/<folder>`, where `mods::addon_source` looks), so turning a mod on can install it.
+    #[test]
+    fn the_bundle_carries_every_bundled_mods_folders() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let resources = &conf["bundle"]["resources"];
+        assert_eq!(
+            resources["../../../cores/wow/addon/Ryna/*"],
+            json!("addon/Ryna/")
+        );
+        for m in core_mods::bundled() {
+            for folder in &m.addons {
+                let from = format!("../../../mods/wow/{}/addon/{folder}/*", m.id);
+                assert_eq!(
+                    resources[from.as_str()],
+                    json!(format!("addon/{folder}/")),
+                    "tauri.conf.json's bundle.resources lacks {from}"
+                );
+            }
+        }
+    }
+
     const A: &str = "/wow/_forever_/WTF/Account/A/SavedVariables/Ryna.lua";
 
     impl Live {

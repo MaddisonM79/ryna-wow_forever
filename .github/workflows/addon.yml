@@ -30,3 +30,10 @@ jobs:
           done
       - name: Every translatable string is in its addon's Locales/enUS.lua and the locale templates
         run: node cores/wow/addon/tools/strings.mjs
+      # A mod's behaviour against a fake client (mods/wow/<id>/test/*_test.lua), under Lua 5.1.
+      - name: The mods' tests
+        run: |
+          shopt -s nullglob
+          for t in mods/wow/*/test/*_test.lua; do
+            lua5.1 "$t" || exit 1
+          done

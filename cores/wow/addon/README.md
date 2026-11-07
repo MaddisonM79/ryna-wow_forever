@@ -15,6 +15,9 @@ There are two, installed side by side by the companion app:
   mod and on by default: everything recorded about a character (below), the tooltips, and the
   panel's Recording and Census tabs. It builds on the core only through the mod API (below) and
   writes exactly the `RynaDB` the single addon wrote before the split (docs/wow.md section 2).
+- **Ryna Automation** (`mods/wow/automation/addon/Ryna_Automation`), off by default: chores at
+  quest givers and vendors, each its own setting that starts off, with its own Automation tab and
+  `/ryna auto` (`mods/wow/README.md`). Holding Shift at an NPC pauses it.
 
 Together they have a small settings panel (in tabs), a minimap button, and a line in chat when you
 log in.
@@ -160,8 +163,9 @@ names match the JSON the agent uploads one for one.
 ## The panel
 
 `/ryna`, or a click on the minimap button, opens **Settings → AddOns → Ryna** (on older clients,
-Interface Options → AddOns → Ryna). Under its title is a row of six tabs (Status, Recording, Census,
-Messages, Mods, Advanced; Recording and Census are Chronicle's, and go when it's off); a click on one shows that
+Interface Options → AddOns → Ryna). Under its title is a row of tabs (Status, Recording, Census,
+Automation, Messages, Mods, Advanced; Recording and Census are Chronicle's and Automation is
+Automation's, and each goes when its mod is off); a click on one shows that
 tab (the content scrolls when it's taller than the window), and the panel opens on the tab you last
 had (`RynaDB.settings.panelTab`). The tabs use the game's own tab style where the client has it, and
 plain buttons with the selected one lit where it doesn't.
@@ -426,7 +430,8 @@ global `Ryna` (`Mods.lua`, where every function is described), never the core's 
 - `Ryna.Journal.Add(type, fields, quiet)`, `.Session()`, `.Seq()`, `.Count()`.
 - `Ryna.Settings.Get`, `.Set`, `.All`, `.AddDefaults`, `.COMBAT_LOG_MODES`.
 - `Ryna.Panel.AddTab{ key, label, order, build, layout }`, `.AddStatusLines(order, fn)`, `.Refresh()`,
-  `.RefreshIfShown()`, `.Widgets`; `Ryna.Slash.Add{ word, run, help, order }`,
+  `.RefreshIfShown()`, `.Widgets`; `Ryna.Slash.Add{ word, run(arg, rest), help, order }` (`rest`: the
+  whole line after the word, in cores after 0.3.4),
   `.AddStatusLines(order, fn)`; `Ryna.L`.
 - The helpers: `Try`, `Fn`, `IsSecret`, `NonEmpty`, `Now`, `Locale`, `Print`, `PrintRaw`, `Debug`,
   `DebugChanged`, `Debugging`, `Plural`, `N`, `Run`, `After`, `Debounce`, `ReportError`,

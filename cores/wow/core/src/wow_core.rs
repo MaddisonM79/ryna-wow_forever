@@ -437,6 +437,7 @@ mod tests {
                 "Folder",
                 "Addon",
                 "Chronicle",
+                "Automation",
                 "Log",
                 "Fights, last 12 h",
                 "Last fight"
@@ -444,6 +445,7 @@ mod tests {
         );
         assert_eq!(rows[1].value, "Addon not installed");
         assert_eq!(rows[2].value, "On · not installed yet: install the addon");
+        assert_eq!(rows[3].value, "Off", "Automation is off by default");
 
         let hb = core.heartbeat(&ctx);
         assert_eq!(

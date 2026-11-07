@@ -292,6 +292,10 @@ Maddison's; the agent can carry both old and new clients for a release or two.
    character (the record, bags and bank, quests, guild, journal events, census, kills and loot) plus the
    tooltips and the coming in-game window, moves out of the core addon into the first mod, on by default
    since it is data and touches nothing; the core keeps only the plumbing. Then the automation mod, quests first, then selling greys and the like.
+   The automation mod exists (`mods/wow/automation`, v1, 2026-11-07): quests (accept, turn in,
+   quest-only gossip, leaving low-level quests, an optional pick of the best-selling reward) and
+   vendor (sell greys, repair, the guild bank first optionally); off by default, every chore its own
+   toggle that starts off, Shift pauses it.
 3. **Data layer v1.** Parse the three caches, upload them, pool them, write `Data/names.lua` and
    `Data/quests.lua` back down; the kills table gains names for creatures never targeted; the
    Chronicle window (0.2.x plan) reads community numbers from the same files.

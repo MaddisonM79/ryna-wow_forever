@@ -1,0 +1,26 @@
+## Interface: 16001
+## Title: Ryna Automation
+## Notes: Does the chores you tick: accepts and turns in quests, skips quest-only gossip, sells greys and repairs at vendors. Nothing until you turn it on; hold Shift to pause it. A mod of Ryna; /ryna for settings.
+## Author: Ryna contributors
+## Version: 0.3.4
+## Dependencies: Ryna
+## LoadOnDemand: 0
+
+Mod.lua
+Locales\enUS.lua
+Locales\deDE.lua
+Locales\frFR.lua
+Locales\esES.lua
+Locales\esMX.lua
+Locales\itIT.lua
+Locales\ptBR.lua
+Locales\ruRU.lua
+Locales\koKR.lua
+Locales\zhCN.lua
+Locales\zhTW.lua
+Settings.lua
+Quests.lua
+Vendor.lua
+Tab.lua
+Status.lua
+Init.lua

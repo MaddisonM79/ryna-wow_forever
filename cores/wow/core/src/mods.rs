@@ -26,7 +26,10 @@ use crate::addon_install::{self, compare_versions, ADDON_NAME};
 use crate::discovery::Install;
 
 /// The bundled mods' manifests, as built into this crate.
-pub const BUNDLED_MOD_JSON: &[&str] = &[include_str!("../../../../mods/wow/chronicle/mod.json")];
+pub const BUNDLED_MOD_JSON: &[&str] = &[
+    include_str!("../../../../mods/wow/chronicle/mod.json"),
+    include_str!("../../../../mods/wow/automation/mod.json"),
+];
 
 /// The one kind this core installs.
 pub const KIND: &str = "addon";
@@ -354,11 +357,15 @@ mod tests {
         let chronicle = bundled().iter().find(|m| m.id == "chronicle").unwrap();
         assert!(chronicle.default_on && !chronicle.acts_in_game);
         assert_eq!(chronicle.addons, ["Ryna_Chronicle"]);
+        // Automation acts in the game, so it's off until the person turns it on.
+        let automation = bundled().iter().find(|m| m.id == "automation").unwrap();
+        assert!(!automation.default_on && automation.acts_in_game);
+        assert_eq!(automation.addons, ["Ryna_Automation"]);
     }
 
-    /// A release layout: `<dir>/Ryna` and `<dir>/Ryna_Chronicle`, each with its toc.
+    /// A release layout: `<dir>/Ryna` and each bundled mod's folder beside it, each with its toc.
     fn release(dir: &Path, version: &str) -> PathBuf {
-        for name in ["Ryna", "Ryna_Chronicle"] {
+        for name in ["Ryna", "Ryna_Chronicle", "Ryna_Automation"] {
             let a = dir.join("release").join(name);
             std::fs::create_dir_all(&a).unwrap();
             std::fs::write(
@@ -423,6 +430,57 @@ mod tests {
         std::fs::remove_dir_all(dir.path().join("release/Ryna_Chronicle")).unwrap();
         let err = apply(&inst, &source, &none, None).unwrap_err().to_string();
         assert!(err.contains("Ryna_Chronicle"), "{err}");
+    }
+
+    #[test]
+    fn a_mod_off_by_default_stays_out_until_turned_on_and_leaves_when_turned_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = release(dir.path(), "0.3.0");
+        let inst = forever(dir.path());
+        addon_install::install(&source, &inst).unwrap();
+        let none = BTreeMap::new();
+        let here = inst.path.to_string_lossy().into_owned();
+        let of = |s: &[ModStatus], id: &str| s.iter().find(|m| m.id == id).unwrap().clone();
+
+        // Both are listed; only Chronicle (on by default) goes in.
+        let changes = apply(&inst, &source, &none, None).unwrap();
+        assert!(
+            matches!(&changes[..], [ModChange::Installed { id, .. }] if id == "chronicle"),
+            "{changes:?}"
+        );
+        let s = statuses(std::slice::from_ref(&inst), Some(&source), &none);
+        assert_eq!(s.len(), 2);
+        let automation = of(&s, "automation");
+        assert!(!automation.on && !automation.default_on && automation.acts_in_game);
+        assert!(!automation.at(&here).unwrap().installed);
+        assert_eq!(row_words(&automation, &here).0, "Off");
+        assert!(!addon_install::addon_dir_named(&inst, "Ryna_Automation").exists());
+
+        // Turned on: its folder goes in, Chronicle's is untouched.
+        let on = BTreeMap::from([("automation".to_string(), true)]);
+        let changes = apply(&inst, &source, &on, Some("automation")).unwrap();
+        assert!(
+            matches!(&changes[..], [ModChange::Installed { id, folder, version: Some(v), .. }]
+                if id == "automation" && folder == "Ryna_Automation" && v == "0.3.0"),
+            "{changes:?}"
+        );
+        let s = statuses(std::slice::from_ref(&inst), Some(&source), &on);
+        assert!(of(&s, "automation").on && of(&s, "automation").at(&here).unwrap().installed);
+        assert!(of(&s, "chronicle").at(&here).unwrap().installed);
+        // A full apply (the addon installed again) keeps both.
+        let changes = apply(&inst, &source, &on, None).unwrap();
+        assert_eq!(changes.len(), 2, "{changes:?}");
+
+        // Turned off again: only its folder comes out.
+        let off = BTreeMap::from([("automation".to_string(), false)]);
+        let changes = apply(&inst, &source, &off, Some("automation")).unwrap();
+        assert!(
+            matches!(&changes[..], [ModChange::Removed { folder, .. }] if folder == "Ryna_Automation"),
+            "{changes:?}"
+        );
+        assert!(!addon_install::addon_dir_named(&inst, "Ryna_Automation").exists());
+        assert!(addon_install::addon_dir_named(&inst, "Ryna_Chronicle").is_dir());
+        assert!(addon_install::has_addon(&inst));
     }
 
     #[test]

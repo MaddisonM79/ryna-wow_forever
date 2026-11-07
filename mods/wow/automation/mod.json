@@ -1,0 +1,13 @@
+{
+  "id": "automation",
+  "core": "wow",
+  "name": "Automation",
+  "version": "0.3.4",
+  "summary": "Does the chores you tick: accepts and turns in quests, skips quest-only gossip, sells greys and repairs at vendors. Nothing until you turn it on.",
+  "kind": "addon",
+  "actsInGame": true,
+  "source": { "kind": "bundled" },
+  "requires": { "core": ">=0.3.4" },
+  "defaultOn": false,
+  "addons": ["Ryna_Automation"]
+}

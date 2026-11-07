@@ -62,9 +62,18 @@ Proton prefixes: Lutris's `~/Games`, Bottles, Steam's `compatdata`, `~/.wine`); 
 elsewhere, *Choose folder…* and pick the `World of Warcraft` folder (on Linux, the one under the
 prefix's `drive_c`). Click **Install addon**.
 It copies the addon that came inside the app into the game's `Interface/AddOns`: Ryna itself and
-its mods, of which there is one so far, **Chronicle** (what Ryna records about your characters; on
-by default, and listed under the install with a switch). If the game is already running, restart it
-so it sees the new addon.
+the mods that are on. Each mod is listed under the install with a switch; there are two so far:
+
+- **Chronicle**: what Ryna records about your characters. On by default.
+- **Automation**: does chores for you at NPCs, the ones you tick in game (`/ryna`, its Automation
+  tab, or `/ryna auto`): accepting and turning in quests, opening the one quest an NPC who offers
+  nothing else has, leaving low-level quests alone, taking the reward that sells for the most
+  (otherwise a choice of rewards is always yours), selling grey items and repairing at vendors.
+  It's off by default, and turning it on in the app still does nothing until you tick a chore:
+  every one starts unticked. Hold Shift while you talk to an NPC and nothing happens by itself;
+  nothing happens in combat either.
+
+If the game is already running, restart it so it sees the new addon.
 
 **3. Sign in.** Click **Sign in**. Ryna shows a short code and opens a sign-in page in your browser;
 check the page shows the same code, then allow it. Ryna never sees your password: it gets a token
@@ -128,7 +137,8 @@ workspace (`Cargo.toml` at the root) holds the agent and the cores' Rust halves.
   installer); the in-game addon `cores/wow/addon/Ryna`, tagged for Forever, the plumbing its mods
   build on (`cores/wow/addon/README.md`: what is recorded, settings, your own `/who`, translations,
   the mod API); and the scrubbed test fixtures in `cores/wow/fixtures`. Its mods are in `mods/wow`:
-  Chronicle (`mods/wow/chronicle`), everything recorded about a character.
+  Chronicle (`mods/wow/chronicle`), everything recorded about a character, and Automation
+  (`mods/wow/automation`), the quest and vendor chores, each off until ticked.
 - `mods/`: each core's mods (`mods/wow`), from stage 2 of the design.
 - `scripts/`: version checks, the release manifest, the CLI smoke test, and `capture.sh`, which
   turns a real `Ryna.lua` into a scrubbed test fixture.

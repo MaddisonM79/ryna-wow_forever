@@ -21,7 +21,9 @@
 --   Ryna.Panel.AddTab{ key, label, order, build(frame), layout(stack, settings) }
 --   Ryna.Panel.AddStatusLines(order, fn)   fn() -> lines for the Status tab, at `order`
 --   Ryna.Panel.Refresh(), .RefreshIfShown(), .Widgets (text, button, link, checkbox, toggle, WIDTH)
---   Ryna.Slash.Add{ word, run(arg), help, order }   a /ryna <word> command and its help line
+--   Ryna.Slash.Add{ word, run(arg, rest), help, order }   a /ryna <word> command and its help line;
+--                                     arg is the next word, rest the whole line after <word>
+--                                     (cores after 0.3.4; 0.3.4 passes arg only)
 --   Ryna.Slash.AddStatusLines(order, fn)   fn() -> lines for /ryna status, at `order`
 --   Ryna.L                            the core's strings (a mod's own L falls back to it)
 --   Ryna.Try, .Fn, .IsSecret, .NonEmpty, .Now, .Locale, .Print, .PrintRaw, .Debug, .DebugChanged,

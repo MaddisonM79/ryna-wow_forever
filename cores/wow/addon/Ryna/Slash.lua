@@ -133,14 +133,17 @@ ns.SlashAdd({ word = "debug", order = 40, run = debugCommand,
   help = L["/ryna debug on||off||toggle: print what Ryna is doing to chat "
     .. "(/ryna debug alone: which it is)"] })
 
+-- A command's run(arg, rest): `arg` is the first word after the command, `rest` everything after
+-- the command (both lowercased), for a command that takes more than one word (/ryna auto <key> on).
 function ns.Slash(msg)
-  local cmd, arg = tostring(msg or ""):lower():match("^%s*(%S*)%s*(%S*)")
+  local cmd, rest = tostring(msg or ""):lower():match("^%s*(%S*)%s*(.-)%s*$")
   if cmd == "" then
     ns.Panel.Open()
     return
   end
+  local arg = rest:match("^(%S*)")
   for _, c in ipairs(commands) do
-    if c.word == cmd then return c.run(arg) end
+    if c.word == cmd then return c.run(arg, rest) end
   end
   help()
 end

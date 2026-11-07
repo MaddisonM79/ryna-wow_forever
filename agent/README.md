@@ -151,10 +151,19 @@ choices the app's Settings do. Combat fixtures come from `scripts/capture.sh --c
 Windows, an AppImage on Linux). It signs in with the device grant (it shows the code and opens the sign-in page), finds
 the game, installs the bundled addon (`cores/wow/addon/Ryna`, carried as the resource `addon/Ryna`)
 with every mod that's on (Chronicle, `mods/wow/chronicle/addon/Ryna_Chronicle`, carried beside it as
-`addon/Ryna_Chronicle`; each mod's switch under the install, kept in the app's `settings.json` as
-`mods`, installs or removes its folder), and runs the core's
+`addon/Ryna_Chronicle`, on by default; Automation, `mods/wow/automation/addon/Ryna_Automation` as
+`addon/Ryna_Automation`, off by default; each mod's switch under the install, kept in the app's
+`settings.json` as `mods`, installs or removes its folder), and runs the core's
 watch loop on its own thread, showing each install's addon version, each account's last save and
 push, and a log of what the loop did. It shows status, not charts: those live on the portal.
+
+**Automation** is the first mod that acts in the game (`actsInGame`, so its switch says so): at
+quest givers it accepts and turns in quests, opens the one quest of an NPC who offers nothing else,
+leaves low-level quests alone and, if asked, takes the reward that sells for the most; at vendors
+it sells grey items and repairs (the guild bank first, if asked). It's off by default, and on it
+still does nothing until each chore is ticked in game (its Automation tab, or `/ryna auto`): every
+one starts unticked. Shift held at an NPC, or combat, pauses it. `mods/wow/automation/test` checks
+its logic against a fake client; the game itself is the only test of the client's API.
 
 The window is a sidebar under the header (sign-in, Sync now) and the update banner: **Status**
 (the default: the agent's card with the account, whether it's syncing, the last sync, the version
@@ -294,8 +303,8 @@ without a key.
    crate takes it), `version` in `app/package.json`, `## Version:` in `cores/wow/addon/Ryna/Ryna.toc`, `version` in `cores/wow/core.json`,
    and each bundled mod's `version` in `mods/wow/<id>/mod.json` and `## Version:` in its addon's TOC
    (Chronicle: `mods/wow/chronicle/addon/Ryna_Chronicle/Ryna_Chronicle.toc`; also `ns.VERSION` in
-   its `Mod.lua`, and the core addon's in `Core.lua`). A mod's `requires.core` should name the
-   release that brought the mod API it needs.
+   its `Mod.lua`, and the core addon's in `Core.lua`; Automation reads its version from its TOC).
+   A mod's `requires.core` should name the release that brought the mod API it needs.
    Run `cargo check` so `Cargo.lock` follows, then `node scripts/check-versions.mjs`, which fails
    and names each file when they disagree (CI runs it on every push too).
 2. Commit, then tag and push the tag: `git tag -s vX.Y.Z && git push origin vX.Y.Z`.
@@ -306,8 +315,9 @@ without a key.
      the runner can run it);
    - the app: `Ryna_X.Y.Z_aarch64.dmg`, `Ryna_X.Y.Z_x64.dmg`, `Ryna_X.Y.Z_x64-setup.exe`,
      `Ryna_X.Y.Z_amd64.AppImage`;
-   - the addon: `Ryna-X.Y.Z.zip` (`Ryna` and `Ryna_Chronicle` at its top level, as the app carries
-     them, for a manual install or CurseForge);
+   - the addon: `Ryna-X.Y.Z.zip` (`Ryna` and every bundled mod's folders, `Ryna_Chronicle` and
+     `Ryna_Automation`, at its top level, as the app carries them, for a manual install or
+     CurseForge; Automation's folder there does nothing until its chores are ticked in game);
    - with the updater key: `Ryna_X.Y.Z_<arch>.app.tar.gz` and their `.sig`s, the installer's and
      the AppImage's `.sig`, and `latest.json` (`scripts/latest-json.mjs`: `darwin-aarch64`,
      `darwin-x86_64`, `windows-x86_64`, `linux-x86_64`);

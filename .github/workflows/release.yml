@@ -247,17 +247,27 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      # One zip with both folders at its top level, Ryna (the core's) and Ryna_Chronicle (the first
-      # mod, on by default), as the app carries them in addon/: unzipped into Interface/AddOns it is
-      # a working install, and `ryna install-addon --from` finds Chronicle beside Ryna. One zip per
-      # addon would let someone install the core alone, which records nothing.
-      - name: The addon zip (Ryna and Ryna_Chronicle, as the app carries them)
+      # One zip with every folder at its top level, Ryna (the core's) and each bundled mod's
+      # (Ryna_Chronicle, on by default; Ryna_Automation, off until turned on), as the app carries them
+      # in addon/: unzipped into Interface/AddOns it is a working install, and `ryna install-addon
+      # --from` finds the mods beside Ryna. One zip per addon would let someone install the core
+      # alone, which records nothing. A folder that's there is still only loaded if the game's AddOns
+      # list has it on; the app's toggle is what keeps an off mod's folder out.
+      - name: The addon zip (Ryna and every bundled mod's folders, as the app carries them)
         run: |
           stage="$(mktemp -d)"
           cp -R cores/wow/addon/Ryna "$stage/Ryna"
           for folder in mods/wow/*/addon/*/; do cp -R "$folder" "$stage/$(basename "$folder")"; done
           (cd "$stage" && zip -r -X "$GITHUB_WORKSPACE/dist/Ryna-${VERSION}.zip" . -x '*.DS_Store')
-          for toc in Ryna/Ryna.toc Ryna_Chronicle/Ryna_Chronicle.toc; do
+          # Every folder a mod.json lists (its `addons`), and the core's.
+          tocs="Ryna/Ryna.toc $(node -e '
+            const fs = require("fs");
+            for (const id of fs.readdirSync("mods/wow")) {
+              const p = `mods/wow/${id}/mod.json`;
+              if (!fs.existsSync(p)) continue;
+              for (const f of JSON.parse(fs.readFileSync(p, "utf8")).addons ?? []) console.log(`${f}/${f}.toc`);
+            }')"
+          for toc in $tocs; do
             unzip -l "dist/Ryna-${VERSION}.zip" | grep -q " ${toc}\$" || { echo "::error::the addon zip lacks ${toc}"; exit 1; }
           done
           unzip -l "dist/Ryna-${VERSION}.zip" | tail -n 3

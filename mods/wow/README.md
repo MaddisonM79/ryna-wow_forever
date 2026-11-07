@@ -11,6 +11,12 @@ installed beside the core's `Ryna` addon and built on it only through the mod AP
   everything recorded about a character (the record, bags and bank, quests, the guild roster, zones
   and deaths, the players seen and the census, kills and loot), the tooltips, and the panel's
   Recording and Census tabs. It writes the same `RynaDB` the single addon wrote before stage 2.
+- `automation/`: **Automation**, off by default (`defaultOn: false`, `actsInGame: true`): chores at
+  quest givers (accept, turn in, quest-only gossip, leave low-level quests, optionally take the
+  best-selling reward) and vendors (sell greys, repair, optionally from the guild bank first). Every
+  chore is its own setting (`RynaDB.settings.auto*`), off until ticked on its Automation tab or with
+  `/ryna auto <name> on`; Shift held at an NPC, or combat, pauses all of it. It keeps nothing else.
+  `test/automation_test.lua` runs its logic against a fake client (`lua5.1`, in the addon workflow).
 
 Bundled mods are compiled into the WoW core (`cores/wow/core/src/mods.rs`, `BUNDLED_MOD_JSON`: add a
 new one there; a test holds the list to this folder) and version with the agent
