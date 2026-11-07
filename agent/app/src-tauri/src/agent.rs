@@ -14,6 +14,7 @@ use ryna_agent::config::Config;
 pub use ryna_agent::core::Phase;
 use ryna_agent::core::{Activity, Core, CoreContext, CoreControl, KeychainTokens, StatusRow};
 use ryna_agent::fix::Fix;
+use ryna_agent::identity::{self, DeviceKey};
 use ryna_wow_core::addon_install;
 use ryna_wow_core::discovery::{self, Install};
 use ryna_wow_core::mods::{self as core_mods, ModChange, ModStatus};
@@ -171,6 +172,9 @@ pub struct Agent {
     pub config: Config,
     settings_dir: Option<PathBuf>,
     live: Mutex<Live>,
+    /// The device key, once the keychain gave it (kept for the app's life; a failure is tried
+    /// again next time it's needed).
+    device_key: Mutex<Option<Arc<dyn DeviceKey>>>,
 }
 
 impl Agent {
@@ -186,7 +190,21 @@ impl Agent {
                 settings,
                 ..Live::default()
             }),
+            device_key: Mutex::new(None),
         }
+    }
+
+    /// The device key: from the keychain (minted there on first use), then kept in memory. The
+    /// error is the keychain's words; a kept key that doesn't parse is never replaced.
+    pub fn device_key(&self) -> Result<Arc<dyn DeviceKey>, String> {
+        let mut kept = self.device_key.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(k) = kept.as_ref() {
+            return Ok(k.clone());
+        }
+        let key: Arc<dyn DeviceKey> =
+            Arc::new(identity::device_key(&self.config).map_err(|e| e.to_string())?);
+        *kept = Some(key.clone());
+        Ok(key)
     }
 
     fn live(&self) -> MutexGuard<'_, Live> {
@@ -276,12 +294,18 @@ fn restart_if_watching(app: &AppHandle) {
     }
 }
 
-/// What the WoW core is started with: the agent's state folder, the keychain's tokens and the
-/// chosen game folder. None when there's no state folder.
-fn context(config: &Config, install: Option<PathBuf>) -> Option<CoreContext> {
+/// What the WoW core is started with: the agent's state folder, the keychain's tokens, the
+/// device key (None when the keychain couldn't give it: the window says so, and the posts go
+/// unsigned) and the chosen game folder. None when there's no state folder.
+fn context(
+    config: &Config,
+    device_key: Option<Arc<dyn DeviceKey>>,
+    install: Option<PathBuf>,
+) -> Option<CoreContext> {
     Some(CoreContext {
         state_dir: ryna_agent::state_dir::state_dir()?,
         tokens: Arc::new(KeychainTokens::new(config.clone())),
+        device_key,
         game_folder: install,
     })
 }
@@ -314,7 +338,7 @@ fn run_loop(
     control: &CoreControl,
 ) {
     let core = WowCore::new(INTERVAL).with_combat(combat);
-    let ctx = context(config, install);
+    let ctx = context(config, app.state::<Agent>().device_key().ok(), install);
     drive(&core, ctx.as_ref(), control, &mut |event| {
         app.state::<Agent>().live().observe(&core.activity(event));
         let _ = app.emit(AGENT_EVENT, event);
@@ -490,6 +514,8 @@ pub struct Status {
     pub keychain_error: Option<String>,
     /// The sign-in lasts only until a restart (Linux with no Secret Service running).
     pub sign_in_until_reboot: bool,
+    /// The device key couldn't be read or kept (the keychain's words); the window shows Problem.
+    pub device_key_error: Option<String>,
     pub watching: bool,
     pub installs: Vec<InstallStatus>,
     /// The bundled addon's version (its `Ryna.toc`), when this build carries one that says.
@@ -580,7 +606,9 @@ pub fn status(app: &AppHandle) -> Status {
     let wow = WowCore::new(INTERVAL)
         .with_bundled_addon(bundled_addon(app).ok())
         .with_mods(settings.mods.clone());
-    let ctx = context(&agent.config, install_override.clone());
+    let device_key = agent.device_key();
+    let device_key_error = device_key.as_ref().err().cloned();
+    let ctx = context(&agent.config, device_key.ok(), install_override.clone());
     let cores = vec![core_view(&wow, ctx.as_ref())];
     let mods = ctx
         .as_ref()
@@ -604,6 +632,7 @@ pub fn status(app: &AppHandle) -> Status {
         signed_in_as,
         keychain_error,
         sign_in_until_reboot,
+        device_key_error,
         watching,
         installs,
         addon_bundled,
@@ -995,6 +1024,7 @@ mod tests {
                 Some("https://api.test".into()),
                 Some("https://idp.test".into()),
             ))),
+            device_key: None,
             game_folder: None,
         }
     }

@@ -149,6 +149,8 @@ export interface Status {
   keychainError: string | null;
   /** The sign-in lasts only until a restart: Linux with no Secret Service running. */
   signInUntilReboot: boolean;
+  /** The device key couldn't be read or kept (the keychain's words): the header shows Problem. */
+  deviceKeyError: string | null;
   watching: boolean;
   installs: InstallView[];
   /** The bundled addon's version, when this build carries one that says. */
@@ -268,6 +270,8 @@ export interface UpdateProgress {
 
 export const api = {
   status: () => invoke<Status>("get_status"),
+  /** This computer's submission ID, grouped (`a1b2-c3d4-…`); rejects with the keychain's words. */
+  submissionId: () => invoke<string>("get_submission_id"),
   startLogin: () => invoke<LoginCode>("start_login"),
   cancelLogin: () => invoke<void>("cancel_login"),
   openSignInPage: () => invoke<void>("open_sign_in_page"),

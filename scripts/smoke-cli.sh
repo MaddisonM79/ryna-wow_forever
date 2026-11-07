@@ -7,8 +7,9 @@
 # cores/wow/fixtures/combat-world.txt (must find a fight); and discovery: a temporary
 # `Program Files (x86)/World of Warcraft/_forever_` tree with a .flavor.info and one account's
 # Ryna.lua, which `status --install <that>` must list. CI runs it on every OS (Windows is the
-# case it's for). The sign-in provider is a made-up one, so the keychain lookup finds nothing
-# and never touches a real sign-in; the state folder is temporary too.
+# case it's for). The sign-in provider and the API are made-up ones, so the keychain lookups (the
+# sign-in, the device key) find nothing and never touch a real one; the state folder is
+# temporary too.
 set -euo pipefail
 
 bin="${1:?usage: smoke-cli.sh <ryna binary>}"
@@ -19,6 +20,7 @@ native() { if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else pri
 trap 'rm -rf "$tmp"' EXIT
 export RYNA_STATE_DIR="$(native "$tmp/state")"
 export RYNA_ISSUER="https://smoke.invalid"
+export RYNA_API="https://smoke.invalid"
 unset RYNA_INSTALL
 
 step() { printf '\n== %s\n' "$*"; }
@@ -54,5 +56,6 @@ cp "$root/cores/wow/fixtures/Ryna.lua" "$product/WTF/Account/SMOKE/SavedVariable
 grep -q '_forever_  flavor wowf' "$tmp/status.txt" || fail "status didn't list the _forever_ install"
 grep -q '^Accounts:' "$tmp/status.txt" || fail "status didn't list the account"
 grep -q 'SavedVariables.Ryna\.lua' "$tmp/status.txt" || fail "status didn't list the account's Ryna.lua"
+grep -q '^Submission ID: ' "$tmp/status.txt" || fail "status didn't say the submission ID"
 
 printf '\nsmoke: ok\n'

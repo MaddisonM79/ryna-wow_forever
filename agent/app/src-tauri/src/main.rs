@@ -136,6 +136,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_status,
+            commands::get_submission_id,
             commands::start_login,
             commands::cancel_login,
             commands::open_sign_in_page,

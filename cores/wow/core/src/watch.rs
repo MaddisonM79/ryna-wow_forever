@@ -40,6 +40,7 @@ use crate::config::Config;
 use crate::discovery::{self, Discovery};
 use crate::fix::Fix;
 use crate::http::{HttpTransport, Transport};
+use crate::identity::{self, DeviceKey};
 use crate::push::Api;
 use crate::runner::{run_once_observed, RunError, RunOptions};
 use crate::state;
@@ -221,28 +222,38 @@ impl WatchOptions {
     }
 }
 
-/// Run passes every `opts.interval` until `cancel` fires, with the real network and keychain.
-/// Returns only on cancel, or when the state folder can't be used.
+/// Run passes every `opts.interval` until `cancel` fires, with the real network and keychain
+/// (the device key too: one it can't read is reported as an error event, and the posts go
+/// unsigned). Returns only on cancel, or when the state folder can't be used.
 pub fn watch(
     config: &Config,
     opts: &WatchOptions,
     cancel: &CancelToken,
     on_event: &mut dyn FnMut(WatchEvent),
 ) -> Result<(), RunError> {
+    let key = match identity::device_key(config) {
+        Ok(k) => Some(k),
+        Err(e) => {
+            on_event(WatchEvent::error(None, None, e.to_string(), Fix::Other));
+            None
+        }
+    };
     watch_with_store(
         config,
         &KeyringStore::for_issuer(&config.issuer),
+        key.as_ref().map(|k| k as &dyn DeviceKey),
         opts,
         cancel,
         on_event,
     )
 }
 
-/// `watch` with the tokens in `store` (what the agent's `TokenProvider` hands the core), the
-/// real network, clock and discovery.
+/// `watch` with the tokens in `store` and the device key `key` (what the agent hands the core),
+/// the real network, clock and discovery.
 pub fn watch_with_store(
     config: &Config,
     store: &dyn crate::auth::TokenStore,
+    key: Option<&dyn DeviceKey>,
     opts: &WatchOptions,
     cancel: &CancelToken,
     on_event: &mut dyn FnMut(WatchEvent),
@@ -252,6 +263,7 @@ pub fn watch_with_store(
         config,
         &http,
         store,
+        key,
         &SystemClock,
         opts,
         cancel,
@@ -270,13 +282,14 @@ pub fn watch_with_control(
     watch(config, opts, control.token(), on_event)
 }
 
-/// `watch` over any transport, token store and discovery (tests; another front end). A
+/// `watch` over any transport, token store, device key and discovery (tests; another front end). A
 /// `cancel.wake()` (`WatchControl::request_pass`) ends the wait between passes early.
 #[allow(clippy::too_many_arguments)]
 pub fn watch_with(
     config: &Config,
     http: &dyn Transport,
     store: &dyn crate::auth::TokenStore,
+    key: Option<&dyn DeviceKey>,
     clock: &dyn Clock,
     opts: &WatchOptions,
     cancel: &CancelToken,
@@ -284,7 +297,7 @@ pub fn watch_with(
     on_event: &mut dyn FnMut(WatchEvent),
 ) -> Result<(), RunError> {
     let auth = Auth::new(config, http, store, clock);
-    let api = Api::new(&config.api, http, &auth, clock);
+    let api = Api::new(&config.api, http, &auth, key, clock);
     let mut known: Vec<PathBuf> = Vec::new();
     let mut tailer = Tailer::new(&opts.state_dir, opts.combat);
     // One tailer per state folder: a second loop (the CLI beside the app) leaves the logs alone.
@@ -371,6 +384,7 @@ mod tests {
     use crate::config::test_config;
     use crate::discovery::testing::product;
     use crate::http::testing::ScriptedTransport;
+    use crate::identity::testing::test_key;
     use crate::util::testing::FakeClock;
     use serde_json::json;
     use std::time::Instant;
@@ -401,6 +415,7 @@ mod tests {
             &test_config(),
             &http,
             &store,
+            Some(&test_key()),
             &clock,
             &opts,
             control.token(),
@@ -452,6 +467,7 @@ mod tests {
             &test_config(),
             &http,
             &store,
+            Some(&test_key()),
             &clock,
             &opts,
             &cancel,
@@ -528,6 +544,7 @@ mod tests {
             &test_config(),
             &http,
             &store,
+            Some(&test_key()),
             &clock,
             &opts,
             &cancel,

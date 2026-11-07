@@ -367,6 +367,9 @@ ryna status                        # installs, accounts, last pushes, signed in 
                                        # (--from addon: say which installs need the addon updated)
 ryna watch --interval 60           # `run` every minute until stopped
 ryna parse path/to/Ryna.lua        # the snapshot JSON for one file, sent nowhere (--raw: the Lua as JSON)
+ryna census id                     # this computer's submission ID
+ryna census push --dry-run         # each account's sightings as census uploads (events, bytes, the ID), sent nowhere;
+                                       # without --dry-run, signed and sent to /v1/wow/census with no sign-in
 ```
 
 The game writes `Ryna.lua` when you log out or `/reload`, so that's when there is something new
@@ -384,7 +387,7 @@ on macOS, `%APPDATA%\ryna\app\data` on Windows, `~/.local/share/io.ryna.app` on 
 | Variable | Default | |
 |---|---|---|
 | `RYNA_CLIENT_ID` | a placeholder | The device client at the sign-in provider. **Not issued yet**: until it is, `login` refuses to start. |
-| `RYNA_API` (`--api`) | `https://api.ryna.io` | The backend. Point it at a local API to test. |
+| `RYNA_API` (`--api`) | `https://api.ryna.io` | The backend. Point it at a local API to test. Another API keeps its own device key (keychain account `device-key <api>`), so a test never uses the real submission ID. |
 | `RYNA_ISSUER` (`--issuer`) | `https://auth.nyratech.dev` | The sign-in provider. A sign-in to another issuer is kept under its own keychain name. |
 | `RYNA_RESOURCE` | `https://api.ryna.io/wow/ingest` | The audience the tokens are for (scope `wow:ingest`). |
 | `RYNA_INSTALL` (`--install`) | the OS default | The game folder (`World of Warcraft`) or one product folder (`_forever_`). Defaults: `/Applications/World of Warcraft` on macOS, `C:\Program Files (x86)\World of Warcraft` and `C:\Program Files\World of Warcraft` on Windows, and on Linux those two inside the usual Wine and Proton prefixes (`drive_c` under `~/.wine`, Lutris's `~/Games/*`, Bottles' and Steam's; "Linux" above). |
@@ -396,5 +399,18 @@ on macOS, `%APPDATA%\ryna\app\data` on Windows, `~/.local/share/io.ryna.app` on 
 For each account: a snapshot of `RynaDB` (characters, gear, bags and bank, quests, professions,
 reputations, the guild roster and the addon's event journal), with the account folder's name
 replaced by the first 16 hex digits of its sha256, so the backend never learns it. After each run
-a heartbeat: the agent's version, the host name and OS, the install folders, and each account's
-key, label and last push time.
+a heartbeat: the agent's version, the host name and OS, the install folders, each account's
+key, label and last push time, and the submission ID.
+
+### Submission ID
+
+Sightings you contribute are traced to this ID, not to you. While you're signed in they're also
+attributed to your account. The ID is the first 32 hex digits of the SHA-256 of this computer's
+device key (an Ed25519 key minted on first run, its private half kept in the OS keychain, service
+`ryna`, account `device-key`, never in a file), shown in groups of four in the app's WoW Settings
+under Census and by `ryna status` and `ryna census id`. Every POST to the API carries it with the
+public key and a signature over the exact body (`X-Ryna-Submission`, `X-Ryna-Key`,
+`X-Ryna-Signature`; the API's docs/wow.md section 13). One install is one ID; deleting the keychain
+entry mints a new one, which starts again at zero. A key the keychain holds but can't be read is
+reported (the app's header shows Problem) and never quietly replaced. In this release only
+`ryna census push`, run by hand, sends a census upload; the app keeps sending snapshots as before.

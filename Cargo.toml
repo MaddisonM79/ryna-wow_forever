@@ -19,8 +19,12 @@ rust-version = "1.89"
 
 [workspace.dependencies]
 anyhow = "1"
+# Standard base64 for the device key, its signatures and the seed kept in the keychain.
+base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
 directories = "6"
+# The device key (docs/ryna-agent-cores-mods.md 7.1): Ed25519, minted with the OS RNG.
+ed25519-dalek = { version = "2", features = ["rand_core"] }
 # gzip for the combat digests and raw segments (already in the tree through Tauri).
 flate2 = "1"
 # keyring 3: the OS keychain on each target. On Linux the Secret Service (gnome-keyring, KeePassXC,
@@ -34,6 +38,7 @@ keyring = { version = "3", features = [
   "crypto-rust",
 ] }
 # Blocking, rustls with the webpki roots: no OpenSSL to link on any target.
+rand_core = { version = "0.6", features = ["getrandom"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

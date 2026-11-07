@@ -9,6 +9,7 @@ function at(over: Partial<HeaderStatus>): HeaderStatus {
     watching: true,
     lastRun: { at: NOW - 60, ok: true, error: null, fix: null, advice: null },
     lastError: null,
+    deviceKeyError: null,
     accounts: [{ phase: "pushed" }, { phase: "waiting" }],
     ...over,
   };
@@ -46,6 +47,18 @@ describe("the header's chip", () => {
       state: "problem",
       detail: "Couldn't report in to the API",
     });
+  });
+
+  it("is Problem with the device key words when the key can't be read, signed in or not", () => {
+    const err = "the device key couldn't be read from the system keychain: locked";
+    for (const over of [{}, { signedIn: false }, { watching: false }]) {
+      expect(headerState(at({ ...over, deviceKeyError: err }))).toEqual({
+        state: "problem",
+        text: "Problem",
+        detail: "Device key unreadable: sign out and back in won't fix this; see Activity",
+        chip: "error",
+      });
+    }
   });
 
   it("is Paused (amber) when signed in but not watching", () => {

@@ -109,6 +109,7 @@ impl Core for WowCore {
         watch::watch_with_store(
             ctx.tokens.config(),
             store.as_ref(),
+            ctx.device_key.as_deref(),
             &self.options(ctx),
             control.token(),
             events,
@@ -409,6 +410,7 @@ mod tests {
         let ctx = CoreContext {
             state_dir: state.path().to_path_buf(),
             tokens: Arc::new(Tokens(test_config())),
+            device_key: Some(Arc::new(ryna_agent::identity::testing::test_key())),
             game_folder: Some(root.path().to_path_buf()),
         };
         let control = CoreControl::new();

@@ -435,7 +435,8 @@ fn api_run(
     let store = MemoryStore::with_access("tok", NOW + 3600);
     let clock = FakeClock::at(NOW);
     let auth = Auth::new(&config, http, &store, &clock);
-    let api = Api::new(&config.api, http, &auth, &clock);
+    let key = crate::identity::testing::test_key();
+    let api = Api::new(&config.api, http, &auth, Some(&key), &clock);
     Queue::new(state).upload(&api, &opts, false)
 }
 
@@ -486,6 +487,20 @@ fn uploads_post_the_summaries_then_put_the_bodies() {
     let body: serde_json::Value = serde_json::from_slice(&reqs[0].body).unwrap();
     assert_eq!(body["encounters"].as_array().unwrap().len(), 2);
     assert_eq!(body["encounters"][0]["account"], json!("k"));
+    // The POST is signed over its body; the PUTs carry no signature headers.
+    let header = |i: usize, name: &str| {
+        reqs[i]
+            .headers
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.clone())
+    };
+    assert!(crate::identity::verify(
+        &header(0, "X-Ryna-Key").unwrap(),
+        &reqs[0].body,
+        &header(0, "X-Ryna-Signature").unwrap()
+    ));
+    assert!(reqs[1].headers.is_empty());
     assert_eq!(reqs[1].method, Method::Put);
     assert_eq!(
         reqs[1].url,

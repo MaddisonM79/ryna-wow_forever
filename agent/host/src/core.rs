@@ -23,6 +23,7 @@ use crate::auth::{KeyringStore, TokenStore};
 use crate::cancel::CancelToken;
 use crate::config::Config;
 use crate::fix::Fix;
+use crate::identity::DeviceKey;
 
 /// `cores/<id>/core.json`: what a core is, what it needs and what it touches.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -172,6 +173,9 @@ pub struct CoreContext {
     /// core has always used.
     pub state_dir: PathBuf,
     pub tokens: Arc<dyn TokenProvider>,
+    /// The device key that signs every post to the API (`identity`); None when the keychain
+    /// couldn't give it, which the agent reports itself (the posts then go unsigned).
+    pub device_key: Option<Arc<dyn DeviceKey>>,
     /// The game folder the person chose, in place of the manifest's `detect.folders`.
     pub game_folder: Option<PathBuf>,
 }

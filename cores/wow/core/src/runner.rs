@@ -158,6 +158,7 @@ pub fn run_once_observed(
         Err("skipped: not signed in".to_string())
     } else {
         let mut hb = heartbeat_body(discovery, &st, first_error.clone());
+        hb.submission_id = api.submission_id();
         hb.combat_log = crate::combat::tail::heartbeat(state_dir, clock.now());
         api.heartbeat(&hb).map(|_| ()).map_err(|e| {
             note(classify(&e), &e.to_string(), &mut failure, &mut first_error);
@@ -297,6 +298,8 @@ pub fn heartbeat_body(discovery: &Discovery, st: &State, last_error: Option<Stri
         combat_log: CombatLog::default(),
         // Kept well inside the heartbeat's 64 KiB.
         last_error: last_error.map(|e| e.chars().take(1000).collect()),
+        // The caller's device key's, set where the Api is in hand.
+        submission_id: None,
     }
 }
 
@@ -308,6 +311,8 @@ mod tests {
     use crate::config::test_config;
     use crate::discovery::{discover, testing::product};
     use crate::http::testing::ScriptedTransport;
+    use crate::identity::testing::test_key;
+    use crate::identity::DeviceKey;
     use crate::util::testing::FakeClock;
     use serde_json::json;
     use std::time::{Duration, SystemTime};
@@ -346,7 +351,8 @@ mod tests {
     fn run(e: &Env, http: &ScriptedTransport, force: bool) -> RunReport {
         let config = test_config();
         let auth = Auth::new(&config, http, &e.store, &e.clock);
-        let api = Api::new(&config.api, http, &auth, &e.clock);
+        let key = test_key();
+        let api = Api::new(&config.api, http, &auth, Some(&key), &e.clock);
         run_once(
             &discover(Some(&e.root)),
             &e.state,
@@ -390,6 +396,18 @@ mod tests {
         assert_eq!(hb["installs"][0]["flavor"], json!("wowf"));
         assert_eq!(hb["installs"][0]["addon"], json!(null));
         assert_eq!(hb["lastError"], json!(null));
+        assert_eq!(hb["submissionId"], json!(test_key().submission_id()));
+        // The snapshot and the heartbeat are both signed, over the bytes sent.
+        for i in [0, 2] {
+            let req = http.requests.borrow()[i].clone();
+            let sig = http.header(i, "X-Ryna-Signature").unwrap();
+            let pk = http.header(i, "X-Ryna-Key").unwrap();
+            assert_eq!(
+                http.header(i, "X-Ryna-Submission"),
+                Some(test_key().submission_id())
+            );
+            assert!(crate::identity::verify(&pk, &req.body, &sig));
+        }
 
         // Nothing changed: only the heartbeat.
         let http = ScriptedTransport::new();
@@ -524,7 +542,8 @@ mod tests {
         let config = test_config();
         let http = ScriptedTransport::new();
         let auth = Auth::new(&config, &http, &e.store, &e.clock);
-        let api = Api::new(&config.api, &http, &auth, &e.clock);
+        let key = test_key();
+        let api = Api::new(&config.api, &http, &auth, Some(&key), &e.clock);
         let r = run_once(
             &discover(Some(&e.root)),
             &e.state,

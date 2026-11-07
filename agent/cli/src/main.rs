@@ -19,6 +19,7 @@ use ryna_agent::config::Config;
 use ryna_agent::core::{Core, CoreContext, CoreControl, KeychainTokens};
 use ryna_agent::fix::Fix;
 use ryna_agent::http::HttpTransport;
+use ryna_agent::identity::{self, DeviceKey, Ed25519Key};
 use ryna_agent::state_dir;
 use ryna_agent::util::{iso_utc, now_secs, SystemClock};
 use ryna_agent::AGENT_VERSION;
@@ -112,6 +113,12 @@ enum Command {
         #[arg(long)]
         full: bool,
     },
+    /// The census without an account: this computer's submission ID, and sending each account's
+    /// sightings to the census by hand (stage (a); the app doesn't send them yet).
+    Census {
+        #[command(subcommand)]
+        command: CensusCommand,
+    },
     /// Print the snapshot JSON for one SavedVariables file, without sending anything.
     Parse {
         file: PathBuf,
@@ -121,6 +128,20 @@ enum Command {
         /// The WTF account folder name to hash for account.key (default: read from the path).
         #[arg(long, value_name = "NAME")]
         account: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum CensusCommand {
+    /// Print this computer's submission ID (minting the device key on first use).
+    Id,
+    /// Send every account's sightings (the `seen` events, less your own characters) to
+    /// /v1/wow/census, signed by the device key, with no sign-in. Use the global --install to
+    /// point at the game.
+    Push {
+        /// Build the uploads and say what they'd be (events, bytes, the ID), sending nothing.
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -159,6 +180,12 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
             watch(&config, cli.install.as_deref(), interval, combat)
         }
         Command::InstallAddon { from } => install_addon(cli.install.as_deref(), from.as_deref()),
+        Command::Census { command } => match command {
+            CensusCommand::Id => census_id(&config),
+            CensusCommand::Push { dry_run } => {
+                census_push(&config, cli.install.as_deref(), dry_run)
+            }
+        },
         Command::Parse { file, raw, account } => parse(&file, raw, account.as_deref()),
         Command::Combat {
             file,
@@ -255,6 +282,12 @@ fn status(config: &Config, install: Option<&Path>, from: Option<&Path>) -> Resul
     }
     if s.signed_in && s.sign_in_until_reboot {
         println!("{UNTIL_REBOOT}");
+    }
+    // Read, never minted here: the first run, watch or census command makes it.
+    match identity::stored_device_key(config) {
+        Ok(Some(k)) => println!("Submission ID: {}", k.display_id()),
+        Ok(None) => println!("Submission ID: none yet (the first run makes one)"),
+        Err(e) => println!("Submission ID: none ({e})"),
     }
 
     if s.installs.is_empty() {
@@ -403,7 +436,14 @@ fn run(config: &Config, install: Option<&Path>, opts: &RunOptions) -> Result<u8>
     let store = KeyringStore::for_issuer(&config.issuer);
     let clock = SystemClock;
     let auth = Auth::new(config, &http, &store, &clock);
-    let api = Api::new(&config.api, &http, &auth, &clock);
+    let key = device_key_or_warn(config);
+    let api = Api::new(
+        &config.api,
+        &http,
+        &auth,
+        key.as_ref().map(|k| k as &dyn DeviceKey),
+        &clock,
+    );
     match runner::run_once(&found, &dir, &api, &clock, opts) {
         Ok(report) => {
             print_report(&report);
@@ -420,6 +460,86 @@ fn run(config: &Config, install: Option<&Path>, opts: &RunOptions) -> Result<u8>
     }
 }
 
+/// The device key, or None with a warning: the posts then go unsigned (fine everywhere but the
+/// census).
+fn device_key_or_warn(config: &Config) -> Option<Ed25519Key> {
+    match identity::device_key(config) {
+        Ok(k) => Some(k),
+        Err(e) => {
+            eprintln!("warning: {e}; posting unsigned");
+            None
+        }
+    }
+}
+
+fn census_id(config: &Config) -> Result<ExitCode> {
+    let key = identity::device_key(config)?;
+    println!("{}", key.display_id());
+    Ok(ExitCode::SUCCESS)
+}
+
+/// `ryna census push`: each account's sightings as signed uploads, sent with no token.
+fn census_push(config: &Config, install: Option<&Path>, dry_run: bool) -> Result<ExitCode> {
+    use ryna_wow_core::census;
+    let key = identity::device_key(config)?;
+    // stage 1: direct; stage (c) gives the core a "contribute without an account" mode.
+    let found = discovery::discover(install);
+    if found.accounts.is_empty() {
+        bail!("no Ryna.lua found: point at the game with --install <folder>");
+    }
+    println!("Submission ID: {}", key.display_id());
+    let http = HttpTransport::new().map_err(anyhow::Error::msg)?;
+    let store = KeyringStore::for_issuer(&config.issuer);
+    let clock = SystemClock;
+    let auth = Auth::new(config, &http, &store, &clock);
+    let api = Api::new(&config.api, &http, &auth, Some(&key), &clock);
+    let mut failed = false;
+    for acct in &found.accounts {
+        let built =
+            match snapshot::read_file(&acct.path, &acct.account, None, acct.flavor.as_deref()) {
+                Ok(b) => b,
+                Err(e) => {
+                    eprintln!("{}: {e}", acct.path.display());
+                    failed = true;
+                    continue;
+                }
+            };
+        let label = built.snapshot.account.label.clone();
+        let uploads = census::uploads(&built.snapshot, now_secs());
+        let events: usize = uploads.iter().map(|u| u.events.len()).sum();
+        let bytes: usize = uploads.iter().map(|u| u.body().len()).sum();
+        println!(
+            "{label}: {events} sighting(s) in {} upload(s), {bytes} bytes",
+            uploads.len()
+        );
+        if dry_run {
+            continue;
+        }
+        for (i, u) in uploads.iter().enumerate() {
+            match api.post_census(u) {
+                Ok(data) => println!(
+                    "  upload {}: stored {}, repeated {}",
+                    i + 1,
+                    data.get("stored").unwrap_or(&serde_json::Value::Null),
+                    data.get("repeated").unwrap_or(&serde_json::Value::Null)
+                ),
+                Err(e) => {
+                    eprintln!("  upload {}: {e}", i + 1);
+                    failed = true;
+                }
+            }
+        }
+    }
+    if dry_run {
+        println!("Dry run: nothing was sent.");
+    }
+    Ok(if failed {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    })
+}
+
 /// The core's watch loop (the one the desktop app drives), printing its events.
 fn watch(
     config: &Config,
@@ -431,6 +551,7 @@ fn watch(
         state_dir: state_dir::state_dir()
             .context("no place to keep the agent's state: set RYNA_STATE_DIR")?,
         tokens: Arc::new(KeychainTokens::new(config.clone())),
+        device_key: device_key_or_warn(config).map(|k| Arc::new(k) as Arc<dyn DeviceKey>),
         game_folder: install.map(Path::to_path_buf),
     };
     let core = WowCore::new(Duration::from_secs(interval)).with_combat(combat);

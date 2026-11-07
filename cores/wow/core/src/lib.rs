@@ -6,7 +6,8 @@
 //! - [`discovery`]: the game's install folders and each account's `Ryna.lua`.
 //! - [`lua`]: a reader for the Lua the game writes to SavedVariables.
 //! - [`snapshot`]: the JSON snapshot the API takes (docs/wow.md section 2), built from `RynaDB`.
-//! - [`push`]: posting snapshots and heartbeats.
+//! - [`push`]: posting snapshots and heartbeats (and census uploads), signed by the device key.
+//! - [`census`]: the census without an account: an account's `seen` events as signed uploads.
 //! - [`state`] and [`runner`]: what was pushed, and one run over every account.
 //! - [`watch`]: the loop the desktop app runs while it is open, with status events and a cancel handle.
 //! - [`agent_status`]: `AgentStatus.lua`, what the agent tells the addon after every run.
@@ -21,6 +22,7 @@
 
 pub mod addon_install;
 pub mod agent_status;
+pub mod census;
 pub mod combat;
 pub mod discovery;
 pub mod lua;
@@ -33,6 +35,6 @@ pub mod status;
 pub mod watch;
 pub mod wow_core;
 
-pub use ryna_agent::{auth, cancel, config, fix, http, util};
+pub use ryna_agent::{auth, cancel, config, fix, http, identity, util};
 
 pub use ryna_agent::{user_agent, AGENT_VERSION};

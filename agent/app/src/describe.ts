@@ -304,18 +304,23 @@ export function signInNote(s: Pick<Status, "signedIn" | "signInUntilReboot">): s
   );
 }
 
+/** The header's words when the device key can't be read: no sign-in fixes that. */
+export const DEVICE_KEY_PROBLEM = "Device key unreadable: sign out and back in won't fix this; see Activity";
+
 /** What the header's chip needs from the status. */
-export type HeaderStatus = Pick<Status, "signedIn" | "watching" | "lastRun" | "lastError"> & {
+export type HeaderStatus = Pick<Status, "signedIn" | "watching" | "lastRun" | "lastError" | "deviceKeyError"> & {
   accounts: Pick<AccountView, "phase">[];
 };
 
 /**
- * The state, not the rule: Signed out (grey) when there's no sign-in; Paused (amber) when signed
+ * The state, not the rule: Problem (red) first when the device key can't be read, signed in or
+ * not (the error itself is in the activity log); Signed out (grey) when there's no sign-in; Paused (amber) when signed
  * in but not watching; Syncing… (blue) while an account is being pushed; Problem (red) with the
  * fix words when the last run failed or this session's loop reported a failure that hasn't
  * cleared; else Connected (green).
  */
 export function headerState(s: HeaderStatus): HeaderState {
+  if (s.deviceKeyError) return { state: "problem", text: "Problem", detail: DEVICE_KEY_PROBLEM, chip: "error" };
   if (!s.signedIn) return { state: "signedOut", text: "Signed out", detail: null, chip: "waiting" };
   if (!s.watching) return { state: "paused", text: "Paused", detail: null, chip: "update" };
   if (s.accounts.some((a) => a.phase === "pushing")) {

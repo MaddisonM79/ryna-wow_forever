@@ -469,6 +469,7 @@ impl<'a> Auth<'a> {
             content_encoding: None,
             body: form_encode(fields),
             bearer: None,
+            headers: Vec::new(),
             timeout,
         })
     }

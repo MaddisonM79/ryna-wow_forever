@@ -28,6 +28,8 @@ const THIRD_PARTY = [
   { name: "keyring", what: "keeping the sign-in in the system keychain", licence: "MIT or Apache-2.0" },
   { name: "flate2", what: "compressing fight digests", licence: "MIT or Apache-2.0" },
   { name: "sha2", what: "hashing account folder names before they leave", licence: "MIT or Apache-2.0" },
+  { name: "ed25519-dalek", what: "the device key that signs what goes to ryna.io", licence: "BSD-3-Clause" },
+  { name: "base64", what: "writing the device key and its signatures", licence: "MIT or Apache-2.0" },
 ];
 
 const copied = ref<string | null>(null);

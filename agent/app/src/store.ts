@@ -34,6 +34,8 @@ export const loginError = ref<string | null>(null);
 export const now = ref(Date.now() / 1000);
 
 let nextId = 1;
+/** The device key error last written to the activity log, so each one is logged once. */
+let loggedKeyError: string | null = null;
 
 export function log(text: string, level: LogLine["level"] = "info"): void {
   activity.value = [{ id: nextId++, at: Date.now() / 1000, text, level }, ...activity.value].slice(0, LOG_SIZE);
@@ -49,6 +51,10 @@ export async function refresh(): Promise<void> {
     const s = await api.status();
     status.value = s;
     loadError.value = null;
+    if (s.deviceKeyError && s.deviceKeyError !== loggedKeyError) {
+      log(`Device key unreadable (${s.deviceKeyError}). Signing out and back in won't fix it: the key is this computer's own.`, "error");
+    }
+    loggedKeyError = s.deviceKeyError;
     if (s.login && !login.value) login.value = s.login;
   } catch (e) {
     loadError.value = errorText(e);

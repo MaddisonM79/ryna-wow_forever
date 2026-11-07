@@ -1,6 +1,10 @@
 //! Posting to the API: the snapshot to `/v1/wow/agent/ingest`, the heartbeat to
 //! `/v1/wow/agent/heartbeat`, and fights to `/v1/wow/agent/encounters` (then each one's digest and
-//! raw lines with a PUT), as the person's own token (auth.rs).
+//! raw lines with a PUT), as the person's own token (auth.rs); and a census upload to
+//! `/v1/wow/census` with no token at all.
+//!
+//! Every POST also carries the device key's three headers (docs/wow.md section 13.1: the
+//! submission ID, the public key, and the signature over the exact body bytes sent).
 //!
 //! Every answer is the envelope `{ ok: true, data } | { ok: false, error: { code, message, detail } }`.
 //! A refusal is a 200 with `ok:false`; `SCHEMA_UNSUPPORTED` means the agent and addon need
@@ -14,15 +18,18 @@ use serde_json::Value;
 use thiserror::Error;
 
 use crate::auth::{Auth, AuthError};
+use crate::census::{CensusUpload, CENSUS_LIMIT};
 use crate::config::INGEST_SCOPE;
 use crate::fix::Fix;
 use crate::http::{Method, Request, Response, Transport};
+use crate::identity::DeviceKey;
 use crate::snapshot::Snapshot;
 use crate::util::Clock;
 
 pub const INGEST_PATH: &str = "/v1/wow/agent/ingest";
 pub const HEARTBEAT_PATH: &str = "/v1/wow/agent/heartbeat";
 pub const ENCOUNTERS_PATH: &str = "/v1/wow/agent/encounters";
+pub const CENSUS_PATH: &str = "/v1/wow/census";
 pub const TRIES: u32 = 3;
 /// The API refuses bodies over these.
 pub const INGEST_LIMIT: usize = 16 * 1024 * 1024;
@@ -54,6 +61,8 @@ pub enum PushError {
     NotAnEnvelope { status: u16, body: String },
     #[error("the body is {size} bytes, over the API's limit of {limit}")]
     TooLarge { size: usize, limit: usize },
+    #[error("there's no device key to sign the census with")]
+    NoDeviceKey,
 }
 
 impl PushError {
@@ -103,6 +112,8 @@ pub struct Heartbeat {
     pub accounts: Vec<HeartbeatAccount>,
     pub combat_log: CombatLog,
     pub last_error: Option<String>,
+    /// The device key's submission ID (32 hex), or null when the key couldn't be read.
+    pub submission_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -150,7 +161,17 @@ pub struct Api<'a> {
     origin: String,
     http: &'a dyn Transport,
     auth: &'a Auth<'a>,
+    /// Signs every POST; None only when the keychain couldn't give the device key (the posts then
+    /// go unsigned, which the API takes everywhere but `/census`).
+    key: Option<&'a dyn DeviceKey>,
     clock: &'a dyn Clock,
+}
+
+/// Whether a call carries the person's token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Bearer {
+    Person,
+    None,
 }
 
 impl<'a> Api<'a> {
@@ -158,18 +179,43 @@ impl<'a> Api<'a> {
         origin: &str,
         http: &'a dyn Transport,
         auth: &'a Auth<'a>,
+        key: Option<&'a dyn DeviceKey>,
         clock: &'a dyn Clock,
     ) -> Self {
         Api {
             origin: origin.trim_end_matches('/').to_string(),
             http,
             auth,
+            key,
             clock,
         }
     }
 
     pub fn auth(&self) -> &Auth<'a> {
         self.auth
+    }
+
+    /// The device key's submission ID (32 hex), when there is a key.
+    pub fn submission_id(&self) -> Option<String> {
+        self.key.map(|k| k.submission_id())
+    }
+
+    /// Post one census upload (docs/wow.md section 13.3), signed and with no token; returns the
+    /// envelope's `data` (`{ submissionId, stored, repeated, pending }`).
+    pub fn post_census(&self, upload: &CensusUpload) -> Result<Value, PushError> {
+        if self.key.is_none() {
+            return Err(PushError::NoDeviceKey);
+        }
+        self.send(
+            Method::Post,
+            CENSUS_PATH,
+            "application/json",
+            None,
+            upload.body(),
+            CENSUS_LIMIT,
+            Duration::from_secs(60),
+            Bearer::None,
+        )
     }
 
     /// Post fights (`{ encounters: [...] }`, at most `ENCOUNTERS_PER_CALL`); returns the
@@ -267,6 +313,30 @@ impl<'a> Api<'a> {
         limit: usize,
         timeout: Duration,
     ) -> Result<Value, PushError> {
+        self.send(
+            method,
+            path,
+            content_type,
+            content_encoding,
+            body,
+            limit,
+            timeout,
+            Bearer::Person,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn send(
+        &self,
+        method: Method,
+        path: &str,
+        content_type: &'static str,
+        content_encoding: Option<&'static str>,
+        body: Vec<u8>,
+        limit: usize,
+        timeout: Duration,
+        bearer: Bearer,
+    ) -> Result<Value, PushError> {
         if body.len() > limit {
             return Err(PushError::TooLarge {
                 size: body.len(),
@@ -274,6 +344,11 @@ impl<'a> Api<'a> {
             });
         }
         let url = format!("{}{path}", self.origin);
+        // Signed once, over the very bytes every try sends.
+        let headers = match (method, self.key) {
+            (Method::Post, Some(key)) => key.headers(&body),
+            _ => Vec::new(),
+        };
         let mut last = String::new();
         let mut reauthed = false;
         let mut attempt = 0;
@@ -289,7 +364,11 @@ impl<'a> Api<'a> {
                 content_type,
                 content_encoding,
                 body: body.clone(),
-                bearer: Some(self.token()?),
+                bearer: match bearer {
+                    Bearer::Person => Some(self.token()?),
+                    Bearer::None => None,
+                },
+                headers: headers.clone(),
                 timeout,
             };
             let res = match self.http.post(&req) {
@@ -299,7 +378,7 @@ impl<'a> Api<'a> {
                     continue;
                 }
             };
-            if res.status == 401 && !reauthed {
+            if res.status == 401 && bearer == Bearer::Person && !reauthed {
                 // The token was refused as unauthenticated: once more with a fresh one.
                 reauthed = true;
                 self.auth.forget_access_token();
@@ -390,8 +469,11 @@ fn read_envelope(res: &Response) -> Result<Value, PushError> {
 mod tests {
     use super::*;
     use crate::auth::testing::MemoryStore;
+    use crate::census::{CensusEvent, Observer, CENSUS_SCHEMA};
     use crate::config::test_config;
     use crate::http::testing::ScriptedTransport;
+    use crate::identity::testing::test_key;
+    use crate::identity::{verify, KEY_HEADER, SIGNATURE_HEADER, SUBMISSION_HEADER};
     use crate::util::testing::FakeClock;
     use serde_json::json;
 
@@ -410,6 +492,7 @@ mod tests {
             accounts: vec![],
             combat_log: CombatLog::default(),
             last_error: None,
+            submission_id: Some(test_key().submission_id()),
         }
     }
 
@@ -420,7 +503,8 @@ mod tests {
     ) -> Result<Value, PushError> {
         let config = test_config();
         let auth = Auth::new(&config, http, store, clock);
-        Api::new(&config.api, http, &auth, clock).heartbeat(&hb())
+        let key = test_key();
+        Api::new(&config.api, http, &auth, Some(&key), clock).heartbeat(&hb())
     }
 
     #[test]
@@ -430,7 +514,8 @@ mod tests {
             v,
             json!({ "agent": "0.1.0", "host": "test-host", "os": "macos",
                     "installs": [ { "path": "/Applications/World of Warcraft/_forever_", "flavor": "wowf", "addon": "0.1.0" } ],
-                    "accounts": [], "combatLog": { "active": false, "advanced": null, "file": null, "lastEventAt": null, "pending": 0 }, "lastError": null })
+                    "accounts": [], "combatLog": { "active": false, "advanced": null, "file": null, "lastEventAt": null, "pending": 0 }, "lastError": null,
+                    "submissionId": "21fe31dfa154a261626bf854046fd227" })
         );
     }
 
@@ -445,6 +530,119 @@ mod tests {
         assert_eq!(req.url, "https://api.test/v1/wow/agent/heartbeat");
         assert_eq!(req.bearer.as_deref(), Some("tok"));
         assert_eq!(req.content_type, "application/json");
+    }
+
+    /// Request `i`'s three headers verify over the body it sent, for the test key.
+    fn assert_signed(http: &ScriptedTransport, i: usize) {
+        let body = http.requests.borrow()[i].body.clone();
+        assert_eq!(
+            http.header(i, SUBMISSION_HEADER),
+            Some(test_key().submission_id())
+        );
+        let pk = http.header(i, KEY_HEADER).unwrap();
+        assert_eq!(pk, test_key().public_key_b64());
+        let sig = http.header(i, SIGNATURE_HEADER).unwrap();
+        assert_eq!(sig.len(), 88);
+        assert!(
+            verify(&pk, &body, &sig),
+            "request {i} isn't signed over its body"
+        );
+    }
+
+    #[test]
+    fn every_post_is_signed_over_the_bytes_it_sends_each_try() {
+        let http = ScriptedTransport::new();
+        http.text(502, "bad gateway")
+            .json(200, json!({ "ok": true, "data": null }));
+        let store = MemoryStore::with_access("tok", NOW + 3600);
+        let clock = FakeClock::at(NOW);
+        run(&http, &store, &clock).unwrap();
+        assert_signed(&http, 0);
+        assert_signed(&http, 1);
+    }
+
+    #[test]
+    fn without_a_key_posts_go_unsigned() {
+        let http = ScriptedTransport::new();
+        http.json(200, json!({ "ok": true, "data": null }));
+        let store = MemoryStore::with_access("tok", NOW + 3600);
+        let clock = FakeClock::at(NOW);
+        let config = test_config();
+        let auth = Auth::new(&config, &http, &store, &clock);
+        let api = Api::new(&config.api, &http, &auth, None, &clock);
+        assert_eq!(api.submission_id(), None);
+        api.heartbeat(&hb()).unwrap();
+        assert!(http.requests.borrow()[0].headers.is_empty());
+    }
+
+    fn upload() -> CensusUpload {
+        CensusUpload {
+            schema: CENSUS_SCHEMA,
+            flavor: "wowf".into(),
+            agent: crate::user_agent(),
+            addon: "0.3.2".into(),
+            sent_at: NOW,
+            events: vec![CensusEvent {
+                key: crate::census::event_key("Player-1-1", "s", 1),
+                at: NOW - 60,
+                observer: Observer {
+                    realm_id: Some(1),
+                    faction: Some("Horde".into()),
+                },
+                seen: json!({ "fullName": "Kesra-Duskmantle", "source": "who" })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            }],
+        }
+    }
+
+    #[test]
+    fn a_census_upload_is_signed_and_carries_no_token() {
+        let http = ScriptedTransport::new();
+        http.json(200, json!({ "ok": true, "data": { "submissionId": test_key().submission_id(), "stored": 1, "repeated": 0, "pending": true } }));
+        // Not signed in at all: the census needs no sign-in.
+        let store = MemoryStore::default();
+        let clock = FakeClock::at(NOW);
+        let config = test_config();
+        let auth = Auth::new(&config, &http, &store, &clock);
+        let key = test_key();
+        let api = Api::new(&config.api, &http, &auth, Some(&key), &clock);
+        let data = api.post_census(&upload()).unwrap();
+        assert_eq!(data["stored"], json!(1));
+        let req = http.requests.borrow()[0].clone();
+        assert_eq!(req.url, "https://api.test/v1/wow/census");
+        assert_eq!(req.method, Method::Post);
+        assert_eq!(req.bearer, None);
+        assert_eq!(req.body, upload().body());
+        assert_signed(&http, 0);
+
+        // No key, nothing sent.
+        let http = ScriptedTransport::new();
+        let api = Api::new(&config.api, &http, &auth, None, &clock);
+        assert!(matches!(
+            api.post_census(&upload()),
+            Err(PushError::NoDeviceKey)
+        ));
+        assert!(http.requests.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_refused_census_signature_is_reported_and_not_retried() {
+        let http = ScriptedTransport::new();
+        http.json(
+            400,
+            json!({ "ok": false, "error": { "code": "BAD_SIGNATURE", "message": "no" } }),
+        );
+        let store = MemoryStore::default();
+        let clock = FakeClock::at(NOW);
+        let config = test_config();
+        let auth = Auth::new(&config, &http, &store, &clock);
+        let key = test_key();
+        let api = Api::new(&config.api, &http, &auth, Some(&key), &clock);
+        let e = api.post_census(&upload()).unwrap_err();
+        assert!(e.to_string().contains("BAD_SIGNATURE"), "{e}");
+        assert_eq!(http.requests.borrow().len(), 1);
     }
 
     #[test]

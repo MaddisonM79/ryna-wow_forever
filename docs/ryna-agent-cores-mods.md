@@ -238,6 +238,8 @@ person. The design:
 - **What stays signed-in.** Everything about a person's own characters. The census is the one thing
   the agent does before, or without, signing in; the Census tab says "contributes without an account"
   in plain words, with the same switches to stop any of it.
+
+Stage (a) built (2026-11-07, agent side, the API's docs/wow.md 13.1, 13.3 and 13.5): the device key in the keychain (`ryna-agent` `identity`), the three signed headers on every API POST, `submissionId` in the heartbeat, the ID under Census in the WoW Settings and in `ryna status`, and `ryna census push [--dry-run]` / `ryna census id` (`census.rs`); the app sends no census uploads yet.
 - **Stages.** (a) The device key and the signed census route, with sightings attributed to both account
   and ID for signed-in people, so the reputation data accrues before anyone relies on it. (b) Quarantine
   and weighting, with the Admin view of IDs. (c) The agent's "census only" mode: the Census tab and

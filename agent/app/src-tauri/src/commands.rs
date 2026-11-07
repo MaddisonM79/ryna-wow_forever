@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager as _};
 use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_opener::OpenerExt as _;
 
@@ -40,6 +40,18 @@ pub async fn get_status(app: AppHandle) -> Result<StatusWithSettings, String> {
             status: agent::status(&app),
             autostart,
         })
+    })
+    .await
+}
+
+/// This computer's submission ID, grouped (`a1b2-c3d4-…`), for the core's Settings: the device
+/// key's, minted in the keychain on first use.
+#[tauri::command]
+pub async fn get_submission_id(app: AppHandle) -> Result<String, String> {
+    blocking(move || {
+        app.state::<agent::Agent>()
+            .device_key()
+            .map(|k| k.display_id())
     })
     .await
 }

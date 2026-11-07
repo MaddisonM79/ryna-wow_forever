@@ -19,6 +19,8 @@ pub struct Request {
     pub content_encoding: Option<&'static str>,
     pub body: Vec<u8>,
     pub bearer: Option<String>,
+    /// Further headers, sent as given (the device key's three on a POST to the API).
+    pub headers: Vec<(String, String)>,
     pub timeout: Duration,
 }
 
@@ -82,6 +84,9 @@ impl Transport for HttpTransport {
         }
         if let Some(encoding) = req.content_encoding {
             r = r.header("Content-Encoding", encoding);
+        }
+        for (name, value) in &req.headers {
+            r = r.header(name.as_str(), value.as_str());
         }
         let res = r.send().map_err(|e| describe(&e))?;
         let status = res.status().as_u16();
@@ -185,6 +190,14 @@ pub mod testing {
         }
         pub fn form(&self, i: usize) -> String {
             String::from_utf8(self.requests.borrow()[i].body.clone()).unwrap()
+        }
+        /// Request `i`'s header `name` (case-insensitive), if it carried one.
+        pub fn header(&self, i: usize, name: &str) -> Option<String> {
+            self.requests.borrow()[i]
+                .headers
+                .iter()
+                .find(|(n, _)| n.eq_ignore_ascii_case(name))
+                .map(|(_, v)| v.clone())
         }
         pub fn remaining(&self) -> usize {
             self.answers.borrow().len()

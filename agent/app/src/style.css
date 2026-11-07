@@ -579,6 +579,16 @@ h2.sub {
   margin-top: 12px;
 }
 
+/* The core's Settings: the census submission ID, selectable. */
+.submission-id {
+  display: block;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 /* About's links: shown as text to select, since the window can open only ryna.io/wow. */
 .url {
   display: block;
