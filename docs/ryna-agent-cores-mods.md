@@ -15,8 +15,11 @@ written before any plumbing code, the way `docs/wow.md` in the api repo was writ
   it on. WoW's mods are in-game addon pieces (quest automation, vendor prices, whatever earns a
   toggle). A mod can't exist without its core.
 
-Two things are not mods. **Chronicle** (kills, loot, the census, the fights) is the WoW core's data,
-not an option. The **data layer** (section 7) is the agent's, shared by every core.
+**Chronicle is the first mod** (Maddison, 2026-11-07): the WoW core lays the foundation, the files
+and what the game requires, and Chronicle is the first thing built on it, then an automation mod
+(quests first), then things like selling greys. The **data layer** (section 7) is the agent's, shared
+by every core, and is not a mod either. Where exactly the core ends and Chronicle begins is the open
+question in section 12.
 
 Rules that don't move, from the README: the data is never sold or used for advertising; only what the
 person can see in their own files leaves their computer; the agent signs in as them and never sees a
@@ -56,10 +59,10 @@ Options:
 release together until a second core exists and stabilises; mods are the thing other people may write,
 and the manifest (section 6) is designed so a mod's source can be another repository from day one.
 
-Licence: this repository is MIT. The Palworld agent is in the private monorepo and would become MIT
-when it moves here; its save parser is a port of palworld-save-tools (MIT), so nothing blocks that
-except the decision. **Maddison's call.** If she'd rather keep it private, the Palworld core ships as
-a sidecar binary the agent downloads from a private release, which the manifest's `source` allows.
+Licence: this repository is MIT. **Decided: the Palworld agent goes MIT when it moves here, as long
+as nothing in it is sensitive** (Maddison, 2026-11-07; she doesn't think it is). Its save parser is a
+port of palworld-save-tools (MIT). Before the move, stage 4 starts with an audit of the Palworld agent
+for anything that shouldn't be public: credentials, personal paths, server addresses, her world ids.
 
 ## 4. The agent
 
@@ -129,7 +132,9 @@ What a Palworld **mod** is was not decided. Two readings, and they are different
   allow-listed sources, a mod manager. That is executable code on the person's computer, which the
   rest of this design keeps out (section 10), so it would need its own rules.
 
-This note leaves the section open and recommends the first reading first.
+**Decided: nothing now.** Palworld mods will be defined in a later session; until then the plumbing
+in section 6 must be extensible enough to take either reading (a mod's `kind` is per core, and a core
+may refuse kinds it doesn't support), and nothing in the Palworld core assumes an answer.
 
 ## 6. Mods
 
@@ -239,9 +244,10 @@ Maddison's; the agent can carry both old and new clients for a release or two.
 0. **This note**, and the open questions below answered.
 1. **The seam.** Split `agent/core` into the agent host and the WoW core behind the interface in
    section 4, manifests included, behaviour identical, tests green, one release. Nothing visible changes.
-2. **Mod plumbing and a first mod.** Manifest, bundled source, toggles in the agent and the panel,
-   install/remove, the `actsInGame` wording. First mod: something small that proves the plumbing
-   without the trust question riding on the first release (vendor prices, or XP per hour).
+2. **Mod plumbing, and Chronicle becomes the first mod.** Manifest, bundled source, toggles in the
+   agent and the panel, install/remove, the `actsInGame` wording. Chronicle (kills, loot, tooltips, the
+   coming in-game window) moves out of the core addon into the first mod, on by default since it is
+   data and touches nothing. Then the automation mod, quests first, then selling greys and the like.
 3. **Data layer v1.** Parse the three caches, upload them, pool them, write `Data/names.lua` and
    `Data/quests.lua` back down; the kills table gains names for creatures never targeted; the
    Chronicle window (0.2.x plan) reads community numbers from the same files.
@@ -251,9 +257,13 @@ Maddison's; the agent can carry both old and new clients for a release or two.
 
 ## 12. Open questions (Maddison's)
 
-- Does the Palworld agent go MIT when it moves here? (The repository question is settled: A, `ryna_agent`.)
-- What is a Palworld mod: agent features, real game mods, or both in that order?
-- The first WoW mod.
-- Whether the Ryna addon also lists on CurseForge (every Forever addon does; the agent remains the
-  better install).
+- **Where the WoW core ends and Chronicle begins.** Today's addon records identity, level, gold,
+  played time, gear, professions, reputations, bags and bank, quests, the guild roster, zones, deaths,
+  the census sightings, and (since 0.2.2) kills and loot. Which of those are the core's foundation and
+  which are Chronicle's is Maddison's call; the stage 2 split follows it.
+- **CurseForge: yes, for the future**, and to be discussed before it happens: what exactly is listed
+  (the core addon, Chronicle, every mod?), how a CurseForge installer learns they need the agent, and
+  whether the agent simply takes over managing the addon when it finds a CurseForge copy.
 - Windows signing (unchanged: Azure Artifact Signing is the recommendation).
+- Settled 2026-11-07: the repository (A, `ryna_agent`); the Palworld agent goes MIT barring anything
+  sensitive; Palworld mods are undefined for now; Chronicle is the first WoW mod.
