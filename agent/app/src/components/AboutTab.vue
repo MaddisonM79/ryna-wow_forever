@@ -50,7 +50,8 @@ async function copy(url: string): Promise<void> {
 </script>
 
 <template>
-  <section v-if="status">
+  <div class="cards">
+  <section v-if="status" class="card">
     <h2>About</h2>
     <p>
       <strong>Ryna</strong>, the companion app for World of Warcraft: Forever. It sends what the
@@ -66,7 +67,7 @@ async function copy(url: string): Promise<void> {
         <dd>{{ status.agentVersion }}</dd>
       </div>
       <div>
-        <dt>Addon bundled</dt>
+        <dt>Addon</dt>
         <dd>{{ status.addonBundled ?? "None in this build" }}</dd>
       </div>
       <div>
@@ -76,7 +77,7 @@ async function copy(url: string): Promise<void> {
     </dl>
   </section>
 
-  <section>
+  <section class="card">
     <h2>Links</h2>
     <ul class="rows links">
       <li>
@@ -84,23 +85,17 @@ async function copy(url: string): Promise<void> {
         <button class="link" type="button" @click="api.openPortal()">Open in browser</button>
       </li>
       <li v-for="l in LINKS" :key="l.url">
-        <span>
-          {{ l.label }}
-          <span class="url">{{ l.url }}</span>
-        </span>
-        <span class="actions">
-          <button class="link" type="button" @click="open(l.url)">Open</button>
-          <button type="button" class="quiet" @click="copy(l.url)">
-            {{ copied === l.url ? "Copied" : "Copy link" }}
-          </button>
-        </span>
+        <button class="link" type="button" :title="l.url" @click="open(l.url)">{{ l.label }}</button>
+        <button type="button" class="quiet small" :title="`Copy ${l.url}`" @click="copy(l.url)">
+          {{ copied === l.url ? "Copied" : "Copy" }}
+        </button>
       </li>
     </ul>
     <p v-if="copyFailed" class="muted">Couldn't copy it here: select the link and copy it instead.</p>
     <p v-if="openFailed" class="muted">Couldn't open the browser: {{ openFailed }}</p>
   </section>
 
-  <section>
+  <section class="card wide">
     <h2>Credits</h2>
     <p>Made by Maddison Markham, with Nyx (Claude).</p>
     <p>
@@ -122,4 +117,5 @@ async function copy(url: string): Promise<void> {
       </li>
     </ul>
   </section>
+  </div>
 </template>

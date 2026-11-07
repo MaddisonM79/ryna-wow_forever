@@ -6,13 +6,14 @@ import { status } from "../store";
 import { checkButton, checkResult } from "../updateWords";
 import { checkForUpdates, updateCheck, updateError, updatePhase } from "../updates";
 
+withDefaults(defineProps<{ showVersion?: boolean }>(), { showVersion: true });
 const button = computed(() => checkButton(updateCheck.value, updatePhase.value));
 const result = computed(() => checkResult(updateCheck.value, updatePhase.value, updateError.value));
 </script>
 
 <template>
   <span class="update-control">
-    <span class="muted">Ryna {{ status?.appVersion ?? "" }}</span>
+    <span v-if="showVersion" class="muted">Ryna {{ status?.appVersion ?? "" }}</span>
     <span v-if="result && updatePhase !== 'checking'" class="chip" :class="result.chip" role="status">{{ result.text }}</span>
     <button type="button" class="quiet" :disabled="button.disabled" @click="checkForUpdates(true)">
       {{ button.label }}

@@ -9,7 +9,7 @@ members = ["agent/core", "agent/cli", "agent/app/src-tauri"]
 default-members = ["agent/core", "agent/cli"]
 
 [workspace.package]
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/MaddisonM79/ryna-wow_forever"
