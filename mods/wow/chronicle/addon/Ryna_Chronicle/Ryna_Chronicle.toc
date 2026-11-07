@@ -27,6 +27,7 @@ Sightings.lua
 Census.lua
 Status.lua
 Chronicle.lua
+Session.lua
 Tooltip.lua
 Tabs.lua
 Init.lua

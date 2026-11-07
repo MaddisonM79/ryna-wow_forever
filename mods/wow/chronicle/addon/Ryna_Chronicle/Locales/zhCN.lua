@@ -120,3 +120,15 @@ L["Counts the creatures you and your group kill, the experience they give and wh
 L["Show my numbers on tooltips"] = nil
 L["Adds your own kills and drops to creature and item tooltips: how many you killed, what they dropped "
   .. "for you and how often."] = nil
+
+-- Session.lua, Strip.lua, Window.lua: the session strip and the Chronicle window.
+-- Durations: "under a minute", "2d 3h" (days, hours), "1h 12m" (hours, minutes), "12m" (minutes).
+L["under a minute"] = nil
+L["%dd %dh"] = nil
+L["%dh %dm"] = nil
+L["%dm"] = nil
+-- The Status tab's session line: "Session: 42 kills, 3,120 XP/h" (experience per hour), or not started.
+L["Session: not started"] = nil
+L["Session: %s, %s XP/h"] = nil
+L["%d kill"] = nil
+L["%d kills"] = nil
