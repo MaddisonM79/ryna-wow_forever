@@ -2,15 +2,14 @@
 -- never journal events: a session has thousands of kills, and a row each would make the file large
 -- and logout slow. Three string-keyed maps on the record (Character.lua carries them over):
 --
---   kills[npcId]    { name, n, own, xp, looted, last, zone }   PARTY_KILL, CHAT_MSG_COMBAT_XP_GAIN, LOOT_OPENED
+--   kills[npcId]    { name, n, own, xp, looted, last, zone }   CHAT_MSG_COMBAT_XP_GAIN (+ units seen), LOOT_OPENED
 --   loot[itemId]    { name, link, quality, n, qty, last, from = { [source] = n } }   LOOT_SLOT_CLEARED
 --   objects[id]     { n, last, zone }                          LOOT_OPENED from a game object
 --
 -- A loot source is "c:<npcId>" (a creature), "o:<objectId>" (a chest, vein, herb or pool),
 -- "i:<itemId>" (a container item; "i" when the client can't say which) or "f" (no source: fishing).
 -- Everything is gated on the `chronicle` setting; with it off nothing is counted and the maps stay
--- as they are. The combat-log handler runs for every combat event, so it reads only the fields it
--- needs and allocates nothing unless the event is a kill.
+-- as they are. Nothing here touches the combat log: this client forbids it to addons (see Kills).
 
 local _, ns = ...
 
@@ -123,84 +122,60 @@ function Ch.ItemIdFromLink(link)
 end
 
 -- Kills ---------------------------------------------------------------------------------------
+--
+-- Not from the combat log: this client refuses COMBAT_LOG_EVENT_UNFILTERED to addons (the "blocked
+-- from an action only available to the Blizzard UI" dialog at login, 2026-11-07, 0.2.2), so a kill is
+-- the chat line the game prints for it, COMBATLOG_XPGAIN_FIRSTPERSON ("%s dies, you gain %d
+-- experience."), which names the creature and gives the experience. The creature's id comes from the
+-- units the player sees: the target, the mouseover and nameplates give a GUID and a name, and the
+-- name is the join. A kill whose name isn't known yet waits (in memory, a few at most) until the name
+-- is seen. Solo kills are the player's own; in a group the chat line can't say whose blow it was.
 
--- The last few kills, newest at `recentPos`, for attributing the experience message to one.
-local recentName, recentId, recentAt = {}, {}, {}
-local recentPos = 0
--- Experience messages that came before their kill (the order isn't promised), same layout.
-local pendingName, pendingXp, pendingAt = {}, {}, {}
-local pendingPos = 0
+-- Creature name -> id, learned from units seen. Names are localised, so a map per session is right.
+local namesToId = {}
+-- Kills named before their creature was seen: name -> { n, xp }.
+local pendingByName = {}
+local PENDING_MAX = 32
+local pendingCount = 0
 
-local function addXp(id, xp)
-  local e = ns.rec and type(ns.rec.kills) == "table" and ns.rec.kills[id]
-  if type(e) ~= "table" then return end
-  e.xp = num(e.xp) + xp
+local function solo()
+  local n = ns.Try(ns.Fn("GetNumGroupMembers"))
+  return type(n) ~= "number" or n <= 1
 end
 
-local function takePendingXp(name, now)
-  for i = 1, RECENT_KILLS do
-    local at = pendingAt[i]
-    if at and pendingName[i] == name and now - at <= XP_WINDOW then
-      pendingAt[i] = nil
-      return pendingXp[i]
-    end
-  end
-  return nil
-end
-
-function Ch.OnKill(sourceGuid, destGuid, destName)
-  local id = Ch.CreatureId(destGuid)
-  if not id then return end -- players and anything else: not counted here
+local function addKill(id, name, xp, n, own)
   local e = entry("kills", id)
   if not e then return end
-  local now = ns.Now()
-  e.n = num(e.n) + 1
-  local own = sourceGuid == ns.playerGuid
-  if not own and sourceGuid then
-    local pet = ns.Try(UnitGUID, "pet")
-    own = pet ~= nil and not ns.IsSecret(pet) and pet == sourceGuid
-  end
-  e.own = num(e.own) + (own and 1 or 0)
-  e.xp = num(e.xp)
+  e.n = num(e.n) + n
+  e.own = num(e.own) + (own and n or 0)
+  e.xp = num(e.xp) + xp
   e.looted = num(e.looted)
-  e.last = now
+  e.last = ns.Now()
   e.zone = ns.rec.zone
-  local name = NonEmpty(destName)
   if name then e.name = name end
-
-  local t = GetTime()
-  recentPos = recentPos % RECENT_KILLS + 1
-  recentName[recentPos], recentId[recentPos], recentAt[recentPos] = name, id, t
-  if name then
-    local xp = takePendingXp(name, t)
-    if xp then
-      addXp(id, xp)
-      recentAt[recentPos] = nil
-    end
-  end
   ns.Debug("chronicle: killed %s (%s)%s, %d in all", name or "?", id, own and ", mine" or "", e.n)
 end
 
--- The combat log: only PARTY_KILL matters. Fields: 2 subevent, 4 sourceGUID, 8 destGUID, 9 destName.
-local cleuInfo = ns.Fn("CombatLogGetCurrentEventInfo")
-
-local function killFields(_, sub, _, sourceGuid, _, _, _, destGuid, destName)
-  return sub, sourceGuid, destGuid, destName
-end
-
-local function onCombatEvent(_, ...)
-  if not chronicleOn() then return end
-  local sub, sourceGuid, destGuid, destName
-  if cleuInfo then
-    sub, sourceGuid, destGuid, destName = killFields(ns.Try(cleuInfo))
-  else
-    -- Older clients pass the fields as the event's arguments.
-    sub, sourceGuid, destGuid, destName = killFields(...)
+-- A unit seen: remember its creature id by name, and settle any kills waiting on that name.
+function Ch.LearnUnit(unit)
+  if not chronicleOn() or type(unit) ~= "string" then return end
+  local guid = ns.Try(UnitGUID, unit)
+  if not guid or ns.IsSecret(guid) then return end
+  local id = Ch.CreatureId(guid)
+  if not id then return end
+  local name = ns.Try(UnitName, unit)
+  if type(name) ~= "string" or ns.IsSecret(name) or name == "" then return end
+  if namesToId[name] ~= id then
+    namesToId[name] = id
+    local m = ns.rec and type(ns.rec.kills) == "table" and ns.rec.kills[id]
+    if type(m) == "table" and not NonEmpty(m.name) then m.name = name end
   end
-  if type(sub) ~= "string" or ns.IsSecret(sub) or sub ~= "PARTY_KILL" then return end
-  if ns.IsSecret(destGuid) or ns.IsSecret(sourceGuid) then return end
-  if ns.IsSecret(destName) then destName = nil end
-  Ch.OnKill(sourceGuid, destGuid, destName)
+  local waiting = pendingByName[name]
+  if waiting then
+    pendingByName[name] = nil
+    pendingCount = pendingCount - 1
+    addKill(id, name, waiting.xp, waiting.n, waiting.own)
+  end
 end
 
 -- COMBATLOG_XPGAIN_FIRSTPERSON ("%s dies, you gain %d experience.") as a Lua pattern, anchored at
@@ -234,27 +209,49 @@ local function buildXpPattern()
   return xpPattern
 end
 
-function Ch.OnXpMessage(text)
-  if type(text) ~= "string" or ns.IsSecret(text) then return end
+-- The kill line in chat. Returns the creature's name and the experience, or nil.
+function Ch.ParseXpMessage(text)
+  if type(text) ~= "string" or ns.IsSecret(text) then return nil end
   local pattern = buildXpPattern()
-  if not pattern then return end
+  if not pattern then return nil end
   local a, b = text:match(pattern)
-  if not a then return end
+  if not a then return nil end
   local name = nameAt == 1 and a or b
   local xp = tonumber(xpAt == 1 and a or b)
-  if not name or not xp then return end
-  local t = GetTime()
-  for k = 0, RECENT_KILLS - 1 do
-    local i = (recentPos - k - 1) % RECENT_KILLS + 1
-    local at = recentAt[i]
-    if at and recentName[i] == name and t - at <= XP_WINDOW then
-      recentAt[i] = nil
-      addXp(recentId[i], xp)
-      return
+  if not name or not xp then return nil end
+  return name, xp
+end
+
+function Ch.OnXpMessage(text)
+  local name, xp = Ch.ParseXpMessage(text)
+  if not name then return end
+  local own = solo()
+  -- The target is usually what just died; learn it before looking the name up.
+  Ch.LearnUnit("target")
+  local id = namesToId[name]
+  if id then
+    addKill(id, name, xp, 1, own)
+    return
+  end
+  local w = pendingByName[name]
+  if w then
+    w.n, w.xp, w.own = w.n + 1, w.xp + xp, w.own and own
+    return
+  end
+  if pendingCount >= PENDING_MAX then
+    -- Drop the oldest waiting name rather than grow without bound.
+    local oldestName, oldestAt
+    for k, v in pairs(pendingByName) do
+      if not oldestAt or v.at < oldestAt then oldestName, oldestAt = k, v.at end
+    end
+    if oldestName then
+      pendingByName[oldestName] = nil
+      pendingCount = pendingCount - 1
     end
   end
-  pendingPos = pendingPos % RECENT_KILLS + 1
-  pendingName[pendingPos], pendingXp[pendingPos], pendingAt[pendingPos] = name, xp, t
+  pendingByName[name] = { n = 1, xp = xp, own = own, at = GetTime() }
+  pendingCount = pendingCount + 1
+  ns.Debug("chronicle: killed %s, waiting to learn its id", name)
 end
 
 -- Loot ----------------------------------------------------------------------------------------
@@ -347,6 +344,7 @@ end
 function Ch.OnLootOpened()
   slotCount = 0
   if not chronicleOn() then return end
+  Ch.LearnUnit("target") -- the corpse being looted is usually the target: its name for the kills table
   local n = ns.Try(ns.Fn("GetNumLootItems"))
   if type(n) ~= "number" or ns.IsSecret(n) then return end
   local sourceInfo = ns.Fn("GetLootSourceInfo")
@@ -408,10 +406,12 @@ function Ch.Counts()
   return counted.kills, counted.loot
 end
 
-ns.On("COMBAT_LOG_EVENT_UNFILTERED", onCombatEvent)
 ns.On("CHAT_MSG_COMBAT_XP_GAIN", function(_, text)
   if chronicleOn() then Ch.OnXpMessage(text) end
 end)
+ns.On("PLAYER_TARGET_CHANGED", function() Ch.LearnUnit("target") end)
+ns.On("UPDATE_MOUSEOVER_UNIT", function() Ch.LearnUnit("mouseover") end)
+ns.On("NAME_PLATE_UNIT_ADDED", function(_, unit) Ch.LearnUnit(unit) end)
 ns.On("LOOT_OPENED", function() Ch.OnLootOpened() end)
 ns.On("LOOT_SLOT_CLEARED", function(_, slot) Ch.OnSlotCleared(slot) end)
 ns.On("LOOT_CLOSED", function() Ch.OnLootClosed() end)

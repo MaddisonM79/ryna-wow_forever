@@ -28,10 +28,13 @@ Per character (keyed by its GUID):
 - Kills and loot (the Chronicle, below).
 
 **Kills and loot** are running totals on the character record, not journal events: a session has
-thousands of kills, and an event each would make the file large and logout slow. `kills` counts
-each kind of creature you or your group killed (by creature id: how many, how many were your or your
-pet's killing blow, the experience they gave you, how many of their corpses you opened, and the last
-kill's time and zone); `loot` counts each item you looted (how often, how many in all, and from what:
+thousands of kills, and an event each would make the file large and logout slow. Nothing here reads
+the combat log, which this client keeps from addons (asking for it raised the "blocked from an action
+only available to the Blizzard UI" dialog, 0.2.2): a kill is the chat line the game prints for it,
+"X dies, you gain N experience", and the creature's id comes from the units you target, mouse over or
+see on nameplates, joined on the name. `kills` counts each kind of creature (by creature id: how many,
+how many of those were solo kills, the experience they gave you, how many of their corpses you opened,
+and the last kill's time and zone); `loot` counts each item you looted (how often, how many in all, and from what:
 up to 8 sources, a creature, a game object, a container item or fishing); `objects` counts the chests,
 veins, herbs and pools you opened. A corpse reopened isn't counted twice. Money and currency aren't
 counted (gold is the journal's). Caps keep the file small: 2000 creatures, 3000 items and 2000

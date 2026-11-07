@@ -70,11 +70,11 @@ end)
 -- available to the Blizzard UI" dialog), say which call it was, in chat and in RynaDB.blocked, so it
 -- can be found without a taint log.
 local function noteBlocked(event, addon, fn)
-  if addon ~= ns.NAME then return end
   local what = tostring(fn)
-  ns.db.blocked = { event = event, fn = what, at = ns.Now(), addon = ns.VERSION }
-  ns.PrintRaw(string.format("|cffff6060Ryna|r: the client %s a call to %s (version %s). Please report this line.",
-    event == "ADDON_ACTION_FORBIDDEN" and "forbade" or "blocked", what, ns.VERSION))
+  if addon == ns.NAME then ns.db.blocked = { event = event, fn = what, at = ns.Now(), addon = ns.VERSION } end
+  -- Printed for every addon, not only this one: the client may blame a different name than the folder's.
+  ns.PrintRaw(string.format("|cffff6060Ryna|r: the client %s a call to %s by %s (Ryna %s). Please report this line.",
+    event == "ADDON_ACTION_FORBIDDEN" and "forbade" or "blocked", what, tostring(addon), ns.VERSION))
 end
 ns.On("ADDON_ACTION_FORBIDDEN", noteBlocked)
 ns.On("ADDON_ACTION_BLOCKED", noteBlocked)
