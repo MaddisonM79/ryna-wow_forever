@@ -8,6 +8,7 @@ import type {
   ModChange,
   ModToggleResult,
   ModView,
+  Status,
   UploadedFight,
 } from "./api";
 
@@ -277,4 +278,40 @@ export function installedMessage(r: InstallResult): string[] {
   ];
   if (r.gameRunning) lines.push("The game is running: /reload or log out and in to load it.");
   return lines;
+}
+
+/** The header's chip: where the agent is, in one word, and the fix words when it's a problem. */
+export interface HeaderState {
+  state: "connected" | "syncing" | "problem" | "paused" | "signedOut";
+  /** "Connected", "Syncing…", "Problem", "Paused", "Signed out". */
+  text: string;
+  /** For a problem: what the last run recorded as the fix (its advice, else the error itself). */
+  detail: string | null;
+  /** The chip's style: green, blue, red, amber, grey. */
+  chip: "pushed" | "pushing" | "error" | "update" | "waiting";
+}
+
+/** What the header's chip needs from the status. */
+export type HeaderStatus = Pick<Status, "signedIn" | "watching" | "lastRun" | "lastError"> & {
+  accounts: Pick<AccountView, "phase">[];
+};
+
+/**
+ * The state, not the rule: Signed out (grey) when there's no sign-in; Paused (amber) when signed
+ * in but not watching; Syncing… (blue) while an account is being pushed; Problem (red) with the
+ * fix words when the last run failed or this session's loop reported a failure that hasn't
+ * cleared; else Connected (green).
+ */
+export function headerState(s: HeaderStatus): HeaderState {
+  if (!s.signedIn) return { state: "signedOut", text: "Signed out", detail: null, chip: "waiting" };
+  if (!s.watching) return { state: "paused", text: "Paused", detail: null, chip: "update" };
+  if (s.accounts.some((a) => a.phase === "pushing")) {
+    return { state: "syncing", text: "Syncing…", detail: null, chip: "pushing" };
+  }
+  const failed = s.lastRun !== null && !s.lastRun.ok;
+  if (failed || s.lastError) {
+    const detail = s.lastRun?.advice ?? s.lastRun?.error ?? s.lastError ?? "the last sync didn't finish";
+    return { state: "problem", text: "Problem", detail, chip: "error" };
+  }
+  return { state: "connected", text: "Connected", detail: null, chip: "pushed" };
 }

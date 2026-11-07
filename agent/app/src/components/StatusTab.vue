@@ -2,7 +2,8 @@
 // The at-a-glance page: the agent's card (account, state, last sync, version, updates) and one
 // card per core, side by side, each a few short rows, so the window's width is used and nothing
 // scrolls.
-import { ago, when } from "../describe";
+import { computed } from "vue";
+import { ago, headerState, when } from "../describe";
 import { now, status } from "../store";
 import type { PageId } from "../tabs";
 import { corePage } from "../tabs";
@@ -10,6 +11,8 @@ import CoreCard from "./CoreCard.vue";
 import UpdateControl from "./UpdateControl.vue";
 
 const emit = defineEmits<{ open: [page: PageId] }>();
+/** The same state as the header's chip. */
+const head = computed(() => (status.value ? headerState(status.value) : null));
 </script>
 
 <template>
@@ -18,27 +21,20 @@ const emit = defineEmits<{ open: [page: PageId] }>();
       <h2>Agent</h2>
       <p class="lead">
         <strong v-if="status.signedIn">{{ status.signedInAs ?? "Signed in" }}</strong>
-        <span v-else class="chip waiting">Not signed in</span>
+        <span v-else class="muted">Not signed in</span>
       </p>
       <dl class="glance">
-        <div>
-          <dt>Syncing</dt>
+        <div v-if="head">
+          <dt>State</dt>
           <dd>
-            <span v-if="status.signedIn" class="chip" :class="status.watching ? 'pushed' : 'waiting'">
-              {{ status.watching ? "While open" : "Paused" }}
-            </span>
-            <span v-else class="muted">Sign in first</span>
+            <span class="chip" :class="head.chip">{{ head.text }}</span>
+            <span v-if="head.detail" class="error-text">{{ head.detail }}</span>
           </dd>
         </div>
         <div>
           <dt>Last sync</dt>
           <dd>
-            <template v-if="status.lastRun">
-              <span :title="when(status.lastRun.at)">{{ ago(status.lastRun.at, now) }}</span>
-              <span v-if="!status.lastRun.ok" class="error-text">
-                · {{ status.lastRun.advice ?? status.lastRun.error ?? "it didn't finish" }}
-              </span>
-            </template>
+            <span v-if="status.lastRun" :title="when(status.lastRun.at)">{{ ago(status.lastRun.at, now) }}</span>
             <span v-else class="muted">Not yet</span>
           </dd>
         </div>

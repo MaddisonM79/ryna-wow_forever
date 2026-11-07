@@ -1,21 +1,23 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { api } from "../api";
+import { headerState } from "../describe";
 import { cancelSignIn, login, loginBusy, loginError, signIn, signOut, status } from "../store";
 
 const who = computed(() => status.value?.signedInAs ?? "you");
-const syncLabel = computed(() => (status.value?.watching ? "Syncing while open" : "Not syncing"));
+/** The chip is the agent's state (Connected, Syncing…, Problem, Paused, Signed out), not the rule. */
+const head = computed(() => (status.value ? headerState(status.value) : null));
 </script>
 
 <template>
   <header>
     <div class="who">
       <strong class="brand">ryna</strong>
-      <template v-if="status?.signedIn">
-        <span>Signed in as <strong>{{ who }}</strong></span>
-        <span class="chip" :class="status.watching ? 'pushed' : 'waiting'">{{ syncLabel }}</span>
+      <span v-if="status?.signedIn">Signed in as <strong>{{ who }}</strong></span>
+      <template v-if="head">
+        <span class="chip" :class="head.chip" role="status">{{ head.text }}</span>
+        <span v-if="head.detail" class="error-text detail">{{ head.detail }}</span>
       </template>
-      <span v-else-if="status" class="muted">Not signed in</span>
     </div>
     <div class="actions">
       <template v-if="status?.signedIn">

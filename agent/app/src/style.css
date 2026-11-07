@@ -91,6 +91,11 @@ header .actions,
   margin-right: 4px;
 }
 
+/* The fix words beside a Problem chip. */
+header .detail {
+  font-size: 12px;
+}
+
 main {
   flex: 1;
   min-height: 0;
