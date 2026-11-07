@@ -8,4 +8,5 @@ local _, ns = ...
 
 ns.CREDITS = {
   { name = "Rencas Copperbeard", line = "A true friend I have known way too long. Thank you for your testing, even if you can't read simple directions. Cheers!" },
+  { name = "sgersz", line = "Always finding the pedantic answers to life's most interesting questions, like should we or should we not /who. They were right. The Linux community owes them a thank you." },
 }
