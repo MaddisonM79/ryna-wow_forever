@@ -6,14 +6,10 @@ max_line_length = 120
 exclude_files = { ".luacheckrc" }
 
 -- What the core addon defines: its SavedVariable, the mod API (`Ryna`, which the mods read), the
--- companion app's status file, its slash command and its key binding (the function Bindings.xml
--- calls and the binding's header and name).
+-- companion app's status file and its slash command.
 globals = {
   "StaticPopupDialogs", -- the reload prompt is added to the client's dialog table
   "Ryna",
-  "BINDING_HEADER_RYNA",
-  "BINDING_NAME_RYNA_CENSUS_NEXT",
-  "Ryna_CensusNext",
   "RynaAgentStatus",
   "RynaDB",
   "SLASH_RYNA1",

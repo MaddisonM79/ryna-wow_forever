@@ -8,7 +8,7 @@ local L = ns.L
 local St = {}
 ns.Status = St
 
--- The core's, for the files here that show times and outside text (Census.lua, Tooltip.lua).
+-- The core's, for the files here that show times and outside text (Tooltip.lua).
 St.Ago = ns.API.Ago
 St.Plain = ns.API.Plain
 
@@ -28,16 +28,10 @@ function St.Counts()
   return c
 end
 
--- The Status tab's census line: off, the running sweep, or the last one.
+-- The Status tab's census line: on or off (Ryna sends no /who of its own, so there is no sweep
+-- to report).
 local function censusLine()
-  local C = ns.Census
-  if not C then return nil end
-  if not ns.Setting("census") then return L["Census: off"] end
-  if C.Running() or C.Mode() == "blocked" then return string.format(L["Census: %s"], C.StatusLine()) end
-  local l = C.LastSweep()
-  if not l then return L["Last census sweep: none yet"] end
-  return string.format(L["Last census sweep: %s, %s"],
-    ns.Plural(l.players or 0, L["%d player"], L["%d players"]), St.Ago(l.at) or "?")
+  return ns.Setting("census") and L["Census: on"] or L["Census: off"]
 end
 
 -- The Status tab's Chronicle line: "Chronicle: 41 creatures, 112 items", or off.

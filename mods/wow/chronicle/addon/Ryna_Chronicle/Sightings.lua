@@ -68,7 +68,7 @@ end
 -- info: { guid, fullName, level, class, race, guild, zone, batch, faction }
 -- Nothing is written while the census setting is off, whatever the source (chat, group, roster).
 -- quiet: no debug line per sighting (group and roster print one summary). Returns the event.
--- batch is the /who sweep's id, carried only by `who` sightings. faction ("Horde" or "Alliance")
+-- batch is the /who answer's id, carried only by `who` sightings. faction ("Horde" or "Alliance")
 -- is carried only by nearby sightings, the one source that sees the other faction; chat, group,
 -- roster and /who sightings are the observer's own faction by construction and leave it out.
 function S.Seen(source, info, quiet)

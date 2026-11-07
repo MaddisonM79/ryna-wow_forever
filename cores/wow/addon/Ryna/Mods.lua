@@ -15,7 +15,7 @@
 --   Ryna.DB()                         RynaDB (nil before the client loads it). A mod writes only
 --                                     under its own key (RynaDB[<mod id>]) or in the character
 --                                     record it keeps; Chronicle, the first mod, keeps the keys
---                                     the companion app reads (characters, guilds, census, client)
+--                                     the companion app reads (characters, guilds, client)
 --   Ryna.Journal.Add(type, fields, quiet), .Session(), .Seq(), .Count()
 --   Ryna.Settings.Get(key), .Set(key, value), .All(), .AddDefaults(defaults), .COMBAT_LOG_MODES
 --   Ryna.Panel.AddTab{ key, label, order, build(frame), layout(stack, settings) }
@@ -23,7 +23,6 @@
 --   Ryna.Panel.Refresh(), .RefreshIfShown(), .Widgets (text, button, link, checkbox, toggle, WIDTH)
 --   Ryna.Slash.Add{ word, run(arg), help, order }   a /ryna <word> command and its help line
 --   Ryna.Slash.AddStatusLines(order, fn)   fn() -> lines for /ryna status, at `order`
---   Ryna.SetBinding(name, fn)         the function behind a Bindings.xml binding (RYNA_CENSUS_NEXT)
 --   Ryna.L                            the core's strings (a mod's own L falls back to it)
 --   Ryna.Try, .Fn, .IsSecret, .NonEmpty, .Now, .Locale, .Print, .PrintRaw, .Debug, .DebugChanged,
 --   .Debugging, .Plural, .N, .Run, .After, .Debounce, .ReportError, .CanonicalName, .MoneyText,
@@ -35,7 +34,6 @@
 -- (Advanced), its commands at 10 (status), 20 (combatlog) and 40 (debug).
 
 local _, ns = ...
-local L = ns.L
 
 local R = {}
 Ryna = R
@@ -163,26 +161,3 @@ R.Slash = {
   Add = function(spec) return ns.SlashAdd(spec) end,
   AddStatusLines = adder(ns.slashStatusSources),
 }
-
--- Key bindings: Bindings.xml names a global function per binding; each calls the function a mod set
--- here, or says the mod isn't loaded.
-local bindings = {}
-
-function R.SetBinding(name, fn)
-  if type(name) == "string" and type(fn) == "function" then bindings[name] = fn end
-end
-
-function ns.RunBinding(name, ...)
-  local fn = bindings[name]
-  if not fn then
-    ns.Print(L["that key binding belongs to a mod that isn't loaded."])
-    return
-  end
-  ns.Run(name, fn, ...)
-end
-
--- The binding Bindings.xml calls (Key Bindings > AddOns > Ryna > Next census query). A key press is
--- a hardware event, like a click, so the mod's function runs from here, synchronously.
-function Ryna_CensusNext()
-  ns.RunBinding("RYNA_CENSUS_NEXT")
-end

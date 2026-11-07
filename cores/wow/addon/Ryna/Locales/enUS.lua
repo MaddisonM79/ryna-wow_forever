@@ -113,7 +113,7 @@ L["Other settings"] = true
 L["Update available"] = true
 L["Click: open Ryna. Drag: move this button."] = true
 
--- Slash.lua: the key binding, in Key Bindings > AddOns: its header (the addon's name) and its name.
+-- Slash.lua
 -- Setting states in /ryna status and /ryna debug ("debug messages are on").
 L["on"] = true
 L["off"] = true
@@ -141,18 +141,12 @@ L["companion app: %s"] = true
 L["%s; last: %s"] = true
 L["%d caught error"] = true
 L["%d caught errors"] = true
-L["Ryna"] = true
-L["Next census query"] = true
 -- %s: the mode's command word (instances, always, never), then on, off or unavailable.
 L["combat log: setting %s, currently %s"] = true
 L["unavailable"] = true
 L["/ryna combatlog instances||always||never: when the addon turns combat logging on"] = true
 L["combat logging: %s"] = true
 L["usage: /ryna combatlog instances||always||never (now %s)"] = true
-
--- Mods.lua
--- A key binding pressed while the mod behind it (Chronicle, for Next census query) is off.
-L["that key binding belongs to a mod that isn't loaded."] = true
 
 -- Init.lua
 -- The login line, after "Ryna 0.2.1: ".

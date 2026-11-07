@@ -207,11 +207,11 @@ function templateHeader(code, language, name, isMod) {
 --
 -- How to translate:
 --   - Each line is L["English"] = nil. Replace nil with your text in double quotes:
---       L["Run census now"] = "..."
+--       L["Take part in the census"] = "..."
 --     A line left as nil shows the English, so a partial translation is fine.
 --   - Keep every %s and %d, in the same order (WoW's string.format can't reorder them).
 --   - Keep "||" as it is: it prints one "|" in chat. Inside a command (/ryna debug on||off||toggle,
---     /ryna census stop, /who, /reload) keep the words in English: they are what the player types.
+--     /who, /reload) keep the words in English: they are what the player types.
 --   - Plurals: a pair like "%d player" / "%d players" is used for 1 / everything else.
 --     For a language with more forms, use the wording that reads best for most numbers.
 --   - Keys are the English text and must stay exactly as they are; only change the values.

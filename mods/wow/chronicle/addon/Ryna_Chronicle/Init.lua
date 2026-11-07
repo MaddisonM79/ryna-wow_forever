@@ -10,6 +10,9 @@ local _, ns = ...
 if ns.off then return end
 
 local function onLogin()
+  -- RynaDB.census held the retired /who sweep's state (its pace, mode and last summary); nothing
+  -- reads it now, so it goes.
+  if ns.db then ns.db.census = nil end
   local rec = ns.Character.Login()
   ns.Journal.Add("session", { kind = "login", clock = time(), zone = rec.zone })
   ns.Debug("login: record built for %s, level %s %s, in %s", rec.fullName, rec.level, rec.class, rec.zone)

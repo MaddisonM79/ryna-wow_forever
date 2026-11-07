@@ -261,7 +261,6 @@ end)
 --   census          take part in the census at all: when off, no `seen` events from any source
 --   groupMembers    record the other players in my group (needs census)
 --   nearbyPlayers   record players whose nameplate, target or mouseover I see (needs census)
---   censusSweep     run a /who census sweep every 30 minutes while parked in a city (needs census)
 --   chronicle       count kills and loot into the character record (Chronicle's Chronicle.lua)
 --   tooltips        show my own kill and loot numbers on creature and item tooltips (Chronicle's Tooltip.lua)
 --   debug           print what the addon is doing to chat (ns.Debug)
@@ -271,11 +270,15 @@ end)
 --                   "status", and Defaults keeps it
 ns.SETTING_DEFAULTS = {
   chatSightings = true, census = true, groupMembers = true, nearbyPlayers = true, advancedCombatLog = true,
-  censusSweep = true, chronicle = true, tooltips = true, debug = false,
+  chronicle = true, tooltips = true, debug = false,
 }
+-- Settings that are gone, removed from RynaDB.settings on load. censusSweep switched the automated
+-- /who sweep, which was deleted: Ryna never sends /who itself (the player's own /who is still read).
+ns.RETIRED_SETTINGS = { "censusSweep" }
 ns.MINIMAP_DEFAULT_ANGLE = 225
 
 function ns.ApplySettingDefaults(settings)
+  for _, key in ipairs(ns.RETIRED_SETTINGS) do settings[key] = nil end
   if not ns.COMBAT_LOG_MODES[settings.combatLog] then settings.combatLog = "instances" end
   for key, default in pairs(ns.SETTING_DEFAULTS) do
     if type(settings[key]) ~= "boolean" then settings[key] = default end
@@ -305,7 +308,7 @@ end
 
 -- RynaDB: rebuilt around whatever the client restored (possibly nothing). Only `characters`,
 -- `guilds` and `journal` are carried over; everything in them is refreshed from the live game (by
--- Chronicle, which writes `characters`, `guilds`, `census` and `client`).
+-- Chronicle, which writes `characters`, `guilds` and `client`).
 function ns.InitDB()
   local db = _G.RynaDB
   if type(db) ~= "table" or db.schema ~= ns.SCHEMA then

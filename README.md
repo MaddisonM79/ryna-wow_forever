@@ -67,6 +67,17 @@ said. Nothing is read from anywhere but the game's own folder, and the app signs
 backend you point it at. Your game account's folder name is hashed before it leaves the computer;
 only its last four characters go along as a label, so you can tell two accounts apart.
 
+The census is the other players your characters see: nearby (nameplates, target, mouseover), in
+chat (who spoke, never what), in your group and guild, and in the answers to a `/who` you type
+yourself. Ryna never sends `/who` on its own. The census is about everyone and names no one in its
+numbers. Looking up a character by name on ryna.io shows what `/who` would: name, level, class,
+guild, and the zone (never the subzone), with when it was last seen only as "today", "this week",
+"this month" or "older", never a time of day. There are no per-character views of hours or days;
+those exist only as totals across all players. Every lookup is logged for the operator, so someone
+searching one name over and over is visible, and lookups need a ryna.io account with the WoW app.
+We can't verify that a removal request comes from the account holder, so, like Warcraft Logs, we
+don't offer one; these limits are what protect a player instead.
+
 The data is never sold and never used for advertising. That includes the pooled census of players
 seen in the world, which exists so the people who play can see how many of them there are and
 when. It is for the community that plays, and for nothing else.
@@ -88,7 +99,7 @@ workspace (`Cargo.toml` at the root) holds the agent and the cores' Rust halves.
   `core.json`; the Rust core `cores/wow/core` (crate `ryna-wow-core`: the SavedVariables reader,
   install discovery, the combat-log tailer and fight parser, the pusher, the watch loop and the addon
   installer); the in-game addon `cores/wow/addon/Ryna`, tagged for Forever, the plumbing its mods
-  build on (`cores/wow/addon/README.md`: what is recorded, settings, the census sweep, translations,
+  build on (`cores/wow/addon/README.md`: what is recorded, settings, your own `/who`, translations,
   the mod API); and the scrubbed test fixtures in `cores/wow/fixtures`. Its mods are in `mods/wow`:
   Chronicle (`mods/wow/chronicle`), everything recorded about a character.
 - `mods/`: each core's mods (`mods/wow`), from stage 2 of the design.

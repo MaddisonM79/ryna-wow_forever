@@ -3,11 +3,11 @@
 --
 -- How to translate:
 --   - Each line is L["English"] = nil. Replace nil with your text in double quotes:
---       L["Run census now"] = "..."
+--       L["Take part in the census"] = "..."
 --     A line left as nil shows the English, so a partial translation is fine.
 --   - Keep every %s and %d, in the same order (WoW's string.format can't reorder them).
 --   - Keep "||" as it is: it prints one "|" in chat. Inside a command (/ryna debug on||off||toggle,
---     /ryna census stop, /who, /reload) keep the words in English: they are what the player types.
+--     /who, /reload) keep the words in English: they are what the player types.
 --   - Plurals: a pair like "%d player" / "%d players" is used for 1 / everything else.
 --     For a language with more forms, use the wording that reads best for most numbers.
 --   - Keys are the English text and must stay exactly as they are; only change the values.
@@ -122,7 +122,7 @@ L["Other settings"] = nil
 L["Update available"] = nil
 L["Click: open Ryna. Drag: move this button."] = nil
 
--- Slash.lua: the key binding, in Key Bindings > AddOns: its header (the addon's name) and its name.
+-- Slash.lua
 -- Setting states in /ryna status and /ryna debug ("debug messages are on").
 L["on"] = nil
 L["off"] = nil
@@ -150,18 +150,12 @@ L["companion app: %s"] = nil
 L["%s; last: %s"] = nil
 L["%d caught error"] = nil
 L["%d caught errors"] = nil
-L["Ryna"] = nil
-L["Next census query"] = nil
 -- %s: the mode's command word (instances, always, never), then on, off or unavailable.
 L["combat log: setting %s, currently %s"] = nil
 L["unavailable"] = nil
 L["/ryna combatlog instances||always||never: when the addon turns combat logging on"] = nil
 L["combat logging: %s"] = nil
 L["usage: /ryna combatlog instances||always||never (now %s)"] = nil
-
--- Mods.lua
--- A key binding pressed while the mod behind it (Chronicle, for Next census query) is off.
-L["that key binding belongs to a mod that isn't loaded."] = nil
 
 -- Init.lua
 -- The login line, after "Ryna 0.2.1: ".

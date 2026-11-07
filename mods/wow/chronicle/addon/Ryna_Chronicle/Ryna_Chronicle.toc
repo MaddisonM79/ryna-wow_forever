@@ -29,5 +29,4 @@ Status.lua
 Chronicle.lua
 Tooltip.lua
 Tabs.lua
-Slash.lua
 Init.lua

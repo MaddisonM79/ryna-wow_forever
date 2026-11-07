@@ -1,8 +1,7 @@
 -- Slash commands: /ryna (opens the panel), /ryna status, /ryna combatlog instances|always|never,
 -- /ryna debug on|off|toggle, /ryna help, and whatever a mod adds through Ryna.Slash.Add
--- (Chronicle: /ryna census). Status and
--- help go to the default chat frame; a mod adds /ryna status lines through Ryna.Slash.AddStatusLines.
--- Also the key binding's header and name (Bindings.xml; the function behind it is in Mods.lua).
+-- (none of Chronicle's today). Status and help go to the default chat frame; a mod adds /ryna status
+-- lines through Ryna.Slash.AddStatusLines.
 -- The chat frame reads "|" as the start of an escape code, so a literal one is written "||".
 -- Command words (status, debug, on, off, ...) are never translated.
 
@@ -148,8 +147,3 @@ end
 
 SLASH_RYNA1 = "/ryna"
 SlashCmdList.RYNA = function(msg) ns.Run("/ryna", ns.Slash, msg) end
-
--- The key binding (Bindings.xml): Key Bindings -> AddOns -> Ryna -> Next census query. The names are
--- the game's BINDING_* globals, set here so they're localised; the function is Mods.lua's.
-BINDING_HEADER_RYNA = L["Ryna"]
-BINDING_NAME_RYNA_CENSUS_NEXT = L["Next census query"]

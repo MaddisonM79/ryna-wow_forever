@@ -7,7 +7,7 @@ There are two, installed side by side by the companion app:
 - **Ryna** (`cores/wow/addon/Ryna`), the WoW core's in-game half and only the plumbing: `RynaDB`
   and its schema, the event dispatcher, the settings and their defaults, the journal (append,
   dedupe, prune), the settings panel and its tabs, the strings (`Locales/`), `/ryna`, error
-  reporting, the minimap button, the key binding, reading the app's `AgentStatus.lua`, and the
+  reporting, the minimap button, reading the app's `AgentStatus.lua`, and the
   combat log (`CombatLog.lua`: turning it on where the mode wants it, and Advanced combat logging),
   which is how the app gets fights whatever mods are on. On its own it records nothing about a
   character.
@@ -73,7 +73,7 @@ gold or more, group changes, and **sightings** of other players (see the census 
 
 A sighting records only *who* and *where*: the other player's GUID, name, and level, class, race,
 guild and zone where the client gives them. Sightings come from your group, from your guild roster
-(online members), from players near you, from chat, and from the census sweep (`/who`, below).
+(online members), from players near you, from chat, and from your own `/who` (below).
 
 **Nearby** (source `nameplate`, `target` or `mouseover`): a player whose nameplate appears, whom you
 target, or whom you mouse over gives their level, class, race and guild as the client shows them,
@@ -104,98 +104,43 @@ who talks in chat and walks past isn't counted twice. The one exception: a sight
 is recorded after an earlier one in the window that didn't (a chat line has no level; the nameplate
 does). Group and guild-roster sightings are always recorded and count towards the window. The
 window is kept by GUID and by name, since a `/who` row has no GUID: a player seen in chat or nearby
-isn't counted again by a sweep in the same 10 minutes, and the other way round.
+isn't counted again by your `/who` in the same 10 minutes, and the other way round.
 
-### The census sweep (`/who`)
+### Your own `/who`
 
-A sweep asks the server who is online, the way `/who` does, to count the realm's players by level,
-class and zone. **The queries are generic: level brackets, class names and zone names, never a
-person's name, and nothing about you is sent.**
+Ryna never sends /who itself. When you type /who, the results are recorded as sightings, like
+players you see on nameplates or in chat. The client allows `/who` only from a key press or a
+click, and an addon driving that is automation, so the census sweep Ryna once had (timed or
+click-by-click `/who` queries, its key binding and `/ryna census`) is gone.
 
-- **The plan**: one query per level bracket, `1-9`, `10-19`, `20-29`, `30-39`, `40-49`, `50-59` and
-  `60`. The server answers at most 50 players per query, so a bracket that comes back with 50 (or
-  says there are more) is asked again once per class (`20-29 c-"Warrior"`, and so on for the nine
-  classes), and a bracket-and-class that is still capped is asked once per zone its answer named
-  (`60 c-"Mage" z-"Orgrimmar"`, at most 10 zones). A sweep sends at most 80 queries.
-- **The pace**: the server throttles `/who` (on Forever a query under about 5 seconds after the
-  last one is turned away), so queries go out at least 5 seconds apart, measured from the send,
-  and the next waits 10 seconds after an empty, failed or unanswered one (no answer 8 seconds after
-  the send counts as unanswered). An uncapped sweep is 7 queries, about 35 seconds. A query the
-  game refuses is never sent again from a timer (see "Three modes" below).
-- **When the server says "too soon"**: a query sent too soon gets no answer, only the yellow system
-  line "You must wait a moment longer before using /who again." (the client's `WHO_COOLDOWN_SHORT`;
-  `WHO_COOLDOWN`, "You must wait %d seconds before using /who again.", is matched too, and its
-  seconds are waited out when they are longer). Ryna matches the line in the client's language from
-  those globals, and by the English text where a client lacks them. That query isn't a miss and
-  doesn't count against the mode: it goes back to the head of the queue, the answer timeout for it
-  is dropped, the spacing grows by 2 seconds (5 to start with, at most 12), and Ryna prints, once
-  per refusal, "census sweep: the server wants about 7s between queries; next query in 7s." (the
-  wait counts from the refusal). The learned spacing is kept in `RynaDB.census.paceSec`, so later
-  sessions start from it; it never shrinks by itself.
-- **Three modes**: some clients (Forever 1.60.1 on the 12.x engine) treat `C_FriendList.SendWho` as
-  a hardware-event call: the game accepts it only inside a click or a typed command, and refuses it
-  from a timer ("Interface action failed because of an AddOn"). So **the first query of a sweep you
-  start is sent from the click itself** (the button's `OnClick`, or the `/ryna census` command as it
-  runs), never from a timer, and the sweep learns which kind of client it is on, kept in
-  `RynaDB.census.mode`:
-  - `timer`: a query sent from a timer was answered. A sweep paces itself as above, and the
-    automatic city sweep can run. The Census tab's button reads **Run census now**.
-  - `click`: the first query (from the click) was answered, but a timer-sent one was refused or got
-    no answer in 8 seconds. The sweep goes on **one query per click**: the button reads **Next
-    census query (2 of 7)**, and each press, or each `/ryna census`, sends exactly one query (not
-    within the spacing of the last, and not while one is waiting for its answer); the status beside
-    it shows the progress and counts down to the next query ("Sweeping: 2 of 7 queries, 50 players
-    so far; next query in 3s", then "ready for the next query"), and the sweep is done when its
-    plan is. A press before then sends nothing and says "census sweep: next query in 3s.". Between clicks the Who window
-    gets its events back, so your own `/who` works meanwhile. The automatic sweep can't click, so
-    the "Run a realm census while I'm in a city" switch is greyed with the note "The game only
-    allows /who from a click on this client" and the city check does nothing (the setting is kept
-    for clients where it works). An automatic sweep that finds this out stops and says so once.
-  - `blocked`: even the query sent from the click was refused (`ADDON_ACTION_BLOCKED` or
-    `ADDON_ACTION_FORBIDDEN` naming Ryna or `SendWho`), or got no answer in 8 seconds on a client
-    where `/who` has never worked. The sweep stops at once, Ryna says once "the game doesn't let
-    addons ask /who here; the census uses what you see instead", and `RynaDB.census.whoBlocked`
-    keeps `{ at, fn }` (the function the game named; `noAnswer = true` instead when it was the
-    silence). The button reads **Census: not allowed by the game**, greyed, with a **Try again**
-    link beside it that forgets the mode, so the next sweep learns it again.
-
-  Until a mode is learned the sweep starts as `timer`. Where `/who` has worked before, a first
-  query with no answer is the server throttling: that sweep stops ("the server didn't answer
-  /who") and the mode stays.
+- **What it reads**: when the answer arrives (`WHO_LIST_UPDATE`, for a `/who` you typed or one you
+  asked from the game's Who window), Chronicle's `Census.lua` reads the list the client already holds
+  (`C_FriendList.GetNumWhoResults` and `GetWhoInfo`, or the old globals). It sends nothing, and it
+  doesn't touch the game's who-to-window setting or the Who window. The words you asked come from a
+  post-hook on `SendWho` (`hooksecurefunc`), which runs after the game sent your query and only notes
+  them. An answer the game prints into chat instead of the Who window (a short one, with that
+  setting off) may come without `WHO_LIST_UPDATE` on some clients, and then nothing is recorded. A
+  `/who` another addon sends is answered the same way, so it is read too.
 - **What it records**: per answer, one `who` journal event `{ query, count, batch }` (`count` is how
-  many players the server returned); per player in it, a `seen` event (source `who`, with the same
-  `batch`, which names the sweep): name, level, class (the English token), race, guild and zone, no
-  GUID (`/who` gives none). A name that appears in two queries of one sweep is one sighting, and the
-  10-minute window applies by name.
-- **The Who window**: while a sweep runs the answers go to Ryna, not the Who window; the friends
-  frame stops listening for who results and gets them back, with the game's who-to-window setting,
-  as soon as the sweep ends or is stopped, so your own `/who` works as before.
-- **When it runs**: `/ryna census` or the Census tab's **Run census now** button runs one now (in
-  `click` mode, each press asks the next query); with the setting "Run a realm census while I'm in
-  a city" on, and the mode `timer` or not learned yet, one runs every 30 minutes while you're in a
-  city for at least a minute. A capital is recognised by its map id
-  (`C_Map.GetBestMapForUnit("player")`, the same in every client language; a sub-map of a capital
-  counts too), using the Classic world's ids: Stormwind City 1453, Orgrimmar 1454, Ironforge 1455,
-  Thunder Bluff 1456, Darnassus 1457, Undercity 1458. The neutral towns (Booty Bay, Gadgetzan,
-  Everlook, Ratchet) have no map of their own, so outside a capital they are matched by the subzone's
-  name, which is in the client's language: on a non-English client they don't start a sweep. If the
-  client can't give a map id at all, no automatic sweep runs. Never in an instance, never in combat (combat
-  stops a running sweep, and it isn't resumed), never while you have the Who window open (opening
-  it stops one before its next query), and never with the census setting off. `/ryna census stop` stops one.
-- A sweep you start prints its progress ("census sweep: 8 of 12 queries, 214 players so far", every
-  fourth answer, or after every answer in `click` mode) and a summary ("census sweep done: 412
-  players, 380 new to this sweep's window, in 52s": the players it found, and how many of them
-  weren't already seen in the last 10 minutes). An automatic sweep prints only debug lines. The
-  last sweep's summary is kept in `RynaDB.census` and shown beside the Census tab's button and on
-  the Status tab ("Last sweep: 412 players, 20 minutes ago").
-- **A key for it**: Key Bindings → AddOns → Ryna → **Next census query** (`Bindings.xml`, which the
-  game loads from the addon's folder by itself) does what the Census tab's button does: it starts a
-  sweep, or in `click` mode sends its next query. A key press is a hardware event like a click, so
-  the binding calls `Ryna_CensusNext()`, which sends the query right there, never from a timer; a
-  sweep in `click` mode runs with taps instead of clicks. Its pace is the button's (not within the
-  spacing of the last query, not while one is waiting for its answer), so a held or hammered key
-  sends nothing extra, and its "not yet" lines are brief ("census sweep: next query in 3s.") and
-  print at most once every 4 seconds. The Census tab says so under the button.
+  many players the server returned, `batch` names the answer); per player in it, a `seen` event
+  (source `who`, with the same `batch`): name, level, class (the English token), race, guild and
+  zone, no GUID (`/who` gives none). You are left out, a name twice in one answer is one sighting,
+  and a player already seen in the last 10 minutes isn't recorded again (see above). Sorting the Who
+  window brings the same answer again; it isn't recorded twice.
+- Only with the census setting on.
+
+### The census's privacy rules
+
+The census is about everyone and names no one in its numbers. On ryna.io:
+
+- Looking up a character by name shows what `/who` would: name, level, class, guild, and the zone
+  (never the subzone), with when it was last seen only as "today", "this week", "this month" or
+  "older", never a time of day.
+- There are no per-character views of hours or days; those exist only as totals across all players.
+- Every lookup is logged for the operator, so someone searching one name over and over is visible.
+- Lookups need a ryna.io account with the WoW app.
+- We can't verify that a removal request comes from the account holder, so, like Warcraft Logs, we
+  don't offer one; the limits above are what protect a player instead.
 
 `RynaDB.client` holds the client's version and Interface number and how it returned your character's
 name parts, overwritten each login, so the format can be checked against a real client.
@@ -224,8 +169,8 @@ plain buttons with the selected one lit where it doesn't.
 **Status**: the character you're on; what's been recorded (items in your bags and bank, equipped
 gear, quests in your log and completed, guild members); how many journal events this session and in
 all, and the session id; the Chronicle's totals ("Chronicle: 41 creatures, 112 items", or "Chronicle:
-off"); whether combat logging is on right now and the mode; the last census sweep
-("Last census sweep: 412 players, 20 minutes ago", the running one's progress, or "Census: off");
+off"); whether combat logging is on right now and the mode; whether the census is on ("Census: on"
+or "Census: off");
 and the companion app: "Synced 12 minutes ago as <name>", or "Not synced yet. Sign in from the Ryna
 companion app.", its version, and "Update available" when the app knows of a newer addon or app.
 Signing in happens in the companion app, never in the game: an addon can't reach the network.
@@ -233,16 +178,13 @@ Signing in happens in the companion app, never in the game: an addon can't reach
 **Recording** (Chronicle's): one line on what is recorded about your own characters, Record kills
 and loot, and Show my numbers on tooltips.
 
-**Census**: Take part in the census, with its four switches under it (greyed while it's off): chat,
-your group, players nearby and the city sweep. Under players nearby, a note that the game draws
-nameplates for enemies only unless friendly nameplates are on (Shift+V), and the **Turn friendly
-nameplates on** button ("Friendly nameplates are on", greyed, once they are). Then the **Run census
-now** button (greyed while a
-sweep runs; **Next census query (2 of 7)** or **Census: not allowed by the game** with a **Try
-again** link on clients that restrict `/who`, see "Three modes") with the last sweep's summary
-beside it; under it, how to bind a key to **Next census query** (Key Bindings > AddOns > Ryna) and
-that `/ryna census` does the same; and the census's promise: who was seen, never
-what they said, and the data is never sold or used for advertising.
+**Census**: first, "Ryna never sends /who itself. When you type /who, the results are recorded as
+sightings, like players you see on nameplates or in chat." Then Take part in the census, with its
+three switches under it (greyed while it's off): chat, your group and players nearby. Under players
+nearby, a note that the game draws nameplates for enemies only unless friendly nameplates are on
+(Shift+V), and the **Turn friendly nameplates on** button ("Friendly nameplates are on", greyed, once
+they are). Last, the census's promise: who was seen, never what they said, and the data is never sold
+or used for advertising.
 
 **Messages**: up to 10 notices from the companion app, newest first ("No messages" when there are
 none).
@@ -271,15 +213,18 @@ The settings (saved in `RynaDB.settings`; if the game loses them, the defaults c
 | Advanced combat logging | Advanced | on | Sets the game's `advancedCombatLogging`, so fights are logged with positions and health (see below). |
 | Record kills and loot | Recording | on | Counts kills, the experience they give, and loot into the character record (see "Kills and loot"). Off: nothing is counted; the totals so far are kept. |
 | Show my numbers on tooltips | Recording | on | Adds your own kill and loot numbers to creature and item tooltips. |
-| Take part in the census | Census | on | Records the other players you see. Off: **no** `seen` events at all, from chat, players nearby, your group or your guild roster; the addon records only your own characters (and still your guild's roster, which is your guild's own list). |
+| Take part in the census | Census | on | Records the other players you see. Off: **no** `seen` events at all, from chat, players nearby, your group, your guild roster or your own `/who`; the addon records only your own characters (and still your guild's roster, which is your guild's own list). |
 | Record who I see in chat | Census | on | Part of the census. A `seen` event for who speaks in chat (only who, never what). Off: chat isn't looked at. |
 | Record other players in my group | Census | on | Part of the census. Off: no `seen` events for group members, and `group` events say only that you joined, changed or left a group, without the member list. |
 | Record players I see nearby | Census | on | Part of the census. Players whose nameplates, target or mouseover you see, of either faction: their level, class, guild and faction, and where. Off: those three sources are ignored. Friendly nameplates are the game's own setting (Shift+V); the button under this one turns them on. |
-| Run a realm census while I'm in a city | Census | on | Part of the census. Every 30 minutes while you're parked in a city, a `/who` sweep (see "The census sweep"). Off: sweeps run only when you start one. Greyed, and doing nothing, on a client that allows `/who` only from a click. |
-| Debug messages | Advanced | off | Prints what Ryna is doing to the chat window, one dimmed `Ryna debug:` line each: scans as they run (played time, gear, professions, reputations, bags and bank, quest log, group, guild roster), every journal event, every sighting and every sighting skipped, each census-sweep query and answer (by the 10-minute window or a census setting; nearby players print at most one line per 5 seconds, a count with the names when there are 5 or fewer), combat-log decisions and settings changes. For checking that it works. Same as `/ryna debug`. |
+| Debug messages | Advanced | off | Prints what Ryna is doing to the chat window, one dimmed `Ryna debug:` line each: scans as they run (played time, gear, professions, reputations, bags and bank, quest log, group, guild roster), every journal event, every sighting and every sighting skipped (by the 10-minute window or a census setting; nearby players print at most one line per 5 seconds, a count with the names when there are 5 or fewer), each answer to your own `/who`, combat-log decisions and settings changes. For checking that it works. Same as `/ryna debug`. |
 | Show the minimap button | Advanced | on | Hides or shows the button. `/ryna` still opens the panel. |
 
 The settings are for the whole game account (`RynaDB` is account-wide), not per character.
+
+`censusSweep`, the switch for the deleted `/who` sweep, is gone: the core removes it from
+`RynaDB.settings` on load, and Chronicle removes the sweep's own state (`RynaDB.census`) at login.
+Neither the companion app nor the API reads them.
 
 ## The minimap button
 
@@ -332,13 +277,9 @@ positions and health in the log, turn on **Advanced Combat Logging** in the game
   Busy scans print once per scan, not per game event, and a quest-log, reputation or profession
   line that hasn't changed isn't repeated within five minutes. Group and guild-roster sightings
   print as one summary line per scan, and nearby players at most one line per 5 seconds.
-  A census sweep prints each query it sends and each answer (its count, how many were recorded,
-  skipped by the window or already in the sweep, and any split), and its summary.
-- `/ryna census`: runs a census sweep now (its first query sent from the command itself), or, in
-  `click` mode, sends the running sweep's next query; `/ryna census stop` stops it.
+  Your own `/who` prints one line per answer: its count, how many were recorded, and how many were
+  skipped by the window or appeared twice.
 - `/ryna help`: the commands.
-
-`/ryna census` is Chronicle's; with it off it isn't there.
 
 ## Installing by hand
 
@@ -386,7 +327,7 @@ To translate it into your client's language:
    `itIT.lua`, `ptBR.lua`, `ruRU.lua`, `koKR.lua`, `zhCN.lua` or `zhTW.lua` (the name is what
    `/run print(GetLocale())` prints). Each is a copy of `enUS.lua` with every value `nil`, and only
    loads when the game runs in that language.
-2. Replace `nil` with your text: `L["Run census now"] = "Zensus jetzt starten"`. Leave the key as it
+2. Replace `nil` with your text: `L["Take part in the census"] = "Am Zensus teilnehmen"`. Leave the key as it
    is. Keep each `%s` and `%d` in the same order, keep `||` (one `|` in chat), and keep command words
    inside commands (`/ryna debug on||off||toggle`) in English, since they are what players type. A
    pair such as `"%d player"` / `"%d players"` is the form for 1 and for every other number.
@@ -401,8 +342,8 @@ addons, or the folders you name): it rewrites the other locale files with the ne
 every translation already in them. Without `--templates` it only
 checks (CI runs it): every `L["..."]` and `N("...")` key the code uses is in `enUS.lua`, nothing in
 `enUS.lua` is unused, and each locale file has exactly `enUS.lua`'s keys. Text that is stored or
-printed to debug in English and translated only where it is shown (the census sweep's stop reasons,
-kept in `RynaDB.census`) is marked with `N("...")` and looked up with `L[reason]`.
+printed to debug in English and translated only where it is shown is marked with `N("...")` and
+looked up with `L[reason]` (no string needs it today).
 
 ## The mod API
 
@@ -419,7 +360,7 @@ global `Ryna` (`Mods.lua`, where every function is described), never the core's 
 - `Ryna.Settings.Get`, `.Set`, `.All`, `.AddDefaults`, `.COMBAT_LOG_MODES`.
 - `Ryna.Panel.AddTab{ key, label, order, build, layout }`, `.AddStatusLines(order, fn)`, `.Refresh()`,
   `.RefreshIfShown()`, `.Widgets`; `Ryna.Slash.Add{ word, run, help, order }`,
-  `.AddStatusLines(order, fn)`; `Ryna.SetBinding(name, fn)`; `Ryna.L`.
+  `.AddStatusLines(order, fn)`; `Ryna.L`.
 - The helpers: `Try`, `Fn`, `IsSecret`, `NonEmpty`, `Now`, `Locale`, `Print`, `PrintRaw`, `Debug`,
   `DebugChanged`, `Debugging`, `Plural`, `N`, `Run`, `After`, `Debounce`, `ReportError`,
   `CanonicalName`, `MoneyText`, `DurationText`, `ListText`, `Ago`, `Plain`.
