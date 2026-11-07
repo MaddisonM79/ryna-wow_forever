@@ -137,6 +137,7 @@ group("the addon's row", () => {
     const done = {
       version: "0.2.0",
       installed: [{ install: "/wow/_forever_", path: "/wow/_forever_/Interface/AddOns/Ryna" }],
+      mods: [],
       gameRunning: false,
     };
     expect(installedLines(done)).toEqual(["Installed addon 0.2.0 into /wow/_forever_/Interface/AddOns/Ryna"]);

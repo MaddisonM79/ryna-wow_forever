@@ -149,7 +149,10 @@ choices the app's Settings do. Combat fixtures come from `scripts/capture.sh --c
 
 `app/` is the product: the only thing a person installs (a `.dmg` on macOS, an NSIS installer on
 Windows). It signs in with the device grant (it shows the code and opens the sign-in page), finds
-the game, installs the bundled addon (`cores/wow/addon/Ryna`, carried as the resource `addon/Ryna`), and runs the core's
+the game, installs the bundled addon (`cores/wow/addon/Ryna`, carried as the resource `addon/Ryna`)
+with every mod that's on (Chronicle, `mods/wow/chronicle/addon/Ryna_Chronicle`, carried beside it as
+`addon/Ryna_Chronicle`; each mod's switch under the install, kept in the app's `settings.json` as
+`mods`, installs or removes its folder), and runs the core's
 watch loop on its own thread, showing each install's addon version, each account's last save and
 push, and a log of what the loop did. It shows status, not charts: those live on the portal.
 
@@ -225,7 +228,11 @@ without a key.
 ## Releasing
 
 1. Bump the version everywhere: `version` in the root `Cargo.toml` (`[workspace.package]`, every
-   crate takes it), `version` in `app/package.json`, `## Version:` in `cores/wow/addon/Ryna/Ryna.toc`, and `version` in `cores/wow/core.json`.
+   crate takes it), `version` in `app/package.json`, `## Version:` in `cores/wow/addon/Ryna/Ryna.toc`, `version` in `cores/wow/core.json`,
+   and each bundled mod's `version` in `mods/wow/<id>/mod.json` and `## Version:` in its addon's TOC
+   (Chronicle: `mods/wow/chronicle/addon/Ryna_Chronicle/Ryna_Chronicle.toc`; also `ns.VERSION` in
+   its `Mod.lua`, and the core addon's in `Core.lua`). A mod's `requires.core` should name the
+   release that brought the mod API it needs.
    Run `cargo check` so `Cargo.lock` follows, then `node scripts/check-versions.mjs`, which fails
    and names each file when they disagree (CI runs it on every push too).
 2. Commit, then tag and push the tag: `git tag -s vX.Y.Z && git push origin vX.Y.Z`.
@@ -234,7 +241,8 @@ without a key.
    - the CLI: `ryna-aarch64-apple-darwin`, `ryna-x86_64-apple-darwin`,
      `ryna-x86_64-pc-windows-msvc.exe` (each smoke-tested where the runner can run it);
    - the app: `Ryna_X.Y.Z_aarch64.dmg`, `Ryna_X.Y.Z_x64.dmg`, `Ryna_X.Y.Z_x64-setup.exe`;
-   - the addon: `Ryna-X.Y.Z.zip` (`cores/wow/addon/Ryna`, for a manual install or CurseForge);
+   - the addon: `Ryna-X.Y.Z.zip` (`Ryna` and `Ryna_Chronicle` at its top level, as the app carries
+     them, for a manual install or CurseForge);
    - with the updater key: `Ryna_X.Y.Z_<arch>.app.tar.gz` and their `.sig`s, the installer's
      `.sig`, and `latest.json` (`scripts/latest-json.mjs`);
    - `SHA256SUMS` over all of it.
@@ -286,7 +294,7 @@ Store both halves (and the password) in 1Password. Put the private key's content
 ## Use (developers)
 
 ```bash
-ryna install-addon --from cores/wow/addon    # copies its Ryna into each Forever install's Interface/AddOns
+ryna install-addon --from cores/wow/addon    # copies Ryna and the on-by-default mods (Chronicle) into each Forever install's Interface/AddOns
 ryna login                         # prints a link and a code; open it, check the code, allow it
 ryna run                           # pushes every account whose Ryna.lua changed, then reports in
 ryna status                        # installs, accounts, last pushes, signed in or not

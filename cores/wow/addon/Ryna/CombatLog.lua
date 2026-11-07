@@ -1,14 +1,21 @@
--- Zone: the character's zone, `zone` and `death` journal events, and the combat-log setting.
--- RynaDB.settings.combatLog is "instances" (default), "always" or "never". Settings can be lost
--- with the rest of RynaDB if the client doesn't restore it; the default then applies.
+-- CombatLog: the game's combat log, turned on where the combat-log mode wants it, and Advanced
+-- combat logging. It is the core's, not a mod's: it is how the companion app gets fights, whatever
+-- mods are on. RynaDB.settings.combatLog is "instances" (default), "always" or "never". Settings
+-- can be lost with the rest of RynaDB if the client doesn't restore it; the default then applies.
+-- The controls are the panel's Advanced tab (Panel.lua) and /ryna combatlog (Slash.lua).
 
 local _, ns = ...
 local L = ns.L
 
 local Z = {}
-ns.Zone = Z
+ns.CombatLog = Z
 
-local NonEmpty = ns.NonEmpty
+Z.MODE_LABELS = {
+  instances = L["In dungeons and raids only"],
+  always = L["Always"],
+  never = L["Never"],
+}
+Z.MODE_ORDER = { "instances", "always", "never" }
 
 -- What the addon knows about logging. It never asks the client: on this client
 -- `LoggingCombat()` with no argument reported "off" while a log file was being written
@@ -53,30 +60,10 @@ function Z.ApplyCombatLog(inInstance)
   Z.wasInInstance = inInstance
 end
 
-function Z.Update()
-  local rec = ns.rec
-  if not rec then return end
-  local zone = NonEmpty(ns.Try(ns.Fn("GetRealZoneText"))) or NonEmpty(ns.Try(ns.Fn("GetZoneText")))
-  local subzone = NonEmpty(ns.Try(ns.Fn("GetSubZoneText")))
+-- Whether the player is in a dungeon, raid or other instance right now.
+function Z.InInstance()
   local inInstance, instanceType = ns.Try(ns.Fn("IsInInstance"))
-  inInstance = (inInstance and instanceType ~= "none") and true or false
-  local instance, difficulty
-  if inInstance then
-    local name, _, _, difficultyName = ns.Try(ns.Fn("GetInstanceInfo"))
-    instance, difficulty = NonEmpty(name), NonEmpty(difficultyName)
-  end
-  rec.zone, rec.subzone = zone, subzone
-  rec.lastSeen = ns.Now()
-  if zone ~= Z.lastZone or instance ~= Z.lastInstance then
-    Z.lastZone, Z.lastInstance = zone, instance
-    local best = ns.Fn("C_Map", "GetBestMapForUnit")
-    local mapId = best and ns.Try(best, "player") or nil
-    if type(mapId) ~= "number" then mapId = nil end
-    ns.Journal.Add("zone", {
-      zone = zone, subzone = subzone, instance = instance, difficulty = difficulty, mapId = mapId,
-    })
-  end
-  Z.ApplyCombatLog(inInstance)
+  return (inInstance and instanceType ~= "none") and true or false
 end
 
 function Z.SetMode(mode)
@@ -113,7 +100,17 @@ function Z.IsLogging()
   return (loggingState())
 end
 
-ns.On("ZONE_CHANGED_NEW_AREA", function() Z.Update() end)
-ns.On("PLAYER_DEAD", function()
-  if ns.rec then ns.Journal.Add("death", { zone = ns.rec.zone }) end
-end)
+-- What the addon did about logging: it never asks the client, so "on" means Ryna turned it on, and
+-- "not turned on by Ryna" covers both off and a /combatlog typed by hand.
+function Z.LoggingText()
+  local on = Z.IsLogging()
+  if on == nil then return L["unavailable on this client"] end
+  return on and L["on (turned on by Ryna)"] or L["not turned on by Ryna"]
+end
+
+-- Into or out of an instance: the log follows the mode.
+local function follow()
+  if ns.db then Z.ApplyCombatLog(Z.InInstance()) end
+end
+ns.On("PLAYER_ENTERING_WORLD", follow)
+ns.On("ZONE_CHANGED_NEW_AREA", follow)

@@ -2,8 +2,9 @@
 -- (level brackets, split by class and then by zone where an answer is capped) and records each
 -- answer as one `who` journal event { query, count, batch } and a `seen` event per row (source
 -- `who`, the same batch id). Runs from /ryna census, the panel's "Run census now" button, the
--- "Next census query" key binding (Bindings.xml, Slash.lua), and, with the censusSweep setting
--- on, every 30 minutes while the player is parked in a city.
+-- "Next census query" key binding (the core's Bindings.xml; Chronicle's Slash.lua sets its
+-- function), and, with the censusSweep setting on, every 30 minutes while the player is parked in a
+-- city.
 --
 -- Some clients (Forever 1.60.1 on the 12.x engine) treat SendWho as a hardware-event call: it
 -- works only inside a click or a typed command, and is refused from a timer. So a manual sweep
@@ -24,6 +25,7 @@
 -- Every client call is looked up and pcall'd, and a refused query is never retried from a timer.
 
 local _, ns = ...
+if ns.off then return end
 local L, N = ns.L, ns.N
 
 local C = {}
@@ -240,10 +242,7 @@ local function inCombat()
 end
 
 local function refreshPanel()
-  local P = ns.Panel
-  if not (P and P.panel and P.Refresh) then return end
-  local ok, shown = pcall(P.panel.IsVisible, P.panel)
-  if ok and shown then ns.Run("panel", P.Refresh) end
+  ns.API.Panel.RefreshIfShown()
 end
 
 local function store()

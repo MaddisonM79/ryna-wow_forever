@@ -1,8 +1,23 @@
 # Ryna (addon)
 
-A World of Warcraft: Forever addon that records what your characters have and do into one
+World of Warcraft: Forever addons that record what your characters have and do into one
 account-wide SavedVariable, `RynaDB`, for the Ryna companion app (the agent) to read and upload.
-It has a small settings panel (in tabs), a minimap button, and a line in chat when you log in.
+There are two, installed side by side by the companion app:
+
+- **Ryna** (`cores/wow/addon/Ryna`), the WoW core's in-game half and only the plumbing: `RynaDB`
+  and its schema, the event dispatcher, the settings and their defaults, the journal (append,
+  dedupe, prune), the settings panel and its tabs, the strings (`Locales/`), `/ryna`, error
+  reporting, the minimap button, the key binding, reading the app's `AgentStatus.lua`, and the
+  combat log (`CombatLog.lua`: turning it on where the mode wants it, and Advanced combat logging),
+  which is how the app gets fights whatever mods are on. On its own it records nothing about a
+  character.
+- **Ryna Chronicle** (`mods/wow/chronicle/addon/Ryna_Chronicle`, `## Dependencies: Ryna`), the first
+  mod and on by default: everything recorded about a character (below), the tooltips, and the
+  panel's Recording and Census tabs. It builds on the core only through the mod API (below) and
+  writes exactly the `RynaDB` the single addon wrote before the split (docs/wow.md section 2).
+
+Together they have a small settings panel (in tabs), a minimap button, and a line in chat when you
+log in.
 
 The game writes SavedVariables at logout and `/reload`. Addons can't reach the network or the
 filesystem, so that file is the only way the data leaves the game. The addon never depends on
@@ -25,14 +40,20 @@ Per character (keyed by its GUID):
 - The quest log (titles, levels, objectives, when accepted) and the ids of completed quests.
 - Your guild's roster (names, levels, classes, ranks, zones, notes, online status; officer notes only
   if your rank can see them), refreshed at login and every 10 minutes.
-- Kills and loot (the Chronicle, below).
+- Kills and loot (Chronicle's `Chronicle.lua`, below).
 
 **Kills and loot** are running totals on the character record, not journal events: a session has
 thousands of kills, and an event each would make the file large and logout slow. Nothing here reads
 the combat log, which this client keeps from addons (asking for it raised the "blocked from an action
 only available to the Blizzard UI" dialog, 0.2.2): a kill is the chat line the game prints for it,
 "X dies, you gain N experience", and the creature's id comes from the units you target, mouse over or
-see on nameplates, joined on the name. `kills` counts each kind of creature (by creature id: how many,
+see on nameplates, joined on the name. At the level cap there is no such line, so there is a second
+signal: when your **target dies** (its health event, or targeting a dead unit), the kill is counted
+for its creature id, once per creature (by its GUID), and only for a unit you had as a living target
+and that another player hadn't tapped; it gives no experience. The two never count one kill twice:
+each kill either signal counts leaves a mark under the creature's name, and the other signal for the
+same name within 5 seconds takes that mark instead of counting again (an experience line that finds
+the target's mark adds its experience to the kill already counted). `kills` counts each kind of creature (by creature id: how many,
 how many of those were solo kills, the experience they gave you, how many of their corpses you opened,
 and the last kill's time and zone); `loot` counts each item you looted (how often, how many in all, and from what:
 up to 8 sources, a creature, a game object, a container item or fishing); `objects` counts the chests,
@@ -194,7 +215,8 @@ names match the JSON the agent uploads one for one.
 ## The panel
 
 `/ryna`, or a click on the minimap button, opens **Settings → AddOns → Ryna** (on older clients,
-Interface Options → AddOns → Ryna). Under its title is a row of five tabs; a click on one shows that
+Interface Options → AddOns → Ryna). Under its title is a row of six tabs (Status, Recording, Census,
+Messages, Mods, Advanced; Recording and Census are Chronicle's, and go when it's off); a click on one shows that
 tab (the content scrolls when it's taller than the window), and the panel opens on the tab you last
 had (`RynaDB.settings.panelTab`). The tabs use the game's own tab style where the client has it, and
 plain buttons with the selected one lit where it doesn't.
@@ -208,8 +230,8 @@ and the companion app: "Synced 12 minutes ago as <name>", or "Not synced yet. Si
 companion app.", its version, and "Update available" when the app knows of a newer addon or app.
 Signing in happens in the companion app, never in the game: an addon can't reach the network.
 
-**Recording**: one line on what the addon records about your own characters, the combat-log mode,
-Advanced combat logging, Record kills and loot, and Show my numbers on tooltips.
+**Recording** (Chronicle's): one line on what is recorded about your own characters, Record kills
+and loot, and Show my numbers on tooltips.
 
 **Census**: Take part in the census, with its four switches under it (greyed while it's off): chat,
 your group, players nearby and the city sweep. Under players nearby, a note that the game draws
@@ -225,7 +247,17 @@ what they said, and the data is never sold or used for advertising.
 **Messages**: up to 10 notices from the companion app, newest first ("No messages" when there are
 none).
 
-**Advanced**: Debug messages, Show the minimap button, a **Defaults** button (every setting back to
+**Mods**: every `Ryna_*` addon in the game's AddOns list, each with a box: on means it loads, off
+turns it off in the game's AddOns list (`C_AddOns.DisableAddOn`, or `EnableAddOn` to turn it back
+on), which takes effect at the next reload, so the game's reload dialog follows. Under each, its
+version and state ("On.", "Off until the next reload, then on.", ...). The companion app's Game tab
+installs and removes the folders; a mod the app hasn't installed isn't in the game's list, so it
+isn't here. The app reads the game's AddOns lists, so a mod turned off here shows as off in the game
+there too.
+
+**Advanced**: first a **Combat log** group (the core's, there whatever mods are on): the combat-log
+mode ("Turn on the game's combat log") and Advanced combat logging; then **Other settings**: Debug
+messages, Show the minimap button, a **Defaults** button (every setting back to
 its default, as the Settings window's own Defaults does; the minimap button keeps its place and the
 panel its tab), the addon's version, and how recent the companion app's `AgentStatus.lua` is (the
 newest time in it: the last upload, an account's save or upload, or a message, since the file holds
@@ -235,8 +267,8 @@ The settings (saved in `RynaDB.settings`; if the game loses them, the defaults c
 
 | Setting | Tab | Default | What it does |
 |---|---|---|---|
-| Turn on the game's combat log | Recording | In dungeons and raids only | When the addon turns combat logging on (see below). Same as `/ryna combatlog`. |
-| Advanced combat logging | Recording | on | Sets the game's `advancedCombatLogging`, so fights are logged with positions and health (see below). |
+| Turn on the game's combat log | Advanced | In dungeons and raids only | When the addon turns combat logging on (see below). Same as `/ryna combatlog`. |
+| Advanced combat logging | Advanced | on | Sets the game's `advancedCombatLogging`, so fights are logged with positions and health (see below). |
 | Record kills and loot | Recording | on | Counts kills, the experience they give, and loot into the character record (see "Kills and loot"). Off: nothing is counted; the totals so far are kept. |
 | Show my numbers on tooltips | Recording | on | Adds your own kill and loot numbers to creature and item tooltips. |
 | Take part in the census | Census | on | Records the other players you see. Off: **no** `seen` events at all, from chat, players nearby, your group or your guild roster; the addon records only your own characters (and still your guild's roster, which is your guild's own list). |
@@ -280,7 +312,8 @@ line: "Ryna: the companion app hasn't synced recently."
 
 ## Combat logging
 
-The addon can turn the game's combat log (`Logs/WoWCombatLog-*.txt`) on for you:
+The core addon (`CombatLog.lua`, with or without any mod) can turn the game's combat log
+(`Logs/WoWCombatLog-*.txt`) on for you:
 
 - `/ryna combatlog instances` (the default): on inside dungeons and raids, off again when you leave.
 - `/ryna combatlog always`: on everywhere.
@@ -305,11 +338,18 @@ positions and health in the log, turn on **Advanced Combat Logging** in the game
   `click` mode, sends the running sweep's next query; `/ryna census stop` stops it.
 - `/ryna help`: the commands.
 
+`/ryna census` is Chronicle's; with it off it isn't there.
+
 ## Installing by hand
 
-Copy the `cores/wow/addon/Ryna` folder into the Forever install's `Interface/AddOns`, so you have
-`.../_forever_/Interface/AddOns/Ryna/Ryna.toc`, then restart the game or `/reload`. The agent's
-`install-addon` command does the same.
+Copy the `cores/wow/addon/Ryna` folder and the `mods/wow/chronicle/addon/Ryna_Chronicle` folder
+(the release's `Ryna-<version>.zip` holds both at its top level) into the Forever install's
+`Interface/AddOns`, so you have `.../_forever_/Interface/AddOns/Ryna/Ryna.toc` and
+`.../Interface/AddOns/Ryna_Chronicle/Ryna_Chronicle.toc`, then restart the game or `/reload`. Without
+Ryna Chronicle nothing about your characters is recorded. The agent's `install-addon` command does
+the same (it installs the core and every mod that is on by default). Ryna Chronicle needs this Ryna
+or newer: beside an older Ryna (0.2.6 and before, which carried Chronicle inside itself) it says so
+once and loads nothing, so nothing is ever recorded twice.
 
 ## The Interface number
 
@@ -335,13 +375,14 @@ world, and bag and quest updates are coalesced.
 ## Translating Ryna
 
 Everything Ryna shows (the panel, the minimap tooltip, chat lines and `/ryna` output) comes from
-`Ryna/Locales/`. The keys are the English text itself, and **English is always the fallback**: a
+`Ryna/Locales/` and, for Chronicle's own strings, `Ryna_Chronicle/Locales/` (a key the core's files
+already have isn't repeated there: Chronicle's strings fall back to the core's). The keys are the English text itself, and **English is always the fallback**: a
 string a language hasn't translated shows in English, never as a blank or an error. Debug lines
 (`/ryna debug`) stay English on purpose, and so does everything Ryna saves for the companion app.
 
 To translate it into your client's language:
 
-1. Open that language's file in `Ryna/Locales/`: `deDE.lua`, `frFR.lua`, `esES.lua`, `esMX.lua`,
+1. Open that language's file in `Ryna/Locales/` (and in `Ryna_Chronicle/Locales/`): `deDE.lua`, `frFR.lua`, `esES.lua`, `esMX.lua`,
    `itIT.lua`, `ptBR.lua`, `ruRU.lua`, `koKR.lua`, `zhCN.lua` or `zhTW.lua` (the name is what
    `/run print(GetLocale())` prints). Each is a copy of `enUS.lua` with every value `nil`, and only
    loads when the game runs in that language.
@@ -354,20 +395,42 @@ To translate it into your client's language:
    and look at `/ryna`, `/ryna status`, `/ryna help` and the minimap tooltip. `/reload` picks up
    edits to the file.
 
-When a string in the code changes, add or change it in `enUS.lua` (as `L["..."] = true`) and run
-`node cores/wow/addon/tools/strings.mjs --templates` from the repository root: it rewrites the other locale
-files with the new keys and keeps every translation already in them. Without `--templates` it only
+When a string in the code changes, add or change it in that addon's `enUS.lua` (as `L["..."] = true`)
+and run `node cores/wow/addon/tools/strings.mjs --templates` from the repository root (it checks both
+addons, or the folders you name): it rewrites the other locale files with the new keys and keeps
+every translation already in them. Without `--templates` it only
 checks (CI runs it): every `L["..."]` and `N("...")` key the code uses is in `enUS.lua`, nothing in
 `enUS.lua` is unused, and each locale file has exactly `enUS.lua`'s keys. Text that is stored or
 printed to debug in English and translated only where it is shown (the census sweep's stop reasons,
 kept in `RynaDB.census`) is marked with `N("...")` and looked up with `L[reason]`.
 
+## The mod API
+
+A mod is its own addon folder (`Ryna_<Name>`, `## Dependencies: Ryna`) with a `mod.json` beside it
+in `mods/wow/<id>/` (docs/ryna-agent-cores-mods.md section 6). It reaches the core only through the
+global `Ryna` (`Mods.lua`, where every function is described), never the core's private namespace:
+
+- `Ryna.API` (1), `Ryna.VERSION`; `Ryna.RegisterMod{ id, addon, name, version, onLogin, onLogout,
+  onDefaults }` (onLogin runs at login once `RynaDB` is set up and the journal session has started)
+  and `Ryna.Mods()`.
+- `Ryna.On(event, fn)`, the dispatcher; `Ryna.DB()`, `RynaDB` (a mod writes under its own key or in
+  the character record it keeps; Chronicle keeps the keys the companion app reads).
+- `Ryna.Journal.Add(type, fields, quiet)`, `.Session()`, `.Seq()`, `.Count()`.
+- `Ryna.Settings.Get`, `.Set`, `.All`, `.AddDefaults`, `.COMBAT_LOG_MODES`.
+- `Ryna.Panel.AddTab{ key, label, order, build, layout }`, `.AddStatusLines(order, fn)`, `.Refresh()`,
+  `.RefreshIfShown()`, `.Widgets`; `Ryna.Slash.Add{ word, run, help, order }`,
+  `.AddStatusLines(order, fn)`; `Ryna.SetBinding(name, fn)`; `Ryna.L`.
+- The helpers: `Try`, `Fn`, `IsSecret`, `NonEmpty`, `Now`, `Locale`, `Print`, `PrintRaw`, `Debug`,
+  `DebugChanged`, `Debugging`, `Plural`, `N`, `Run`, `After`, `Debounce`, `ReportError`,
+  `CanonicalName`, `MoneyText`, `DurationText`, `ListText`, `Ago`, `Plain`.
+
 ## Development
 
-`luacheck cores/wow/addon/ --config cores/wow/addon/.luacheckrc` from the repository root, and
-`node cores/wow/addon/tools/strings.mjs` checks the translatable strings (see "Translating Ryna"). The
-version is in two places, `## Version` in `Ryna.toc` and `ns.VERSION` in `Core.lua` (0.2.0 now);
-change both together.
+`luacheck cores/wow/addon/ mods/wow/ --config cores/wow/addon/.luacheckrc` from the repository root,
+and `node cores/wow/addon/tools/strings.mjs` checks the translatable strings of both addons (see
+"Translating Ryna"). Each addon's version is in two places, `## Version` in its `.toc` and
+`ns.VERSION` (Ryna's `Core.lua`, Chronicle's `Mod.lua`); change them together (Chronicle's also in
+its `mod.json`; `scripts/check-versions.mjs` holds them all to the release's).
 
 ### Advanced combat logging
 

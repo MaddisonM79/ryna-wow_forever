@@ -106,6 +106,7 @@ fn main() {
             commands::set_install_override,
             commands::set_combat_settings,
             commands::install_addon,
+            commands::set_mod_enabled,
             commands::set_autostart,
             commands::open_portal,
             commands::open_link,

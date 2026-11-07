@@ -1,8 +1,9 @@
 -- Panel: the options panel under Settings -> AddOns (the modern Settings API as a canvas
 -- category), or Interface Options -> AddOns on clients without `Settings`. One frame, registered
--- once, with a row of tabs under the title: Status, Recording, Census, Messages and Advanced. Each
--- tab's content is its own child frame of the scroll child; only the selected one is shown and laid
--- out, and the choice is kept in RynaDB.settings.panelTab. Every frame template and UI call is tried
+-- once, with a row of tabs under the title: the core's Status, Messages, Mods and Advanced, and any
+-- a mod adds (Ryna.Panel.AddTab: Chronicle's Recording and Census sit between Status and Messages).
+-- Each tab's content is its own child frame of the scroll child; only the selected one is shown and
+-- laid out, and the choice is kept in RynaDB.settings.panelTab. Every frame template and UI call is tried
 -- and has a plainer fallback, and registering runs under pcall from Init, so a trimmed client can't
 -- break login.
 
@@ -13,19 +14,18 @@ local P = {}
 ns.Panel = P
 
 local St = ns.Status
+local CL = ns.CombatLog
 local WIDTH = 580
 local FONT = "Fonts\\FRIZQT__.TTF"
 local TABS_Y = -36 -- the tab row, under the title
 local BODY_Y = -72 -- the scrolling content, under the tabs
 
--- The tabs, in order. The first is the default.
-local TABS = {
-  { key = "status", label = L["Status"] },
-  { key = "recording", label = L["Recording"] },
-  { key = "census", label = L["Census"] },
-  { key = "messages", label = L["Messages"] },
-  { key = "advanced", label = L["Advanced"] },
-}
+-- The tabs, by `order` (the lowest is the default): the core's four, and a mod's through
+-- Ryna.Panel.AddTab before the panel is built at login. Each is { key, label, order, build(frame),
+-- layout(stack, settings) }.
+local TABS = {}
+-- The Status tab's lines: { order, fn, seq }, fn() -> lines (Ryna.Panel.AddStatusLines).
+P.statusSources = {}
 
 -- CreateFrame with the first template this client has (nil, last, means no template).
 local function create(kind, parent, templates)
@@ -126,7 +126,7 @@ end
 
 local function setMode(mode)
   if not ns.COMBAT_LOG_MODES[mode] then return end
-  ns.Zone.SetMode(mode)
+  ns.CombatLog.SetMode(mode)
   P.Refresh()
 end
 
@@ -135,8 +135,8 @@ local function modeControl(parent)
   local dd = create("DropdownButton", parent, { "WowStyle1DropdownTemplate" })
   if dd and dd.SetupMenu then
     local ok = pcall(dd.SetupMenu, dd, function(_, root)
-      for _, mode in ipairs(St.MODE_ORDER) do
-        root:CreateRadio(St.MODE_LABELS[mode], function(m) return ns.db.settings.combatLog == m end,
+      for _, mode in ipairs(CL.MODE_ORDER) do
+        root:CreateRadio(CL.MODE_LABELS[mode], function(m) return ns.db.settings.combatLog == m end,
           function(m) ns.Run("combat-log mode", setMode, m) end, mode)
       end
     end)
@@ -149,13 +149,13 @@ local function modeControl(parent)
   end
   local b = button(parent, nil, 300, 24)
   b:SetScript("OnClick", function()
-    local order, current = St.MODE_ORDER, ns.db.settings.combatLog
+    local order, current = CL.MODE_ORDER, ns.db.settings.combatLog
     for i, m in ipairs(order) do
       if m == current then return ns.Run("combat-log mode", setMode, order[i % #order + 1]) end
     end
     ns.Run("combat-log mode", setMode, order[1])
   end)
-  function b.sync() b:SetText(string.format(L["%s (click to change)"], St.MODE_LABELS[ns.db.settings.combatLog])) end
+  function b.sync() b:SetText(string.format(L["%s (click to change)"], CL.MODE_LABELS[ns.db.settings.combatLog])) end
   return b
 end
 
@@ -209,49 +209,29 @@ local function when(t)
   return date("%Y-%m-%d %H:%M", t)
 end
 
--- The status tab's census line: off, the running sweep, or the last one.
-local function censusLine()
-  local C = ns.Census
-  if not C then return nil end
-  if not ns.db.settings.census then return L["Census: off"] end
-  if C.Running() or C.Mode() == "blocked" then return string.format(L["Census: %s"], C.StatusLine()) end
-  local l = C.LastSweep()
-  if not l then return L["Last census sweep: none yet"] end
-  return string.format(L["Last census sweep: %s, %s"],
-    ns.Plural(l.players or 0, L["%d player"], L["%d players"]), St.Ago(l.at) or "?")
-end
-
--- The status tab's Chronicle line: "Chronicle: 41 creatures, 112 items", or off.
-local function chronicleLine()
-  if not ns.db.settings.chronicle then return L["Chronicle: off"] end
-  local creatures, items = 0, 0
-  if ns.Chronicle then creatures, items = ns.Chronicle.Counts() end
-  return string.format(L["Chronicle: %s, %s"], ns.Plural(creatures, L["%d creature"], L["%d creatures"]),
-    ns.Plural(items, L["%d item"], L["%d items"]))
-end
-
 local function statusText()
-  local lines = {}
-  local rec, c = ns.rec, St.Counts()
-  if rec then
-    lines[#lines + 1] = string.format(L["Character: %s, level %s"], tostring(rec.fullName), tostring(rec.level))
-  else
-    lines[#lines + 1] = L["Character: not loaded yet"]
-  end
-  lines[#lines + 1] = string.format(L["Recorded: %s, %d equipped, %s, %d completed, %s"],
-    ns.Plural(c.items, L["%d item in bags and bank"], L["%d items in bags and bank"]), c.gear,
-    ns.Plural(c.active, L["%d quest in the log"], L["%d quests in the log"]), c.completed,
-    ns.Plural(c.roster, L["%d guild member"], L["%d guild members"]))
-  lines[#lines + 1] = chronicleLine()
-  lines[#lines + 1] = string.format(L["Journal: %s, %d kept in all (last 30 days)"],
-    ns.Plural(c.session, L["%d event this session"], L["%d events this session"]), c.journal)
-  lines[#lines + 1] = string.format(L["Session: %s"], tostring(ns.Journal.session or L["not started"]))
-  lines[#lines + 1] = string.format(L["Combat log: %s right now. Mode: %s"], St.LoggingText(),
-    St.MODE_LABELS[ns.db.settings.combatLog] or "?")
-  local census = censusLine()
-  if census then lines[#lines + 1] = census end
-  lines[#lines + 1] = " "
-  lines[#lines + 1] = string.format(L["Companion app: %s"], St.SyncLine())
+  return table.concat(ns.OrderedLines(P.statusSources), "\n")
+end
+
+-- The core's own Status tab lines: the journal, then the companion app and the errors.
+P.statusSources[#P.statusSources + 1] = { order = 30, seq = 0, fn = function()
+  local journal = ns.db and #ns.db.journal or 0
+  local session = ns.Journal.seq or 0
+  return {
+    string.format(L["Journal: %s, %d kept in all (last 30 days)"],
+      ns.Plural(session, L["%d event this session"], L["%d events this session"]), journal),
+    string.format(L["Session: %s"], tostring(ns.Journal.session or L["not started"])),
+  }
+end }
+
+-- The combat log (35: after the journal, before a mod's lines at 40).
+P.statusSources[#P.statusSources + 1] = { order = 35, seq = 0, fn = function()
+  return { string.format(L["Combat log: %s right now. Mode: %s"], CL.LoggingText(),
+    CL.MODE_LABELS[ns.db.settings.combatLog] or "?") }
+end }
+
+P.statusSources[#P.statusSources + 1] = { order = 50, seq = 0, fn = function()
+  local lines = { " ", string.format(L["Companion app: %s"], St.SyncLine()) }
   local agent = St.Plain(St.Field(St.Agent(), "agent", "string"))
   if agent then lines[#lines + 1] = string.format(L["Companion app version: %s"], agent) end
   for _, line in ipairs(St.UpdateLines()) do lines[#lines + 1] = "|cff40ff40" .. line .. "|r" end
@@ -260,8 +240,8 @@ local function statusText()
     lines[#lines + 1] = "|cffff8080" .. ns.Plural(ns.errors.count, L["%d error caught; /ryna status shows the last."],
       L["%d errors caught; /ryna status shows the last."]) .. "|r"
   end
-  return table.concat(lines, "\n")
-end
+  return lines
+end }
 
 local function messagesText()
   local msgs = St.Messages(10)
@@ -313,167 +293,6 @@ function layout.status(s)
   s.text(P.status, 8, 6)
 end
 
-function build.recording(f)
-  P.recordingIntro = text(f, "GameFontHighlightSmall", 11)
-  P.recordingIntro:SetText(L["About your own characters, Ryna records their gear, bags and bank, quests, "
-    .. "professions, reputations, gold and played time, your guild's roster, and a 30-day journal of what "
-    .. "you do. Other players are the Census tab's."])
-  P.modeLabel = text(f, "GameFontHighlight")
-  P.modeLabel:SetText(L["Turn on the game's combat log:"])
-  P.mode = modeControl(f)
-  P.modeHelp = text(f, "GameFontDisableSmall", 10)
-  P.modeHelp:SetText(L["The combat log is how Ryna sees fights. \"In dungeons and raids only\" keeps the "
-    .. "file small. Logging you start yourself with /combatlog is left alone."])
-  P.acl = checkbox(f, L["Advanced combat logging"],
-    L["Sets the game's advanced combat logging on, so fights are logged with positions and health. "
-    .. "Needed for Ryna's timelines and deaths."])
-  toggle(P.acl, "advancedCombatLog", function() ns.Zone.ApplyAdvancedLogging() end)
-  P.chronicle = checkbox(f, L["Record kills and loot"],
-    L["Counts the creatures you and your group kill, the experience they give and what you loot from them, "
-    .. "as running totals on the character (not journal events). Off: nothing is counted, and the totals so "
-    .. "far are kept."])
-  toggle(P.chronicle, "chronicle")
-  P.tooltips = checkbox(f, L["Show my numbers on tooltips"],
-    L["Adds your own kills and drops to creature and item tooltips: how many you killed, what they dropped "
-    .. "for you and how often."])
-  toggle(P.tooltips, "tooltips")
-end
-
-function layout.recording(s, settings)
-  s.text(P.recordingIntro, 0, 12)
-  s.add(P.modeLabel, 14, 8, 4)
-  s.add(P.mode, 26, 8, 2)
-  s.text(P.modeHelp, 8, 10)
-  P.mode.sync()
-  P.acl:SetChecked(settings.advancedCombatLog)
-  P.acl.place(s, 4)
-  P.chronicle:SetChecked(settings.chronicle)
-  P.chronicle.place(s, 4)
-  P.tooltips:SetChecked(settings.tooltips)
-  P.tooltips.place(s, 4)
-end
-
-function build.census(f)
-  P.census = checkbox(f, L["Take part in the census"],
-    L["Records other players you see (nearby, in chat, your group and your guild). "
-    .. "Off: Ryna records only your own characters."])
-  P.chat = checkbox(f, L["Record who I see in chat"],
-    L["Only who spoke, never what they said or in which channel."])
-  P.group = checkbox(f, L["Record other players in my group"],
-    L["Who was in your groups."])
-  P.nearby = checkbox(f, L["Record players I see nearby"],
-    L["Players whose nameplates, target or mouseover you see: their level, class and guild, and where."])
-  P.nameplateHint = text(f, "GameFontDisableSmall", 10)
-  P.nameplateHint:SetWidth(WIDTH - 100)
-  P.nameplateHint:SetText(L["The game shows nameplates for enemies only unless friendly nameplates are on "
-    .. "(Shift+V). Ryna only sees nameplates the game draws."])
-  -- Sets the game's nameplateShowFriends only when clicked; the addon never changes it by itself.
-  P.friendly = button(f, L["Turn friendly nameplates on"], 240, 22)
-  if P.friendly then
-    P.friendly:SetScript("OnClick", function()
-      ns.Run("friendly nameplates", function()
-        ns.Sightings.ShowFriendlyNameplates()
-        P.Refresh()
-      end)
-    end)
-  end
-  P.sweepHelp = L["Every 30 minutes while you're parked in a capital, Ryna asks the server who is online (/who), "
-    .. "a few queries at a time, to count the realm's players by level, class and zone. "
-    .. "Nothing about you is sent."]
-  P.sweep = checkbox(f, L["Run a realm census while I'm in a city"], P.sweepHelp)
-  toggle(P.census, "census")
-  toggle(P.chat, "chatSightings")
-  toggle(P.group, "groupMembers")
-  toggle(P.nearby, "nearbyPlayers")
-  toggle(P.sweep, "censusSweep")
-  -- The click itself sends the query (C.Request runs synchronously inside OnClick): some clients
-  -- accept /who only from a hardware event.
-  P.sweepButton = button(f, L["Run census now"], 220, 22)
-  if P.sweepButton then
-    P.sweepButton:SetScript("OnClick", function()
-      ns.Run("census sweep", function()
-        ns.Census.Request()
-        P.Refresh()
-      end)
-    end)
-    P.sweepRetry = link(f, L["Try again"])
-    if P.sweepRetry then
-      P.sweepRetry:SetPoint("LEFT", P.sweepButton, "RIGHT", 8, 0)
-      P.sweepRetry:SetScript("OnClick", function()
-        ns.Run("census try again", function()
-          ns.Census.TryAgain()
-          P.Refresh()
-        end)
-      end)
-    end
-    P.sweepText = text(f, "GameFontHighlightSmall", 11)
-    P.sweepText:SetWidth(WIDTH - 320)
-    -- ">" rather than an arrow: the game's font has no arrow glyph.
-    P.keyHint = text(f, "GameFontDisableSmall", 10)
-    P.keyHint:SetWidth(WIDTH - 100)
-    P.keyHint:SetText(L["Bind a key to Next census query in Key Bindings > AddOns > Ryna to run a sweep "
-      .. "with taps instead of clicks. /ryna census does the same from chat."])
-  end
-  P.privacy = text(f, "GameFontDisableSmall", 10)
-  P.privacy:SetText(L["The census keeps who was seen, never what they said. "
-    .. "Its data is never sold or used for advertising."])
-end
-
-function layout.census(s, settings)
-  P.census:SetChecked(settings.census)
-  P.chat:SetChecked(settings.chatSightings)
-  P.group:SetChecked(settings.groupMembers)
-  P.nearby:SetChecked(settings.nearbyPlayers)
-  P.sweep:SetChecked(settings.censusSweep)
-  local C = ns.Census
-  local mode = C and C.Mode()
-  -- Automatic sweeps send from a timer, which a click-only or blocked client refuses.
-  local clickOnly = mode == "click" or mode == "blocked"
-  P.sweep.help:SetText(clickOnly and L["The game only allows /who from a click on this client."] or P.sweepHelp)
-  P.census.place(s, 4)
-  for _, cb in ipairs({ P.chat, P.group, P.nearby, P.sweep }) do
-    cb.setActive(settings.census and not (cb == P.sweep and clickOnly))
-    if cb == P.sweep and clickOnly and settings.census then cb.help:SetAlpha(1) end
-    cb.place(s, 30)
-    if cb == P.nearby then
-      P.nameplateHint:SetAlpha(settings.census and 1 or 0.5)
-      s.text(P.nameplateHint, 60, 4)
-      if P.friendly then
-        local on = ns.Sightings.FriendlyNameplatesOn()
-        P.friendly:SetText(on and L["Friendly nameplates are on"] or L["Turn friendly nameplates on"])
-        if settings.census and not on then P.friendly:Enable() else P.friendly:Disable() end
-        s.add(P.friendly, 22, 60, 12)
-      end
-    end
-  end
-  if P.sweepButton then
-    local label, usable = L["Run census now"], false
-    if C then
-      usable = settings.census and C.Available() and true or false
-      if mode == "blocked" then
-        label, usable = L["Census: not allowed by the game"], false
-      elseif mode == "click" or C.Stepping() or (C.Running() and C.sweep.byClicks) then
-        label = string.format(L["Next census query (%d of %d)"], C.NextStep())
-        usable = usable and (not C.Running() or C.Stepping())
-      else
-        usable = usable and not C.Running()
-      end
-    end
-    P.sweepButton:SetText(label)
-    if usable then P.sweepButton:Enable() else P.sweepButton:Disable() end
-    local retry = P.sweepRetry and mode == "blocked"
-    if P.sweepRetry then
-      if retry then P.sweepRetry:Show() else P.sweepRetry:Hide() end
-    end
-    P.sweepText:ClearAllPoints()
-    P.sweepText:SetPoint("LEFT", retry and P.sweepRetry or P.sweepButton, "RIGHT", 8, 0)
-    P.sweepText:SetText(C and C.StatusLine() or "")
-    s.add(P.sweepButton, 22, 34, 6)
-    s.text(P.keyHint, 34, 14)
-  end
-  s.text(P.privacy, 4, 6)
-end
-
 function build.messages(f)
   P.messagesIntro = text(f, "GameFontDisableSmall", 10)
   P.messagesIntro:SetText(L["From the companion app, newest first, as of your last login or /reload."])
@@ -487,6 +306,21 @@ function layout.messages(s)
 end
 
 function build.advanced(f)
+  -- The combat log: the core's, so the companion app gets fights whatever mods are on.
+  P.logHeader = text(f, "GameFontNormal")
+  P.logHeader:SetText(L["Combat log"])
+  P.modeLabel = text(f, "GameFontHighlight")
+  P.modeLabel:SetText(L["Turn on the game's combat log:"])
+  P.mode = modeControl(f)
+  P.modeHelp = text(f, "GameFontDisableSmall", 10)
+  P.modeHelp:SetText(L["The combat log is how Ryna sees fights. \"In dungeons and raids only\" keeps the "
+    .. "file small. Logging you start yourself with /combatlog is left alone."])
+  P.acl = checkbox(f, L["Advanced combat logging"],
+    L["Sets the game's advanced combat logging on, so fights are logged with positions and health. "
+    .. "Needed for Ryna's timelines and deaths."])
+  toggle(P.acl, "advancedCombatLog", function() CL.ApplyAdvancedLogging() end)
+  P.otherHeader = text(f, "GameFontNormal")
+  P.otherHeader:SetText(L["Other settings"])
   P.debug = checkbox(f, L["Debug messages"],
     L["Prints what Ryna is doing to the chat window: scans, journal events, sightings. "
     .. "For checking that it works."])
@@ -517,6 +351,14 @@ function build.advanced(f)
 end
 
 function layout.advanced(s, settings)
+  s.text(P.logHeader, 0, 6)
+  s.add(P.modeLabel, 14, 8, 4)
+  s.add(P.mode, 26, 8, 2)
+  s.text(P.modeHelp, 8, 10)
+  P.mode.sync()
+  P.acl:SetChecked(settings.advancedCombatLog)
+  P.acl.place(s, 4)
+  s.text(P.otherHeader, 0, 6)
   P.debug:SetChecked(settings.debug)
   P.minimap:SetChecked(settings.minimap.shown)
   P.debug.place(s, 4)
@@ -525,6 +367,161 @@ function layout.advanced(s, settings)
   P.versions:SetText(versionsText())
   s.text(P.versions, 8, 6)
 end
+
+-- The Mods tab: every Ryna_* addon in the client's list, each with a box that enables or disables
+-- it in that list (C_AddOns.EnableAddOn / DisableAddOn). The change applies at the next load, so a
+-- change offers a reload. The companion app installs and removes the folders (its Game tab); a mod
+-- the app hasn't installed isn't in the client's list, so it isn't here.
+local function addonCall(name)
+  return ns.Fn("C_AddOns", name) or ns.Fn(name)
+end
+
+-- The Ryna_* addons in the client's list: { name, title, notes }.
+function P.ModAddons()
+  local out = {}
+  local count = ns.Try(addonCall("GetNumAddOns"))
+  local info = addonCall("GetAddOnInfo")
+  if type(count) ~= "number" or not info then return out end
+  for i = 1, count do
+    local name, title, notes = ns.Try(info, i)
+    if type(name) == "string" and name:find("^Ryna_") then
+      out[#out + 1] = { name = name, title = ns.NonEmpty(title) or name, notes = ns.NonEmpty(notes) }
+    end
+  end
+  table.sort(out, function(a, b) return a.name < b.name end)
+  return out
+end
+
+-- Whether the client's list has the addon enabled for this character (what loads next time).
+function P.ModEnabled(name)
+  local me = ns.Try(UnitName, "player")
+  local state = ns.Try(ns.Fn("C_AddOns", "GetAddOnEnableState"), name, me)
+  if state == nil then state = ns.Try(ns.Fn("GetAddOnEnableState"), me, name) end
+  if type(state) == "number" then return state > 0 end
+  return ns.Try(addonCall("IsAddOnLoaded"), name) and true or false
+end
+
+function P.ModLoaded(name)
+  return ns.Try(addonCall("IsAddOnLoaded"), name) and true or false
+end
+
+-- Asks to reload now (the game's own dialog), else says how.
+local function offerReload()
+  local dialogs = StaticPopupDialogs
+  local show = ns.Fn("StaticPopup_Show")
+  local reload = ns.Fn("C_UI", "Reload") or ns.Fn("ReloadUI")
+  if type(dialogs) == "table" and show and reload then
+    if not dialogs.RYNA_RELOAD then
+      dialogs.RYNA_RELOAD = {
+        text = L["Reload the interface now, so the change to Ryna's mods takes effect?"],
+        button1 = _G.RELOADUI or L["Reload"], button2 = _G.CANCEL or L["Later"],
+        OnAccept = function() reload() end,
+        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+      }
+    end
+    if ns.Try(show, "RYNA_RELOAD") then return end
+  end
+  ns.Print(L["type /reload to apply the change."])
+end
+
+function P.SetModEnabled(name, on)
+  local f = addonCall(on and "EnableAddOn" or "DisableAddOn")
+  if not f or not pcall(f, name) then
+    ns.Print(L["the game didn't let Ryna change its addon list; use the AddOns button on the character screen."])
+    return
+  end
+  ns.Debug("mods: %s %s in the game's addon list", name, on and "enabled" or "disabled")
+  offerReload()
+end
+
+function build.mods(f)
+  P.modsIntro = text(f, "GameFontHighlightSmall", 11)
+  P.modsIntro:SetText(L["Mods are optional addons beside Ryna that the companion app installs. Turning one "
+    .. "off here turns it off in the game's AddOns list from the next reload; the app's Game tab removes it."])
+  P.modsNone = text(f, "GameFontDisableSmall", 10)
+  P.modsNone:SetText(L["No mods are installed. The companion app's Game tab installs them."])
+  P.modBoxes = {}
+  for _, m in ipairs(P.ModAddons()) do
+    local cb = checkbox(f, m.title, "")
+    cb.addon = m
+    cb:SetScript("OnClick", function(self)
+      ns.Run("mods " .. m.name, function()
+        P.SetModEnabled(m.name, self:GetChecked() and true or false)
+        P.Refresh()
+      end)
+    end)
+    P.modBoxes[#P.modBoxes + 1] = cb
+  end
+end
+
+local function modHelp(m)
+  local enabled, loaded = P.ModEnabled(m.name), P.ModLoaded(m.name)
+  local version = ns.NonEmpty(ns.Try(addonCall("GetAddOnMetadata"), m.name, "Version"))
+  local state
+  if loaded and enabled then
+    state = L["On."]
+  elseif loaded then
+    state = L["On until the next reload, then off."]
+  elseif enabled then
+    state = L["Off until the next reload, then on."]
+  else
+    state = L["Off."]
+  end
+  local parts = { version and string.format(L["Version %s."], version) or nil, state, m.notes }
+  local out = {}
+  for _, p in ipairs(parts) do if p then out[#out + 1] = p end end
+  return table.concat(out, " ")
+end
+
+function layout.mods(s)
+  s.text(P.modsIntro, 0, 12)
+  if #P.modBoxes == 0 then
+    P.modsNone:Show()
+    s.text(P.modsNone, 8, 6)
+    return
+  end
+  P.modsNone:Hide()
+  for _, cb in ipairs(P.modBoxes) do
+    cb:SetChecked(P.ModEnabled(cb.addon.name))
+    cb.help:SetText(modHelp(cb.addon))
+    cb.place(s, 4)
+  end
+end
+
+-- A tab: { key, label, order, build(frame), layout(stack, settings) }. Only before the panel is built
+-- (at PLAYER_LOGIN), so a mod adds its tabs while it loads. Returns true when added.
+function P.AddTab(spec)
+  if P.built or type(spec) ~= "table" or type(spec.key) ~= "string" or type(spec.build) ~= "function"
+    or type(spec.layout) ~= "function" then
+    return false
+  end
+  for _, t in ipairs(TABS) do
+    if t.key == spec.key then return false end
+  end
+  TABS[#TABS + 1] = {
+    key = spec.key, label = tostring(spec.label or spec.key), order = tonumber(spec.order) or 100,
+    build = spec.build, layout = spec.layout, seq = #TABS + 1,
+  }
+  return true
+end
+
+P.AddTab({ key = "status", label = L["Status"], order = 10, build = build.status, layout = layout.status })
+P.AddTab({ key = "messages", label = L["Messages"], order = 40, build = build.messages, layout = layout.messages })
+P.AddTab({ key = "mods", label = L["Mods"], order = 50, build = build.mods, layout = layout.mods })
+P.AddTab({ key = "advanced", label = L["Advanced"], order = 60, build = build.advanced, layout = layout.advanced })
+
+-- Refreshes the panel only while it is on screen (for a mod whose state moved on by itself).
+function P.RefreshIfShown()
+  if not (P.panel and P.Refresh) then return end
+  local ok, shown = pcall(P.panel.IsVisible, P.panel)
+  if ok and shown then ns.Run("panel", P.Refresh) end
+end
+
+-- What a mod's tabs build with: the same widgets as the core's (Ryna.Panel.Widgets).
+P.Widgets = {
+  WIDTH = WIDTH, create = create, text = text, button = button, link = link, checkbox = checkbox,
+  toggle = function(cb, key, after) return toggle(cb, key, after) end,
+}
 
 local function buildPanel()
   local panel = CreateFrame("Frame")
@@ -551,24 +548,35 @@ local function buildPanel()
   P.content, P.panel = content, panel
 
   P.tabs, P.tabsByKey = {}, {}
+  P.built = true
+  table.sort(TABS, function(a, b)
+    if a.order ~= b.order then return a.order < b.order end
+    return a.seq < b.seq
+  end)
   local prev
-  for i, def in ipairs(TABS) do
+  for _, def in ipairs(TABS) do
     local f = CreateFrame("Frame", nil, content)
     f:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
     f:SetSize(WIDTH, 100)
     f:Hide()
-    build[def.key](f)
-    local b = tabButton(panel, i, def.label)
-    if prev then
-      b:SetPoint("LEFT", prev, "RIGHT", b.select and 2 or 4, 0)
+    -- A tab that fails to build (a mod's, say) is left out; the others still work.
+    local ok, err = pcall(def.build, f)
+    if ok then
+      local i = #P.tabs + 1
+      local b = tabButton(panel, i, def.label)
+      if prev then
+        b:SetPoint("LEFT", prev, "RIGHT", b.select and 2 or 4, 0)
+      else
+        b:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, TABS_Y)
+      end
+      local key = def.key
+      b:SetScript("OnClick", function() ns.Run("panel tab", P.Select, key) end)
+      prev = b
+      local tab = { key = key, frame = f, button = b, layout = def.layout }
+      P.tabs[i], P.tabsByKey[key] = tab, tab
     else
-      b:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, TABS_Y)
+      ns.ReportError("panel tab " .. def.key, err)
     end
-    local key = def.key
-    b:SetScript("OnClick", function() ns.Run("panel tab", P.Select, key) end)
-    prev = b
-    local tab = { key = key, frame = f, button = b, layout = layout[key] }
-    P.tabs[i], P.tabsByKey[key] = tab, tab
   end
 
   panel:SetScript("OnShow", function() ns.Run("panel", P.Refresh) end)
@@ -584,7 +592,8 @@ local function buildPanel()
       ns.ApplySettingDefaults(ns.db.settings)
       mm.shown = true
       if wasDebug then ns.Print(L["settings back to their defaults; debug messages off."]) end
-      ns.Zone.SetMode(ns.db.settings.combatLog)
+      CL.SetMode(ns.db.settings.combatLog)
+      ns.CallMods("onDefaults")
       if ns.Minimap then ns.Minimap.Update() end
       P.Refresh()
     end)
@@ -597,7 +606,7 @@ end
 function P.SelectedTab()
   local key = ns.db and ns.db.settings.panelTab
   if P.tabsByKey and P.tabsByKey[key] then return key end
-  return TABS[1].key
+  return P.tabs and P.tabs[1] and P.tabs[1].key or "status"
 end
 
 -- Shows another tab, remembers it, and scrolls back to the top.
@@ -619,6 +628,7 @@ function P.Refresh()
     if on then tab.frame:Show() else tab.frame:Hide() end
   end
   local tab = P.tabsByKey[key]
+  if not tab then return end
   local s = stack(tab.frame)
   tab.layout(s, ns.db.settings)
   local height = -s.y + 20

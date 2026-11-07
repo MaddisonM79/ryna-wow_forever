@@ -49,7 +49,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../../../cores/wow/addon/Ryna/*": "addon/Ryna/"
+      "../../../cores/wow/addon/Ryna/*": "addon/Ryna/",
+      "../../../mods/wow/chronicle/addon/Ryna_Chronicle/*": "addon/Ryna_Chronicle/"
     },
     "windows": {
       "nsis": {

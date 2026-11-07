@@ -1,9 +1,21 @@
 # WoW mods
 
-Mods for the World of Warcraft: Forever core go here, one folder each with its `mod.json`
-(`cores/wow/core.json` names this folder as its `mods`). Nothing is here yet: the mod plumbing
-(manifest, bundled source, the toggles in the agent and the in-game panel, install and remove) is
-stage 2, and Chronicle, everything the addon records about a character, becomes the first mod then.
+Mods for the World of Warcraft: Forever core, one folder each with its `mod.json`
+(`cores/wow/core.json` names this folder as its `mods`; the manifest is
+`ryna_agent::mods::ModManifest`, docs/ryna-agent-cores-mods.md section 6). A WoW mod is
+`kind: "addon"`: its own addon folders under `addon/` (`Ryna_<Name>`, `## Dependencies: Ryna`),
+installed beside the core's `Ryna` addon and built on it only through the mod API, the `Ryna` global
+(`cores/wow/addon/Ryna/Mods.lua`; the addon README's "The mod API").
 
-A WoW mod is its own addon folder (`Ryna_<Name>`, `## Dependencies: Ryna`) installed beside the core's
-`Ryna` addon, off until the person turns it on. See `docs/ryna-agent-cores-mods.md`, sections 6 and 11.
+- `chronicle/`: **Chronicle**, the first mod, on by default (`defaultOn: true`, `actsInGame: false`):
+  everything recorded about a character (the record, bags and bank, quests, the guild roster, zones
+  and deaths, the players seen and the census, kills and loot), the tooltips, and the panel's
+  Recording and Census tabs. It writes the same `RynaDB` the single addon wrote before stage 2.
+
+Bundled mods are compiled into the WoW core (`cores/wow/core/src/mods.rs`, `BUNDLED_MOD_JSON`: add a
+new one there; a test holds the list to this folder) and version with the agent
+(`scripts/check-versions.mjs` checks each `mod.json` and TOC). The app carries each addon folder
+beside `addon/Ryna` (`tauri.conf.json`'s resources), and the release's addon zip holds them beside
+`Ryna`. The app's Game tab turns each one on or off (installing or removing its folders); the core
+addon's Mods tab turns it on or off in the game's own AddOns list. A mod that `actsInGame` says so
+under its toggle, every time.

@@ -4,6 +4,7 @@
 //! Driving it through the trait does exactly what `watch::watch` does: the same loop
 //! (`watch::watch_with_store`), the same events, the same state folder and keychain entries.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -16,6 +17,7 @@ use crate::addon_install::{self, AddonState};
 use crate::combat::{self, CombatOptions};
 use crate::discovery::{self, Discovery};
 use crate::fix::Fix;
+use crate::mods::{self, ModStatus};
 use crate::runner::{heartbeat_body, RunError};
 use crate::state::State;
 use crate::status::{install_statuses, CombatStatus, InstallStatus};
@@ -40,6 +42,8 @@ pub struct WowCore {
     /// The addon this front end would install (the app's resources, the CLI's `--from`), for the
     /// status card's comparison.
     pub bundled_addon: Option<PathBuf>,
+    /// The mods the person turned on or off, by id (the rest are their `defaultOn`).
+    pub mods: BTreeMap<String, bool>,
 }
 
 impl WowCore {
@@ -48,7 +52,23 @@ impl WowCore {
             interval,
             combat: CombatOptions::default(),
             bundled_addon: None,
+            mods: BTreeMap::new(),
         }
+    }
+
+    pub fn with_mods(mut self, mods: BTreeMap<String, bool>) -> Self {
+        self.mods = mods;
+        self
+    }
+
+    /// Every bundled mod's state in the installs found (for the app's Game tab).
+    pub fn mod_statuses(&self, ctx: &CoreContext) -> Vec<ModStatus> {
+        let found = discovery::discover(ctx.game_folder.as_deref());
+        let source = self
+            .bundled_addon
+            .as_deref()
+            .and_then(|d| addon_install::resolve_source(d).ok());
+        mods::statuses(&found.installs, source.as_deref(), &self.mods)
     }
 
     pub fn with_combat(mut self, combat: CombatOptions) -> Self {
@@ -111,7 +131,12 @@ impl Core for WowCore {
             .and_then(addon_install::bundled_addon_version);
         let installs = install_statuses(&found, bundled.as_deref());
         let combat = CombatStatus::read(&ctx.state_dir, ryna_agent::util::now_secs());
-        rows(&installs, bundled.as_deref(), &combat)
+        let source = self
+            .bundled_addon
+            .as_deref()
+            .and_then(|d| addon_install::resolve_source(d).ok());
+        let mods = mods::statuses(&found.installs, source.as_deref(), &self.mods);
+        rows(&installs, bundled.as_deref(), &mods, &combat)
     }
 
     fn heartbeat(&self, ctx: &CoreContext) -> CoreHeartbeat {
@@ -178,10 +203,12 @@ fn addon_words(i: &InstallStatus, bundled: Option<&str>) -> (String, Chip) {
     }
 }
 
-/// The status card's rows: the game and its addon, then the combat log.
+/// The status card's rows: the game and its addon, a row per mod (by its name: on or off, what's
+/// installed, what's bundled), then the combat log.
 pub fn rows(
     installs: &[InstallStatus],
     bundled: Option<&str>,
+    mods: &[ModStatus],
     combat: &CombatStatus,
 ) -> Vec<StatusRow> {
     let mut rows = Vec::new();
@@ -199,6 +226,12 @@ pub fn rows(
                 ("No addon here".into(), Chip::Waiting)
             };
             rows.push(StatusRow::new("Addon", words, Some(chip)));
+            if main.forever || main.has_addon {
+                for m in mods {
+                    let (words, chip) = mods::row_words(m, &main.path);
+                    rows.push(StatusRow::new(&m.name, words, Some(chip)));
+                }
+            }
         }
     }
     let (log, chip) = match (&combat.file, &combat.last_error) {
@@ -316,9 +349,20 @@ mod tests {
             assert!(m.data.reads.iter().any(|r| r == read), "{read}");
         }
         assert_eq!(
-            m.data.writes,
-            [format!("Interface/AddOns/{}/", addon_install::ADDON_NAME)]
+            m.data.writes[0],
+            format!("Interface/AddOns/{}/", addon_install::ADDON_NAME)
         );
+        // Every bundled mod's folders are among what it writes (`Interface/AddOns/Ryna_*/`), and the
+        // game's addon lists among what it reads.
+        for folder in mods::bundled().iter().flat_map(|m| &m.addons) {
+            let listed = m.data.writes.iter().any(|w| {
+                w.strip_prefix("Interface/AddOns/")
+                    .and_then(|w| w.strip_suffix("*/"))
+                    .is_some_and(|prefix| folder.starts_with(prefix))
+            });
+            assert!(listed, "{folder} isn't in core.json's data.writes");
+        }
+        assert!(m.data.reads.iter().any(|r| r.ends_with("AddOns.txt")));
     }
 
     #[test]
@@ -387,9 +431,17 @@ mod tests {
         let labels: Vec<_> = rows.iter().map(|r| r.label.as_str()).collect();
         assert_eq!(
             labels,
-            ["Folder", "Addon", "Log", "Fights, last 12 h", "Last fight"]
+            [
+                "Folder",
+                "Addon",
+                "Chronicle",
+                "Log",
+                "Fights, last 12 h",
+                "Last fight"
+            ]
         );
         assert_eq!(rows[1].value, "Addon not installed");
+        assert_eq!(rows[2].value, "On · not installed yet: install the addon");
 
         let hb = core.heartbeat(&ctx);
         assert_eq!(
@@ -402,7 +454,7 @@ mod tests {
 
     #[test]
     fn rows_when_nothing_is_found() {
-        let rows = rows(&[], None, &CombatStatus::default());
+        let rows = rows(&[], None, &[], &CombatStatus::default());
         assert_eq!(rows[0].value, "Not found in the usual place");
         assert_eq!(rows[0].chip, Some(Chip::Waiting));
         assert_eq!(

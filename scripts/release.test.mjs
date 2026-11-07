@@ -2,7 +2,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { manifest } from "./latest-json.mjs";
-import { agree, lockVersion, tocVersion, workspaceVersion } from "./versions.mjs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { agree, lockVersion, modVersions, readVersions, tocVersion, workspaceVersion } from "./versions.mjs";
 
 test("reads each place's version", () => {
   assert.equal(tocVersion("## Interface: 16001\r\n## Version: 0.2.0\r\n## SavedVariables: RynaDB\n"), "0.2.0");
@@ -15,6 +18,27 @@ test("reads each place's version", () => {
   assert.equal(lockVersion(lock, "ryna"), "0.2.0");
   assert.equal(lockVersion(lock, "ryna-wow-app"), "0.1.0");
   assert.equal(lockVersion(lock, "ryna-wow-core"), null);
+});
+
+test("reads each bundled mod's manifest and its addon folders' TOCs", () => {
+  const root = mkdtempSync(join(tmpdir(), "ryna-versions-"));
+  const mod = join(root, "mods", "wow", "chronicle");
+  mkdirSync(join(mod, "addon", "Ryna_Chronicle"), { recursive: true });
+  writeFileSync(join(mod, "mod.json"), JSON.stringify({ id: "chronicle", version: "0.3.0", addons: ["Ryna_Chronicle", "Ryna_Gone"] }));
+  writeFileSync(join(mod, "addon", "Ryna_Chronicle", "Ryna_Chronicle.toc"), "## Version: 0.2.9\n");
+  mkdirSync(join(root, "mods", "wow", "not-a-mod"));
+  assert.deepEqual(modVersions(root), [
+    [join("mods", "wow", "chronicle", "mod.json"), "0.3.0"],
+    [join("mods", "wow", "chronicle", "addon", "Ryna_Chronicle", "Ryna_Chronicle.toc"), "0.2.9"],
+    [join("mods", "wow", "chronicle", "addon", "Ryna_Gone", "Ryna_Gone.toc"), null],
+  ]);
+  assert.deepEqual(modVersions(join(root, "nowhere")), []);
+});
+
+test("this repository's versions include Chronicle's", () => {
+  const found = readVersions(join(import.meta.dirname, ".."));
+  assert.ok("mods/wow/chronicle/mod.json" in found);
+  assert.ok("mods/wow/chronicle/addon/Ryna_Chronicle/Ryna_Chronicle.toc" in found);
 });
 
 test("refuses versions that disagree, or a tag that doesn't match", () => {

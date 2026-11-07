@@ -16,6 +16,7 @@ use ryna_agent::core::{Activity, Core, CoreContext, CoreControl, KeychainTokens,
 use ryna_agent::fix::Fix;
 use ryna_wow_core::addon_install;
 use ryna_wow_core::discovery::{self, Install};
+use ryna_wow_core::mods::{self as core_mods, ModChange, ModStatus};
 use ryna_wow_core::status::{
     self as core_status, AccountStatus, CombatStatus, InstallStatus, LastRunStatus,
 };
@@ -503,6 +504,8 @@ pub struct Status {
     /// Each core's status card, as the core lays it out (through the core interface; the window
     /// still draws its own cards from the fields above in stage 1).
     pub cores: Vec<CoreView>,
+    /// The WoW core's mods: on or off, what's bundled, what's installed in each install.
+    pub mods: Vec<ModStatus>,
     /// "Send fight digests".
     pub send_digests: bool,
     /// "Keep raw logs on ryna.io".
@@ -571,11 +574,15 @@ pub fn status(app: &AppHandle) -> Status {
             bundled_addon(app).ok().as_deref(),
         )
     };
-    let wow = WowCore::new(INTERVAL).with_bundled_addon(bundled_addon(app).ok());
-    let cores = vec![core_view(
-        &wow,
-        context(&agent.config, install_override.clone()).as_ref(),
-    )];
+    let wow = WowCore::new(INTERVAL)
+        .with_bundled_addon(bundled_addon(app).ok())
+        .with_mods(settings.mods.clone());
+    let ctx = context(&agent.config, install_override.clone());
+    let cores = vec![core_view(&wow, ctx.as_ref())];
+    let mods = ctx
+        .as_ref()
+        .map(|ctx| wow.mod_statuses(ctx))
+        .unwrap_or_default();
     let accounts = accounts
         .into_iter()
         .map(|account| AccountView {
@@ -604,6 +611,7 @@ pub fn status(app: &AppHandle) -> Status {
         state_dir,
         combat,
         cores,
+        mods,
         send_digests: settings.send_digests,
         keep_raw: settings.keep_raw,
     }
@@ -647,6 +655,8 @@ pub struct InstallResult {
     /// The version installed (the bundled `Ryna.toc`'s), when it says.
     pub version: Option<String>,
     pub installed: Vec<Installed>,
+    /// Each mod folder installed (an on mod) or removed (an off one) with it.
+    pub mods: Vec<ModChange>,
     /// The game was running when it finished, so it needs a /reload (or a log out and in).
     pub game_running: bool,
 }
@@ -688,20 +698,90 @@ pub fn install_addon(app: &AppHandle, only: Option<&str>) -> Result<InstallResul
     let version = addon_install::bundled_addon_version(&source);
     let chosen = install_override(app);
     let found = discovery::discover(chosen.as_deref());
-    let installed = targets(&found.installs, chosen.is_some(), only)?
-        .into_iter()
-        .map(|i| {
-            addon_install::install(&source, i)
-                .map(|p| Installed {
-                    install: display(&i.path),
-                    path: display(&p),
-                })
-                .map_err(|e| format!("{e:#}"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let chosen_mods = app.state::<Agent>().live().settings.mods.clone();
+    let mut installed = Vec::new();
+    let mut changes = Vec::new();
+    for i in targets(&found.installs, chosen.is_some(), only)? {
+        let p = addon_install::install(&source, i).map_err(|e| format!("{e:#}"))?;
+        installed.push(Installed {
+            install: display(&i.path),
+            path: display(&p),
+        });
+        // The core's addon brings its mods: each on one in, each off one out.
+        changes.extend(
+            core_mods::apply(i, &source, &chosen_mods, None).map_err(|e| format!("{e:#}"))?,
+        );
+    }
     Ok(InstallResult {
         version,
         installed,
+        mods: changes,
+        game_running: crate::game::game_running(),
+    })
+}
+
+/// What `set_mod_enabled` did.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModToggleResult {
+    pub id: String,
+    pub name: String,
+    pub on: bool,
+    /// The folders installed or removed.
+    pub changes: Vec<ModChange>,
+    /// Installs it couldn't go into yet because the addon isn't there (it goes in with the addon).
+    pub waiting_for_addon: Vec<String>,
+    pub game_running: bool,
+}
+
+/// Turn a mod on or off: kept in the settings, then each install it belongs in (as `install_addon`
+/// picks them) gets its folders put in or taken out.
+pub fn set_mod_enabled(app: &AppHandle, id: &str, on: bool) -> Result<ModToggleResult, String> {
+    let m = core_mods::bundled()
+        .iter()
+        .find(|m| m.id == id)
+        .ok_or_else(|| format!("There's no mod called {id}."))?;
+    let agent = app.state::<Agent>();
+    let settings = {
+        let mut live = agent.live();
+        live.settings.mods.insert(id.to_string(), on);
+        live.settings.clone()
+    };
+    if let Some(dir) = &agent.settings_dir {
+        settings
+            .save(dir)
+            .map_err(|e| format!("Couldn't save the setting: {e}"))?;
+    }
+    let found = discovery::discover(settings.install_override.as_deref());
+    let picked =
+        targets(&found.installs, settings.install_override.is_some(), None).unwrap_or_default();
+    let mut changes = Vec::new();
+    let mut waiting_for_addon = Vec::new();
+    if !picked.is_empty() {
+        let source = if on {
+            Some(bundled_addon(app)?)
+        } else {
+            bundled_addon(app).ok()
+        };
+        for i in picked {
+            if on && !addon_install::has_addon(i) {
+                waiting_for_addon.push(display(&i.path));
+                continue;
+            }
+            // Removing needs no source; a build without the addon still takes a mod out.
+            let from = source.clone().unwrap_or_default();
+            changes.extend(
+                core_mods::apply(i, &from, &settings.mods, Some(id))
+                    .map_err(|e| format!("{e:#}"))?,
+            );
+        }
+    }
+    Ok(ModToggleResult {
+        id: m.id.clone(),
+        name: m.name.clone(),
+        on,
+        changes,
+        waiting_for_addon,
         game_running: crate::game::game_running(),
     })
 }

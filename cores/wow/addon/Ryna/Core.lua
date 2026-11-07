@@ -1,4 +1,5 @@
--- Core: the namespace, safe-call helpers, the event dispatcher, timers and RynaDB setup.
+-- Core: the namespace, safe-call helpers, the event dispatcher, timers and RynaDB setup. Mods reach
+-- these through the `Ryna` table (Mods.lua), never through this namespace.
 --
 -- Everything here is written so that a missing or changed client API can never break login:
 -- uncertain functions are looked up with ns.Fn and called through ns.Try (pcall), and every
@@ -7,7 +8,7 @@
 local addonName, ns = ...
 
 ns.NAME = addonName
-ns.VERSION = "0.2.6"
+ns.VERSION = "0.3.0"
 ns.SCHEMA = 1
 ns.FLAVOR = "wowf"
 ns.COMBAT_LOG_MODES = { instances = true, always = true, never = true }
@@ -252,19 +253,22 @@ frame:SetScript("OnEvent", function(_, event, ...)
 end)
 
 -- Settings (RynaDB.settings). The client may not restore SavedVariables, so every value has a
--- default that is applied whenever it is missing or the wrong type.
---   combatLog       "instances" | "always" | "never"
+-- default that is applied whenever it is missing or the wrong type. The defaults are all here, the
+-- core's and Chronicle's (the first mod's) alike, so RynaDB.settings reads the same whether or not a
+-- mod is loaded; a later mod adds its own through Ryna.Settings.AddDefaults.
+--   combatLog       "instances" | "always" | "never" (CombatLog.lua acts on it)
 --   chatSightings   record a `seen` event for who speaks in chat
 --   census          take part in the census at all: when off, no `seen` events from any source
 --   groupMembers    record the other players in my group (needs census)
 --   nearbyPlayers   record players whose nameplate, target or mouseover I see (needs census)
 --   censusSweep     run a /who census sweep every 30 minutes while parked in a city (needs census)
---   chronicle       count kills and loot into the character record (Chronicle.lua)
---   tooltips        show my own kill and loot numbers on creature and item tooltips (Tooltip.lua)
+--   chronicle       count kills and loot into the character record (Chronicle's Chronicle.lua)
+--   tooltips        show my own kill and loot numbers on creature and item tooltips (Chronicle's Tooltip.lua)
 --   debug           print what the addon is doing to chat (ns.Debug)
 --   minimap         { shown = true, angle = <degrees> } for the minimap button
 --   panelTab        the options panel's selected tab ("status", "recording", "census", "messages",
---                   "advanced"); Panel.lua checks it and falls back to "status", and Defaults keeps it
+--                   "mods", "advanced"; a mod's tabs too); Panel.lua checks it and falls back to
+--                   "status", and Defaults keeps it
 ns.SETTING_DEFAULTS = {
   chatSightings = true, census = true, groupMembers = true, nearbyPlayers = true, advancedCombatLog = true,
   censusSweep = true, chronicle = true, tooltips = true, debug = false,
@@ -300,7 +304,8 @@ function ns.Setting(key)
 end
 
 -- RynaDB: rebuilt around whatever the client restored (possibly nothing). Only `characters`,
--- `guilds` and `journal` are carried over; everything in them is refreshed from the live game.
+-- `guilds` and `journal` are carried over; everything in them is refreshed from the live game (by
+-- Chronicle, which writes `characters`, `guilds`, `census` and `client`).
 function ns.InitDB()
   local db = _G.RynaDB
   if type(db) ~= "table" or db.schema ~= ns.SCHEMA then
@@ -317,18 +322,4 @@ function ns.InitDB()
   ns.ApplySettingDefaults(db.settings)
   RynaDB = db
   ns.db = db
-end
-
--- What the client reports about itself and the player's name parts, for checking the TOC's
--- Interface number and how Forever splits "First-Last" (it is overwritten every login).
-function ns.RecordClient(nameParts)
-  local version, build, buildDate, interface = ns.Try(ns.Fn("GetBuildInfo"))
-  ns.db.client = {
-    version = version, build = build, date = buildDate, interface = interface,
-    unitName = nameParts and nameParts.unitName,
-    unitFullName = nameParts and nameParts.unitFullName,
-    unitFullNameRealm = nameParts and nameParts.unitFullNameRealm,
-    realm = nameParts and nameParts.realm,
-    realmName = nameParts and nameParts.realmName,
-  }
 end

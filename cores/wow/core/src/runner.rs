@@ -62,8 +62,9 @@ impl RunReport {
 
 #[derive(Debug, thiserror::Error)]
 pub enum RunError {
-    #[error("another ryna run is in progress")]
-    Busy,
+    /// The run lock is held; the detail says by whom, as far as its file says.
+    #[error("another ryna run is in progress ({0})")]
+    Busy(state::Busy),
     #[error("no place to keep the agent's state: set RYNA_STATE_DIR")]
     NoStateDir,
     #[error("the agent's state folder: {0}")]
@@ -99,7 +100,7 @@ pub fn run_once_observed(
     opts: &RunOptions,
     on_event: &mut dyn FnMut(WatchEvent),
 ) -> Result<RunReport, RunError> {
-    let _lock = state::try_lock(state_dir)?.ok_or(RunError::Busy)?;
+    let _lock = state::try_lock(state_dir)?.map_err(RunError::Busy)?;
     let mut st = State::load(state_dir);
     let mut reports = Vec::new();
     let mut failure: Option<Fix> = None;
@@ -353,7 +354,7 @@ mod tests {
             &e.clock,
             &RunOptions { force },
         )
-        .unwrap()
+        .expect("run_once (a Busy names the lock's holder)")
     }
 
     fn touch(path: &Path, secs_later: u64) {
@@ -531,6 +532,6 @@ mod tests {
             &e.clock,
             &RunOptions::default(),
         );
-        assert!(matches!(r, Err(RunError::Busy)));
+        assert!(matches!(r, Err(RunError::Busy(_))));
     }
 }

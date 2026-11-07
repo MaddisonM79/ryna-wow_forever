@@ -34,8 +34,10 @@ yet, so SmartScreen will say "Windows protected your PC": click *More info*, the
 **2. Install the addon.** Open Ryna. The *Game* section finds World of Warcraft: Forever in its usual
 place (`/Applications/World of Warcraft/_forever_` on a Mac, `C:\Program Files (x86)\World of
 Warcraft\_forever_` on Windows); if yours is elsewhere, *Choose folder…*. Click **Install addon**.
-It copies the addon that came inside the app into the game's `Interface/AddOns`. If the game is
-already running, restart it so it sees the new addon.
+It copies the addon that came inside the app into the game's `Interface/AddOns`: Ryna itself and
+its mods, of which there is one so far, **Chronicle** (what Ryna records about your characters; on
+by default, and listed under the install with a switch). If the game is already running, restart it
+so it sees the new addon.
 
 **3. Sign in.** Click **Sign in**. Ryna shows a short code and opens a sign-in page in your browser;
 check the page shows the same code, then allow it. Ryna never sees your password: it gets a token
@@ -85,9 +87,10 @@ workspace (`Cargo.toml` at the root) holds the agent and the cores' Rust halves.
 - `cores/`: the games (`cores/README.md`). `cores/wow` is World of Warcraft: Forever: its manifest
   `core.json`; the Rust core `cores/wow/core` (crate `ryna-wow-core`: the SavedVariables reader,
   install discovery, the combat-log tailer and fight parser, the pusher, the watch loop and the addon
-  installer); the in-game addon `cores/wow/addon/Ryna`, tagged for Forever
-  (`cores/wow/addon/README.md`: what it records, settings, the census sweep, translations); and the
-  scrubbed test fixtures in `cores/wow/fixtures`.
+  installer); the in-game addon `cores/wow/addon/Ryna`, tagged for Forever, the plumbing its mods
+  build on (`cores/wow/addon/README.md`: what is recorded, settings, the census sweep, translations,
+  the mod API); and the scrubbed test fixtures in `cores/wow/fixtures`. Its mods are in `mods/wow`:
+  Chronicle (`mods/wow/chronicle`), everything recorded about a character.
 - `mods/`: each core's mods (`mods/wow`), from stage 2 of the design.
 - `scripts/`: version checks, the release manifest, the CLI smoke test, and `capture.sh`, which
   turns a real `Ryna.lua` into a scrubbed test fixture.

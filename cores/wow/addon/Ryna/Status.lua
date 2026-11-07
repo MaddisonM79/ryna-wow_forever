@@ -1,6 +1,7 @@
 -- Status: what the panel, the minimap tooltip, the login line and /ryna status say about the
--- recording and the companion app. The app's side comes from RynaAgentStatus (AgentStatus.lua),
--- which may be nil or hold any subset of its fields, so every read here checks its type.
+-- companion app (the recording's own lines are Chronicle's, in its Status.lua). The app's side comes
+-- from RynaAgentStatus (AgentStatus.lua), which may be nil or hold any subset of its fields, so every
+-- read here checks its type.
 
 local _, ns = ...
 local L = ns.L
@@ -9,12 +10,6 @@ local St = {}
 ns.Status = St
 
 local STALE_SECONDS = 24 * 3600
-St.MODE_LABELS = {
-  instances = L["In dungeons and raids only"],
-  always = L["Always"],
-  never = L["Never"],
-}
-St.MODE_ORDER = { "instances", "always", "never" }
 
 -- Text that came from outside the game is shown as typed: "|" would start a colour or texture code.
 function St.Plain(s)
@@ -162,30 +157,4 @@ function St.Messages(limit)
   end)
   for i = #out, (limit or 10) + 1, -1 do out[i] = nil end
   return out
-end
-
--- Counts for "what has been recorded this session".
-function St.Counts()
-  local rec, db = ns.rec, ns.db
-  local c = { items = 0, gear = 0, active = 0, completed = 0, roster = 0, journal = 0, session = 0 }
-  if db then c.journal = #db.journal end
-  c.session = ns.Journal.seq or 0
-  if not rec then return c end
-  for _, row in ipairs(rec.containers or {}) do
-    if type(row) == "table" then c.items = c.items + (tonumber(row.count) or 1) end
-  end
-  c.gear = #(rec.gear or {})
-  local q = rec.quests or {}
-  c.active, c.completed = #(q.active or {}), #(q.completed or {})
-  local guild = rec.guild and db and db.guilds[rec.guild.guid]
-  if type(guild) == "table" and type(guild.roster) == "table" then c.roster = #guild.roster end
-  return c
-end
-
--- What the addon did about logging: it never asks the client (Zone.lua), so "on" means Ryna
--- turned it on, and "not turned on by Ryna" covers both off and a /combatlog typed by hand.
-function St.LoggingText()
-  local on = ns.Zone.IsLogging()
-  if on == nil then return L["unavailable on this client"] end
-  return on and L["on (turned on by Ryna)"] or L["not turned on by Ryna"]
 end

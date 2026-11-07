@@ -339,6 +339,20 @@ label.setting {
   font-size: 12px;
 }
 
+/* The Game tab's mods: a toggle each, its state in each install under it. */
+.mods .mod-state {
+  margin: 0 0 4px 24px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.setting .acts-in-game {
+  display: block;
+  font-size: 12px;
+  color: var(--warn-text);
+}
+
 .setting.disabled {
   opacity: 0.6;
   cursor: default;

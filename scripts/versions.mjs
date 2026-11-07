@@ -1,6 +1,6 @@
 // The release's one version, read from every place that carries it. Exported for the tests;
 // check-versions.mjs is the command.
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** `## Version: x.y.z` from a TOC. */
@@ -35,12 +35,33 @@ export function readVersions(root) {
     // A core's manifest version is what its heartbeat reports; bundled cores take the agent's.
     "cores/wow/core.json": JSON.parse(read("cores/wow/core.json")).version ?? null,
   };
+  // Each bundled mod (mods/wow/<id>/mod.json) versions with the agent, and so does each addon
+  // folder it installs (its TOC).
+  for (const [where, version] of modVersions(root)) found[where] = version;
   // tauri.conf.json falls back to the crate's version; if it ever names one, it must agree.
   const tauri = JSON.parse(read("agent/app/src-tauri/tauri.conf.json"));
   if (tauri.version !== undefined) found["agent/app/src-tauri/tauri.conf.json"] = tauri.version;
   const lock = read("Cargo.lock");
   for (const c of CRATES) found[`Cargo.lock ${c}`] = lockVersion(lock, c);
   return found;
+}
+
+/** Every bundled mod's `mod.json` version and its addon folders' TOC versions, by where they are. */
+export function modVersions(root) {
+  const out = [];
+  const mods = join(root, "mods", "wow");
+  if (!existsSync(mods)) return out;
+  for (const id of readdirSync(mods).sort()) {
+    const manifest = join("mods", "wow", id, "mod.json");
+    if (!existsSync(join(root, manifest))) continue;
+    const m = JSON.parse(readFileSync(join(root, manifest), "utf8"));
+    out.push([manifest, m.version ?? null]);
+    for (const folder of m.addons ?? []) {
+      const toc = join("mods", "wow", id, "addon", folder, `${folder}.toc`);
+      out.push([toc, existsSync(join(root, toc)) ? tocVersion(readFileSync(join(root, toc), "utf8")) : null]);
+    }
+  }
+  return out;
 }
 
 /**

@@ -80,6 +80,48 @@ export interface CoreView {
   rows: StatusRow[];
 }
 
+/** One install's copy of a mod (the core's `ModInstall`). */
+export interface ModInstall {
+  /** The install (an `InstallView.path`). */
+  install: string;
+  installed: boolean;
+  /** Its addon folder's `## Version:`, when it's there and says. */
+  version: string | null;
+  /** How many characters the game has it turned off for (its own AddOns list). */
+  offInGame: number;
+}
+
+/** A WoW mod (the core's `ModStatus`). */
+export interface ModView {
+  id: string;
+  name: string;
+  summary: string;
+  /** It does something in the game for the player: said under its toggle, every time. */
+  actsInGame: boolean;
+  defaultOn: boolean;
+  on: boolean;
+  /** The version this app would install. */
+  bundled: string;
+  addons: string[];
+  installs: ModInstall[];
+}
+
+/** What happened to one mod folder (the core's `ModChange`). */
+export type ModChange =
+  | { change: "installed"; id: string; name: string; folder: string; path: string; version: string | null }
+  | { change: "removed"; id: string; name: string; folder: string; path: string };
+
+/** What `set_mod_enabled` did. */
+export interface ModToggleResult {
+  id: string;
+  name: string;
+  on: boolean;
+  changes: ModChange[];
+  /** Installs without the addon yet: the mod goes in with it. */
+  waitingForAddon: string[];
+  gameRunning: boolean;
+}
+
 /** The combat log's side (the core's `CombatStatus`). */
 export interface CombatStatus {
   active: boolean;
@@ -118,6 +160,8 @@ export interface Status {
   combat: CombatStatus;
   /** Each core's card through the core interface (stage 1: carried, not drawn). */
   cores: CoreView[];
+  /** The WoW core's mods. */
+  mods: ModView[];
   /** "Send fight digests". */
   sendDigests: boolean;
   /** "Keep raw logs on ryna.io". */
@@ -200,6 +244,8 @@ export interface Installed {
 export interface InstallResult {
   version: string | null;
   installed: Installed[];
+  /** Mod folders installed (on mods) or removed (off ones) with it. */
+  mods: ModChange[];
   /** The game was running, so it needs a /reload to load the new copy. */
   gameRunning: boolean;
 }
@@ -232,6 +278,8 @@ export const api = {
     invoke<void>("set_combat_settings", { digests, raw }),
   /** Into the install at `path`, or every install it belongs in when null. */
   installAddon: (path: string | null = null) => invoke<InstallResult>("install_addon", { path }),
+  /** Turns a mod on or off, and installs or removes its folders. */
+  setModEnabled: (id: string, on: boolean) => invoke<ModToggleResult>("set_mod_enabled", { id, on }),
   setAutostart: (enabled: boolean) => invoke<boolean>("set_autostart", { enabled }),
   openPortal: () => invoke<void>("open_portal"),
   /** Opens one of the project's own pages (GitHub, ryna.io) in the browser; anything else is refused by the command. */

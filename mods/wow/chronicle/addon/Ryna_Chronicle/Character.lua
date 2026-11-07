@@ -4,6 +4,7 @@
 -- the zone Zone.lua, kills and loot Chronicle.lua.
 
 local _, ns = ...
+if ns.off then return end
 
 local C = {}
 ns.Character = C
@@ -65,6 +66,20 @@ end
 
 function C.Current()
   return ns.rec
+end
+
+-- What the client reports about itself and the player's name parts, for checking the TOC's
+-- Interface number and how Forever splits "First-Last" (RynaDB.client, overwritten every login).
+function ns.RecordClient(nameParts)
+  local version, build, buildDate, interface = ns.Try(ns.Fn("GetBuildInfo"))
+  ns.db.client = {
+    version = version, build = build, date = buildDate, interface = interface,
+    unitName = nameParts and nameParts.unitName,
+    unitFullName = nameParts and nameParts.unitFullName,
+    unitFullNameRealm = nameParts and nameParts.unitFullNameRealm,
+    realm = nameParts and nameParts.realm,
+    realmName = nameParts and nameParts.realmName,
+  }
 end
 
 -- Builds this session's record. Identity and the cheap numbers are read now; lists the record

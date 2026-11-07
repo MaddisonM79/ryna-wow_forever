@@ -10,6 +10,7 @@
 -- to decide whether the zone applies, and are never stored or printed.
 
 local _, ns = ...
+if ns.off then return end
 
 local S = {}
 ns.Sightings = S

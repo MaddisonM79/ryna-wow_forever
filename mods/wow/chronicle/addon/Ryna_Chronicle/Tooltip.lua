@@ -4,6 +4,7 @@
 -- numbers; nothing here writes to the record.
 
 local _, ns = ...
+if ns.off then return end
 local L = ns.L
 
 local T = {}

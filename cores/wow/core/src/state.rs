@@ -14,7 +14,7 @@ pub const STATE_FILE: &str = "state.json";
 
 /// The state folder and the run lock are the agent's (`ryna_agent::state_dir`); the names stay
 /// here so `state::state_dir()` and `state::try_lock` read as they always have.
-pub use ryna_agent::state_dir::{state_dir, try_lock, try_lock_named, RunLock, LOCK_FILE};
+pub use ryna_agent::state_dir::{state_dir, try_lock, try_lock_named, Busy, RunLock, LOCK_FILE};
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -1,53 +1,50 @@
 -- Slash commands: /ryna (opens the panel), /ryna status, /ryna combatlog instances|always|never,
--- /ryna debug on|off|toggle, /ryna census [stop], /ryna help. Status and help go to the default chat frame.
--- Also the census key binding's function, Ryna_CensusNext (Bindings.xml).
+-- /ryna debug on|off|toggle, /ryna help, and whatever a mod adds through Ryna.Slash.Add
+-- (Chronicle: /ryna census). Status and
+-- help go to the default chat frame; a mod adds /ryna status lines through Ryna.Slash.AddStatusLines.
+-- Also the key binding's header and name (Bindings.xml; the function behind it is in Mods.lua).
 -- The chat frame reads "|" as the start of an escape code, so a literal one is written "||".
--- Command words (status, combatlog, instances, on, off, ...) are never translated.
+-- Command words (status, debug, on, off, ...) are never translated.
 
 local _, ns = ...
-local L, N = ns.L, ns.N
+local L = ns.L
 
 local function onOff(on)
   return on and L["on"] or L["off"]
 end
+ns.OnOffText = onOff
 
 local function when(t)
   if type(t) ~= "number" then return L["never"] end
   return date("%Y-%m-%d %H:%M", t)
 end
 
-local function count(t)
-  local n = 0
-  if type(t) == "table" then
-    for _ in pairs(t) do n = n + 1 end
+-- The commands: { word, run(arg), help, order }, the core's and the mods'. `help` is a line for
+-- /ryna help, already translated.
+local commands = {}
+ns.slashStatusSources = {}
+
+function ns.SlashAdd(spec)
+  if type(spec) ~= "table" or type(spec.word) ~= "string" or type(spec.run) ~= "function" then return false end
+  local word = spec.word:lower()
+  for _, c in ipairs(commands) do
+    if c.word == word then return false end
   end
-  return n
+  commands[#commands + 1] = {
+    word = word, run = spec.run, help = spec.help, order = tonumber(spec.order) or 100, seq = #commands + 1,
+  }
+  table.sort(commands, function(a, b)
+    if a.order ~= b.order then return a.order < b.order end
+    return a.seq < b.seq
+  end)
+  return true
 end
 
 local function help()
   ns.Print(string.format(L["v%s. Commands:"], ns.VERSION))
   ns.Print("  " .. L["/ryna: open the Ryna settings panel"])
-  ns.Print("  " .. L["/ryna status: what is recorded, the journal's size, combat logging"])
-  ns.Print("  " .. L["/ryna combatlog instances||always||never: when the addon turns combat logging on"])
-  ns.Print("  " .. L["/ryna debug on||off||toggle: print what Ryna is doing to chat "
-    .. "(/ryna debug alone: which it is)"])
-  ns.Print("  " .. L["/ryna census: run a realm census now (/who, a few queries at a time, or one per "
-    .. "/ryna census where the game allows /who only from a click); /ryna census stop ends it"])
-end
-
-local function censusCommand(arg)
-  if arg == "stop" then
-    if ns.Census.Running() then
-      ns.Census.Stop(N("stopped by you"))
-    else
-      ns.Print(L["no census sweep is running."])
-    end
-  elseif arg == "" then
-    -- Synchronous, inside the typed command: the first (or, in click mode, the next) query goes
-    -- out from here, which is where clients that restrict /who accept it.
-    ns.Census.Request()
-  else
-    ns.Print(L["usage: /ryna census (runs a sweep now, or its next query) or /ryna census stop"])
+  for _, c in ipairs(commands) do
+    if type(c.help) == "string" then ns.Print("  " .. c.help) end
   end
 end
 
@@ -76,80 +73,83 @@ local function debugCommand(arg)
   ns.Run("panel", ns.Panel.Refresh)
 end
 
+-- The core's /ryna status lines: versions first (10), the journal (30), the combat log (40), then
+-- the rest (50).
+local statusSources = ns.slashStatusSources
+statusSources[#statusSources + 1] = { order = 10, seq = 0, fn = function()
+  local client = ns.db.client or {}
+  return { string.format(L["v%s, schema %d, flavor %s, client %s (interface %s)"],
+    ns.VERSION, ns.SCHEMA, ns.FLAVOR, tostring(client.version), tostring(client.interface)) }
+end }
+
+statusSources[#statusSources + 1] = { order = 30, seq = 0, fn = function()
+  local journal = ns.db.journal
+  return { string.format(L["journal: %s since %s; session %s, %d this session"],
+    ns.Plural(#journal, L["%d event"], L["%d events"]), when(journal[1] and journal[1].at),
+    tostring(ns.Journal.session), ns.Journal.seq or 0) }
+end }
+
+statusSources[#statusSources + 1] = { order = 40, seq = 0, fn = function()
+  local logging = ns.CombatLog.IsLogging()
+  return { string.format(L["combat log: setting %s, currently %s"], ns.db.settings.combatLog,
+    logging == nil and L["unavailable"] or onOff(logging)) }
+end }
+
+statusSources[#statusSources + 1] = { order = 50, seq = 0, fn = function()
+  local lines = {
+    string.format(L["debug messages: %s"], onOff(ns.Debugging())),
+    string.format(L["companion app: %s"], ns.Status.SyncLine()),
+  }
+  for _, line in ipairs(ns.Status.UpdateLines()) do lines[#lines + 1] = line end
+  if ns.errors.count > 0 then
+    lines[#lines + 1] = string.format(L["%s; last: %s"],
+      ns.Plural(ns.errors.count, L["%d caught error"], L["%d caught errors"]), tostring(ns.errors.last))
+  end
+  return lines
+end }
+
 local function status()
-  local db, rec = ns.db, ns.rec
-  if not db then
+  if not ns.db then
     ns.Print(L["not initialised yet"])
     return
   end
-  local client = db.client or {}
-  ns.Print(string.format(L["v%s, schema %d, flavor %s, client %s (interface %s)"],
-    ns.VERSION, ns.SCHEMA, ns.FLAVOR, tostring(client.version), tostring(client.interface)))
-  if rec then
-    ns.Print(string.format(L["%s, level %s %s, realm %s (%s)"], tostring(rec.fullName), tostring(rec.level),
-      tostring(rec.class), tostring(rec.realm), tostring(rec.realmId)))
-    local q = rec.quests or {}
-    ns.Print(string.format(L["recorded: %d gear, %s (bank as of %s), %d active / %d completed quests"],
-      #(rec.gear or {}),
-      ns.Plural(#(rec.containers or {}), L["%d container slot"], L["%d container slots"]),
-      when(rec.bankAsOf), #(q.active or {}), #(q.completed or {})))
-    ns.Print(string.format(L["%s, %s, played %s, guild %s"],
-      ns.Plural(#(rec.professions or {}), L["%d profession"], L["%d professions"]),
-      ns.Plural(#(rec.reputations or {}), L["%d reputation"], L["%d reputations"]),
-      rec.playedTotal and string.format(L["%dh"], math.floor(rec.playedTotal / 3600)) or L["pending"],
-      rec.guild and rec.guild.name or L["none"]))
-  end
-  ns.Print(string.format(L["%s, %s on this account"],
-    ns.Plural(count(db.characters), L["%d character"], L["%d characters"]),
-    ns.Plural(count(db.guilds), L["%d guild"], L["%d guilds"])))
-  local journal = db.journal
-  ns.Print(string.format(L["journal: %s since %s; session %s, %d this session"],
-    ns.Plural(#journal, L["%d event"], L["%d events"]), when(journal[1] and journal[1].at),
-    tostring(ns.Journal.session), ns.Journal.seq or 0))
-  local logging = ns.Zone.IsLogging()
-  ns.Print(string.format(L["combat log: setting %s, currently %s"], db.settings.combatLog,
-    logging == nil and L["unavailable"] or onOff(logging)))
-  ns.Print(string.format(L["debug messages: %s"], onOff(ns.Debugging())))
-  ns.Print(string.format(L["companion app: %s"], ns.Status.SyncLine()))
-  for _, line in ipairs(ns.Status.UpdateLines()) do ns.Print(line) end
-  if ns.errors.count > 0 then
-    ns.Print(string.format(L["%s; last: %s"],
-      ns.Plural(ns.errors.count, L["%d caught error"], L["%d caught errors"]), tostring(ns.errors.last)))
+  for _, line in ipairs(ns.OrderedLines(ns.slashStatusSources)) do ns.Print(line) end
+end
+
+ns.SlashAdd({ word = "status", order = 10, run = status,
+  help = L["/ryna status: what is recorded, the journal's size, combat logging"] })
+local function combatLogCommand(arg)
+  if ns.COMBAT_LOG_MODES[arg] then
+    ns.CombatLog.SetMode(arg)
+    ns.Print(string.format(L["combat logging: %s"], arg))
+    ns.Run("panel", ns.Panel.Refresh)
+  else
+    ns.Print(string.format(L["usage: /ryna combatlog instances||always||never (now %s)"], ns.db.settings.combatLog))
   end
 end
+
+ns.SlashAdd({ word = "combatlog", order = 20, run = combatLogCommand,
+  help = L["/ryna combatlog instances||always||never: when the addon turns combat logging on"] })
+ns.SlashAdd({ word = "debug", order = 40, run = debugCommand,
+  help = L["/ryna debug on||off||toggle: print what Ryna is doing to chat "
+    .. "(/ryna debug alone: which it is)"] })
 
 function ns.Slash(msg)
   local cmd, arg = tostring(msg or ""):lower():match("^%s*(%S*)%s*(%S*)")
   if cmd == "" then
     ns.Panel.Open()
-  elseif cmd == "status" then
-    status()
-  elseif cmd == "combatlog" then
-    if ns.COMBAT_LOG_MODES[arg] then
-      ns.Zone.SetMode(arg)
-      ns.Print(string.format(L["combat logging: %s"], arg))
-      ns.Run("panel", ns.Panel.Refresh)
-    else
-      ns.Print(string.format(L["usage: /ryna combatlog instances||always||never (now %s)"], ns.db.settings.combatLog))
-    end
-  elseif cmd == "debug" then
-    debugCommand(arg)
-  elseif cmd == "census" then
-    censusCommand(arg)
-  else
-    help()
+    return
   end
+  for _, c in ipairs(commands) do
+    if c.word == cmd then return c.run(arg) end
+  end
+  help()
 end
 
 SLASH_RYNA1 = "/ryna"
 SlashCmdList.RYNA = function(msg) ns.Run("/ryna", ns.Slash, msg) end
 
--- The key binding (Bindings.xml): Key Bindings -> AddOns -> Ryna -> Next census query. A key press
--- is a hardware event, like a click, so the query goes out from here, synchronously; never move this
--- call behind a timer. The names are the game's BINDING_* globals, set here so they're localised.
+-- The key binding (Bindings.xml): Key Bindings -> AddOns -> Ryna -> Next census query. The names are
+-- the game's BINDING_* globals, set here so they're localised; the function is Mods.lua's.
 BINDING_HEADER_RYNA = L["Ryna"]
 BINDING_NAME_RYNA_CENSUS_NEXT = L["Next census query"]
-
-function Ryna_CensusNext()
-  ns.Run("census key", ns.Census.Request, true)
-end

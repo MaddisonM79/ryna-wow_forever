@@ -11,6 +11,7 @@
 //! - [`watch`]: the loop the desktop app runs while it is open, with status events and a cancel handle.
 //! - [`agent_status`]: `AgentStatus.lua`, what the agent tells the addon after every run.
 //! - [`addon_install`]: copying the addon into the game, and reading the installed one's version.
+//! - [`mods`]: the bundled mods (Chronicle first): what's on, installing and removing their folders.
 //! - [`status`]: what a front end shows (installs, accounts, the sign-in, the last run).
 //! - [`combat`]: the combat log: parsing, encounters, digests, the tailer and its upload queue.
 //!
@@ -23,6 +24,7 @@ pub mod agent_status;
 pub mod combat;
 pub mod discovery;
 pub mod lua;
+pub mod mods;
 pub mod push;
 pub mod runner;
 pub mod snapshot;

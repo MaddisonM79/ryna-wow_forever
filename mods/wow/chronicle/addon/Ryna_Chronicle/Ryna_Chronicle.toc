@@ -1,0 +1,33 @@
+## Interface: 16001
+## Title: Ryna Chronicle
+## Notes: Records your characters, bags, bank, quests, guild roster, the players you see, and your kills and loot, for the Ryna companion app. A mod of Ryna; /ryna for settings.
+## Author: Ryna contributors
+## Version: 0.3.0
+## Dependencies: Ryna
+## LoadOnDemand: 0
+
+Mod.lua
+Locales\enUS.lua
+Locales\deDE.lua
+Locales\frFR.lua
+Locales\esES.lua
+Locales\esMX.lua
+Locales\itIT.lua
+Locales\ptBR.lua
+Locales\ruRU.lua
+Locales\koKR.lua
+Locales\zhCN.lua
+Locales\zhTW.lua
+Character.lua
+Zone.lua
+Containers.lua
+Quests.lua
+Guild.lua
+Sightings.lua
+Census.lua
+Status.lua
+Chronicle.lua
+Tooltip.lua
+Tabs.lua
+Slash.lua
+Init.lua

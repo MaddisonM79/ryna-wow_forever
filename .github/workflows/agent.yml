@@ -5,9 +5,9 @@ name: agent
 on:
   push:
     branches: [main]
-    paths: ["agent/**", "cores/**", "scripts/**", "Cargo.toml", "Cargo.lock", ".github/workflows/agent.yml"]
+    paths: ["agent/**", "cores/**", "mods/**", "scripts/**", "Cargo.toml", "Cargo.lock", ".github/workflows/agent.yml"]
   pull_request:
-    paths: ["agent/**", "cores/**", "scripts/**", "Cargo.toml", "Cargo.lock", ".github/workflows/agent.yml"]
+    paths: ["agent/**", "cores/**", "mods/**", "scripts/**", "Cargo.toml", "Cargo.lock", ".github/workflows/agent.yml"]
 
 permissions:
   contents: read

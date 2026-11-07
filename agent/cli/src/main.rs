@@ -4,6 +4,7 @@
 //! Finds the game's install(s), reads each account's `Ryna.lua` (the addon's SavedVariables),
 //! and pushes a snapshot of it to the API as the person who signed in with `ryna login`.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -29,7 +30,7 @@ use ryna_wow_core::push::Api;
 use ryna_wow_core::runner::{self, Outcome, RunError, RunOptions, RunReport};
 use ryna_wow_core::watch::WatchEvent;
 use ryna_wow_core::wow_core::WowCore;
-use ryna_wow_core::{addon_install, lua, snapshot};
+use ryna_wow_core::{addon_install, lua, mods, snapshot};
 
 #[derive(Parser)]
 #[command(
@@ -400,8 +401,8 @@ fn run(config: &Config, install: Option<&Path>, opts: &RunOptions) -> Result<u8>
             }
             Ok(report.failure.map_or(0, |f| f.exit_code() as u8))
         }
-        Err(RunError::Busy) => {
-            eprintln!("another ryna run is in progress; not starting a second");
+        Err(RunError::Busy(busy)) => {
+            eprintln!("another ryna run is in progress ({busy}); not starting a second");
             Ok(1)
         }
         Err(e) => Err(e.into()),
@@ -517,7 +518,8 @@ fn watch(
 }
 
 fn install_addon(install: Option<&Path>, from: Option<&Path>) -> Result<ExitCode> {
-    // stage 1: direct; the core interface takes this in stage 2 (the addon is the core's first mod-like install).
+    // The core's addon, then its mods as they are by default (Chronicle on): the command line keeps
+    // no settings of its own, so a mod turned off in the app is the app's to keep off.
     let source = match from {
         Some(dir) => addon_install::resolve_source(dir)?,
         None => addon_install::beside_binary().context(
@@ -541,6 +543,30 @@ fn install_addon(install: Option<&Path>, from: Option<&Path>) -> Result<ExitCode
         match &version {
             Some(v) => println!("Installed addon {v} into {}", to.display()),
             None => println!("Installed the addon in {}", to.display()),
+        }
+        match mods::apply(i, &source, &BTreeMap::new(), None) {
+            Ok(changes) => {
+                for c in changes {
+                    match c {
+                        mods::ModChange::Installed {
+                            name,
+                            path,
+                            version,
+                            ..
+                        } => println!(
+                            "Installed the {name} mod{} into {path}",
+                            version.map(|v| format!(" {v}")).unwrap_or_default()
+                        ),
+                        mods::ModChange::Removed { name, path, .. } => {
+                            println!("Removed the {name} mod from {path}")
+                        }
+                    }
+                }
+            }
+            Err(e) => eprintln!(
+                "warning: {e:#}. Without it nothing about your characters is recorded: pass --from \
+                 the folder holding both Ryna and Ryna_Chronicle (the release's addon zip)."
+            ),
         }
     }
     println!("Restart the game (or /reload) to load it.");

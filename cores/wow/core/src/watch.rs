@@ -314,13 +314,8 @@ pub fn watch_with(
             on_event,
         ) {
             Ok(report) => report.ok(),
-            Err(RunError::Busy) => {
-                on_event(WatchEvent::error(
-                    None,
-                    None,
-                    RunError::Busy.to_string(),
-                    Fix::Other,
-                ));
+            Err(e @ RunError::Busy(_)) => {
+                on_event(WatchEvent::error(None, None, e.to_string(), Fix::Other));
                 false
             }
             Err(e) => return Err(e),
@@ -338,7 +333,7 @@ pub fn watch_with(
                     tail_lock =
                         state::try_lock_named(&opts.state_dir.join("combat"), tail::LOCK_FILE)
                             .ok()
-                            .flatten();
+                            .and_then(Result::ok);
                 }
                 if tail_lock.is_some() {
                     let signed_in = auth.signed_in().unwrap_or(false);

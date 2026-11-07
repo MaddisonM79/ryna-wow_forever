@@ -3,6 +3,7 @@
 -- Collapsed headers in the classic log hide their quests; the addon doesn't expand them.
 
 local _, ns = ...
+if ns.off then return end
 
 local Q = {}
 ns.Quests = Q

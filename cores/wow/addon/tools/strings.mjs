@@ -1,21 +1,26 @@
 #!/usr/bin/env node
-// Checks the addon's translatable strings (no dependencies; Node 18+). From the repository root:
+// Checks the addons' translatable strings (no dependencies; Node 18+): the core addon
+// (cores/wow/addon/Ryna) and every WoW mod's addon (mods/wow/*/addon/*). From the repository root:
 //
-//   node cores/wow/addon/tools/strings.mjs              report and exit 1 when anything is off
-//   node cores/wow/addon/tools/strings.mjs --templates  also rewrite the other Locales/*.lua from enUS.lua,
-//                                             keeping every translation already in them
+//   node cores/wow/addon/tools/strings.mjs [folder...]              report and exit 1 when anything is off
+//   node cores/wow/addon/tools/strings.mjs --templates [folder...]  also rewrite the other Locales/*.lua from
+//                                                         enUS.lua, keeping every translation already in them
 //
+// With no folder it checks them all; a folder is one addon's (holding its .toc and Locales/).
 // A key is used where the code says L["..."] or N("...") (string literals, joined with `..` for
-// long ones; L[x] with anything else is a lookup of an N(...) key and is skipped). It reports keys
-// the code uses that Locales/enUS.lua lacks, keys in enUS.lua that nothing uses, and, per locale
-// template, keys missing from it or no longer in enUS.lua. Every list empty: exit 0.
+// long ones; L[x] with anything else is a lookup of an N(...) key and is skipped). Each addon lists
+// the keys it uses in its own Locales/enUS.lua, except those the core's already has: a mod's L falls
+// back to the core's (Ryna.L). It reports keys an addon uses that neither list has, keys in an
+// enUS.lua that nothing uses (the core's counts its mods' uses), a mod repeating a core key, and,
+// per locale template, keys missing from it or no longer in enUS.lua. Every list empty: exit 0.
 
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const ADDON = join(dirname(fileURLToPath(import.meta.url)), "..", "Ryna");
-const LOCALES = join(ADDON, "Locales");
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
+const CORE = join(ROOT, "cores", "wow", "addon", "Ryna");
+const MODS = join(ROOT, "mods", "wow");
 const BASE = "enUS";
 
 // Locale code (as GetLocale() reports it) -> language. The order is the TOC's.
@@ -164,12 +169,12 @@ export function localeEntries(src) {
   return out;
 }
 
-function luaFiles(dir) {
+function luaFiles(dir, locales = join(dir, "Locales")) {
   const out = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (p !== LOCALES) out.push(...luaFiles(p));
+      if (p !== locales) out.push(...luaFiles(p, locales));
     } else if (entry.name.endsWith(".lua")) {
       out.push(p);
     }
@@ -177,8 +182,27 @@ function luaFiles(dir) {
   return out.sort();
 }
 
-function templateHeader(code, language) {
-  return `-- ${language} (${code}) strings for Ryna. Loaded on every client, applied only when the game runs
+// The addon folders: the core's, then each mod's (mods/wow/<id>/addon/<Folder>/ with a Locales/enUS.lua).
+export function addonFolders() {
+  const out = [CORE];
+  if (!existsSync(MODS)) return out;
+  for (const mod of readdirSync(MODS, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort()) {
+    const addons = join(MODS, mod, "addon");
+    if (!existsSync(addons)) continue;
+    for (const a of readdirSync(addons, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort()) {
+      if (existsSync(join(addons, a, "Locales", `${BASE}.lua`))) out.push(join(addons, a));
+    }
+  }
+  return out;
+}
+
+/** An addon's title for the template headers: "Ryna", "Ryna Chronicle". */
+function title(dir) {
+  return basename(dir).replace(/_/g, " ");
+}
+
+function templateHeader(code, language, name, isMod) {
+  return `-- ${language} (${code}) strings for ${name}. Loaded on every client, applied only when the game runs
 -- in ${code}: GetLocale() is "${code}".
 --
 -- How to translate:
@@ -198,15 +222,15 @@ function templateHeader(code, language) {
 -- translations already here; run it after enUS.lua changes.
 
 local _, ns = ...
-if ns.Locale() ~= "${code}" then return end
+${isMod ? "if ns.off then return end\n" : ""}if ns.Locale() ~= "${code}" then return end
 local L = ns.L
 `;
 }
 
 // Rewrites one template from enUS.lua's text: the same keys, layout and comments, with each value
 // taken from the existing template (when it has a translation) or nil.
-function writeTemplate(code, baseSrc, baseEntries) {
-  const path = join(LOCALES, `${code}.lua`);
+function writeTemplate(dir, code, baseSrc, baseEntries) {
+  const path = join(dir, "Locales", `${code}.lua`);
   let existing = new Map();
   try {
     for (const e of localeEntries(readFileSync(path, "utf8"))) existing.set(e.key, e.value);
@@ -223,49 +247,82 @@ function writeTemplate(code, baseSrc, baseEntries) {
     at = e.valueEnd;
   }
   body += baseSrc.slice(at);
-  writeFileSync(path, templateHeader(code, TEMPLATES[code]) + body);
+  writeFileSync(path, templateHeader(code, TEMPLATES[code], title(dir), dir !== CORE) + body);
 }
 
-function main() {
-  const writeTemplates = process.argv.includes("--templates");
+function usedIn(dir) {
   const used = new Map();
-  for (const file of luaFiles(ADDON)) {
+  for (const file of luaFiles(dir)) {
     for (const u of usedKeys(readFileSync(file, "utf8"))) {
-      if (!used.has(u.key)) used.set(u.key, `${relative(join(ADDON, ".."), file)}:${u.line}`);
+      if (!used.has(u.key)) used.set(u.key, `${relative(ROOT, file)}:${u.line}`);
     }
   }
-  const baseSrc = readFileSync(join(LOCALES, `${BASE}.lua`), "utf8");
-  const baseEntries = localeEntries(baseSrc);
+  return used;
+}
+
+function baseOf(dir) {
+  const src = readFileSync(join(dir, "Locales", `${BASE}.lua`), "utf8");
+  return { src, entries: localeEntries(src) };
+}
+
+// One addon's problems. `coreKeys`: the core's enUS keys (for a mod); `modUses`: every key the mods
+// use (for the core, whose strings they may share).
+function check(dir, { coreKeys, modUses, writeTemplates }) {
+  const isMod = dir !== CORE;
+  const name = relative(ROOT, dir);
+  const used = usedIn(dir);
+  const { src: baseSrc, entries: baseEntries } = baseOf(dir);
   const base = new Set(baseEntries.map((e) => e.key));
   const problems = [];
 
   const dup = baseEntries.map((e) => e.key).filter((k, i, all) => all.indexOf(k) !== i);
-  for (const k of dup) problems.push(`enUS.lua lists a key twice: ${JSON.stringify(k)}`);
+  for (const k of dup) problems.push(`${name}: enUS.lua lists a key twice: ${JSON.stringify(k)}`);
   for (const e of baseEntries) {
-    if (e.value !== "true") problems.push(`enUS.lua: ${JSON.stringify(e.key)} should be = true`);
+    if (e.value !== "true") problems.push(`${name}: enUS.lua: ${JSON.stringify(e.key)} should be = true`);
+    if (isMod && coreKeys.has(e.key)) {
+      problems.push(`${name}: enUS.lua repeats a key the core's has (leave it to the core's): ${JSON.stringify(e.key)}`);
+    }
   }
-  const missing = [...used.keys()].filter((k) => !base.has(k));
-  const unused = [...base].filter((k) => !used.has(k));
-  for (const k of missing) problems.push(`missing from enUS.lua (${used.get(k)}): ${JSON.stringify(k)}`);
-  for (const k of unused) problems.push(`in enUS.lua but unused: ${JSON.stringify(k)}`);
+  const missing = [...used.keys()].filter((k) => !base.has(k) && !(isMod && coreKeys.has(k)));
+  const unused = [...base].filter((k) => !used.has(k) && !(!isMod && modUses.has(k)));
+  for (const k of missing) problems.push(`${name}: missing from enUS.lua (${used.get(k)}): ${JSON.stringify(k)}`);
+  for (const k of unused) problems.push(`${name}: in enUS.lua but unused: ${JSON.stringify(k)}`);
 
   for (const code of Object.keys(TEMPLATES)) {
-    if (writeTemplates) writeTemplate(code, baseSrc, baseEntries);
+    if (writeTemplates) writeTemplate(dir, code, baseSrc, baseEntries);
     let keys;
     try {
-      keys = new Set(localeEntries(readFileSync(join(LOCALES, `${code}.lua`), "utf8")).map((e) => e.key));
+      keys = new Set(localeEntries(readFileSync(join(dir, "Locales", `${code}.lua`), "utf8")).map((e) => e.key));
     } catch {
-      problems.push(`${code}.lua is missing (node cores/wow/addon/tools/strings.mjs --templates writes it)`);
+      problems.push(`${name}: ${code}.lua is missing (node cores/wow/addon/tools/strings.mjs --templates writes it)`);
       continue;
     }
-    for (const k of base) if (!keys.has(k)) problems.push(`${code}.lua lacks ${JSON.stringify(k)}`);
+    for (const k of base) if (!keys.has(k)) problems.push(`${name}: ${code}.lua lacks ${JSON.stringify(k)}`);
     for (const k of keys) {
-      if (!base.has(k)) problems.push(`${code}.lua has a key enUS.lua doesn't: ${JSON.stringify(k)}`);
+      if (!base.has(k)) problems.push(`${name}: ${code}.lua has a key enUS.lua doesn't: ${JSON.stringify(k)}`);
     }
   }
+  console.log(`${name}: ${used.size} keys used, ${base.size} in enUS.lua, ${Object.keys(TEMPLATES).length} templates; `
+    + `missing ${missing.length}, unused ${unused.length}`);
+  return problems;
+}
 
-  console.log(`${used.size} keys used, ${base.size} in enUS.lua, ${Object.keys(TEMPLATES).length} templates.`);
-  console.log(`missing from enUS.lua: ${missing.length}; unused in enUS.lua: ${unused.length}`);
+function main() {
+  const args = process.argv.slice(2);
+  const writeTemplates = args.includes("--templates");
+  const all = addonFolders();
+  const named = args.filter((a) => !a.startsWith("--")).map((a) => resolve(a));
+  for (const d of named) {
+    if (!all.includes(d)) {
+      console.log(`not an addon folder this checks: ${d} (the core's, or mods/wow/<id>/addon/<Folder>)`);
+      process.exit(1);
+    }
+  }
+  const coreKeys = new Set(baseOf(CORE).entries.map((e) => e.key));
+  const modUses = new Set();
+  for (const d of all.filter((d) => d !== CORE)) for (const k of usedIn(d).keys()) modUses.add(k);
+  const problems = [];
+  for (const dir of named.length ? named : all) problems.push(...check(dir, { coreKeys, modUses, writeTemplates }));
   if (problems.length) {
     for (const p of problems) console.log(`  ${p}`);
     process.exit(1);

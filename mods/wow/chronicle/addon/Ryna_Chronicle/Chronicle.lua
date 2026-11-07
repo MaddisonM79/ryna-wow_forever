@@ -2,7 +2,8 @@
 -- never journal events: a session has thousands of kills, and a row each would make the file large
 -- and logout slow. Three string-keyed maps on the record (Character.lua carries them over):
 --
---   kills[npcId]    { name, n, own, xp, looted, last, zone }   CHAT_MSG_COMBAT_XP_GAIN (+ units seen), LOOT_OPENED
+--   kills[npcId]    { name, n, own, xp, looted, last, zone }   CHAT_MSG_COMBAT_XP_GAIN (+ units seen),
+--                                                              the target dying, LOOT_OPENED
 --   loot[itemId]    { name, link, quality, n, qty, last, from = { [source] = n } }   LOOT_SLOT_CLEARED
 --   objects[id]     { n, last, zone }                          LOOT_OPENED from a game object
 --
@@ -12,6 +13,7 @@
 -- as they are. Nothing here touches the combat log: this client forbids it to addons (see Kills).
 
 local _, ns = ...
+if ns.off then return end
 
 local Ch = {}
 ns.Chronicle = Ch
@@ -128,6 +130,14 @@ end
 -- units the player sees: the target, the mouseover and nameplates give a GUID and a name, and the
 -- name is the join. A kill whose name isn't known yet waits (in memory, a few at most) until the name
 -- is seen. Solo kills are the player's own; in a group the chat line can't say whose blow it was.
+--
+-- A second signal counts what the first can't: at the level cap (and for a creature that gives no
+-- experience) there is no chat line. When the player's target dies (UNIT_HEALTH on "target", or
+-- PLAYER_TARGET_CHANGED onto a dead unit) the kill is counted for its creature id, once per GUID, and
+-- only for a unit the player had as a living target and that wasn't tapped by someone else. The two
+-- signals meet in `recent`: each kill either one counts leaves a mark by creature name, and the other
+-- signal for the same name within DEDUPE_SECONDS takes that mark instead of counting a second kill
+-- (an experience line that finds the target's mark adds its experience to the kill already counted).
 
 -- Creature name -> id, learned from units seen. Names are localised, so a map per session is right.
 local namesToId = {}
@@ -139,6 +149,43 @@ local pendingCount = 0
 local function solo()
   local n = ns.Try(ns.Fn("GetNumGroupMembers"))
   return type(n) ~= "number" or n <= 1
+end
+
+-- Marks left by each counted kill, by creature name: { at, from = "xp" | "target" }, oldest first.
+local DEDUPE_SECONDS = 5
+local recent = {}
+
+-- Takes the other signal's mark for `name` within the window, if there is one (dropping stale ones).
+local function claim(name, from)
+  local list = recent[name]
+  if not list then return false end
+  local now = GetTime()
+  local i = 1
+  while i <= #list do
+    local m = list[i]
+    if now - m.at > DEDUPE_SECONDS then
+      table.remove(list, i)
+    elseif m.from ~= from then
+      table.remove(list, i)
+      if #list == 0 then recent[name] = nil end
+      return true
+    else
+      i = i + 1
+    end
+  end
+  if #list == 0 then recent[name] = nil end
+  return false
+end
+
+local function mark(name, from)
+  if not name then return end
+  local list = recent[name]
+  if not list then
+    list = {}
+    recent[name] = list
+  end
+  list[#list + 1] = { at = GetTime(), from = from }
+  if #list > 8 then table.remove(list, 1) end
 end
 
 local function addKill(id, name, xp, n, own)
@@ -227,6 +274,14 @@ function Ch.OnXpMessage(text)
   -- The target is usually what just died; learn it before looking the name up.
   Ch.LearnUnit("target")
   local id = namesToId[name]
+  if claim(name, "xp") then
+    -- The target's death already counted this kill: only its experience is new.
+    local e = id and ns.rec and type(ns.rec.kills) == "table" and ns.rec.kills[id]
+    if type(e) == "table" then e.xp = num(e.xp) + xp end
+    ns.Debug("chronicle: %s's experience line, the kill already counted from the target", name)
+    return
+  end
+  mark(name, "xp")
   if id then
     addKill(id, name, xp, 1, own)
     return
@@ -250,6 +305,55 @@ function Ch.OnXpMessage(text)
   pendingByName[name] = { n = 1, xp = xp, own = own, at = GetTime() }
   pendingCount = pendingCount + 1
   ns.Debug("chronicle: killed %s, waiting to learn its id", name)
+end
+
+-- The target's death: GUIDs seen alive as the target, and GUIDs whose death was counted (rings).
+local RING = 64
+local function ring()
+  local r = { list = {}, set = {}, pos = 0 }
+  function r.add(guid)
+    if r.set[guid] then return end
+    r.pos = r.pos % RING + 1
+    local old = r.list[r.pos]
+    if old then r.set[old] = nil end
+    r.list[r.pos] = guid
+    r.set[guid] = true
+  end
+  return r
+end
+local seenAlive, deathCounted = ring(), ring()
+
+-- A value the client handed back, unless it's a secret.
+local function plainValue(v)
+  if ns.IsSecret(v) then return nil end
+  return v
+end
+
+-- Looks at the target: remembers it alive, or counts its death once. Returns true when it counted.
+function Ch.CheckTarget()
+  if not chronicleOn() then return false end
+  local guid = plainValue(ns.Try(UnitGUID, "target"))
+  local id = Ch.CreatureId(guid)
+  if not id then return false end
+  local dead = plainValue(ns.Try(ns.Fn("UnitIsDead"), "target"))
+  if not dead then
+    seenAlive.add(guid)
+    return false
+  end
+  if deathCounted.set[guid] or not seenAlive.set[guid] then return false end
+  -- Someone else's (tapped by another player): not the player's kill.
+  if plainValue(ns.Try(ns.Fn("UnitIsTapDenied"), "target")) then return false end
+  deathCounted.add(guid)
+  local name = plainValue(ns.Try(UnitName, "target"))
+  if type(name) ~= "string" or name == "" then name = nil end
+  if name then Ch.LearnUnit("target") end
+  if name and claim(name, "target") then
+    ns.Debug("chronicle: %s died as the target, the kill already counted from the experience line", name)
+    return false
+  end
+  mark(name, "target")
+  addKill(id, name, 0, 1, solo())
+  return true
 end
 
 -- Loot ----------------------------------------------------------------------------------------
@@ -407,7 +511,13 @@ end
 ns.On("CHAT_MSG_COMBAT_XP_GAIN", function(_, text)
   if chronicleOn() then Ch.OnXpMessage(text) end
 end)
-ns.On("PLAYER_TARGET_CHANGED", function() Ch.LearnUnit("target") end)
+ns.On("PLAYER_TARGET_CHANGED", function()
+  Ch.LearnUnit("target")
+  Ch.CheckTarget()
+end)
+ns.On("UNIT_HEALTH", function(_, unit)
+  if unit == "target" then Ch.CheckTarget() end
+end)
 ns.On("UPDATE_MOUSEOVER_UNIT", function() Ch.LearnUnit("mouseover") end)
 ns.On("NAME_PLATE_UNIT_ADDED", function(_, unit) Ch.LearnUnit(unit) end)
 ns.On("LOOT_OPENED", function() Ch.OnLootOpened() end)

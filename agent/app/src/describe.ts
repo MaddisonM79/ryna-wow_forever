@@ -1,5 +1,15 @@
 // Agent events in plain words, for the activity log. Null means "not worth a line".
-import type { AccountView, AgentEvent, CombatStatus, InstallResult, InstallView, UploadedFight } from "./api";
+import type {
+  AccountView,
+  AgentEvent,
+  CombatStatus,
+  InstallResult,
+  InstallView,
+  ModChange,
+  ModToggleResult,
+  ModView,
+  UploadedFight,
+} from "./api";
 
 const FLAVORS: Record<string, string> = {
   wowf: "World of Warcraft: Forever",
@@ -187,10 +197,77 @@ export function addonRow(i: InstallView, bundled: string | null): AddonRow {
   }
 }
 
-/** The activity log's lines for an install: "Installed addon 0.2.0 into <folder>". */
+/** The activity log's lines for an install: "Installed addon 0.2.0 into <folder>", then its mods. */
 export function installedLines(r: InstallResult): string[] {
   const what = r.version ? `addon ${r.version}` : "the addon";
-  return r.installed.map((d) => `Installed ${what} into ${d.path}`);
+  return [...r.installed.map((d) => `Installed ${what} into ${d.path}`), ...modChangeLines(r.mods ?? [])];
+}
+
+/** Under the toggle of a mod that does something in the game for the player, every time. */
+export const ACTS_IN_GAME = "This mod acts in the game for you.";
+
+/** A mod's state in one install (the core's `mods::row_words`). */
+export function modRow(m: ModView, install: string): { text: string; chip: "pushed" | "waiting" | "update" } {
+  const here = m.installs.find((i) => i.install === install);
+  const installed = here?.installed ? here : null;
+  let text: string;
+  let chip: "pushed" | "waiting" | "update";
+  if (m.on && installed) {
+    const v = installed.version;
+    if (v && compareVersions(v, m.bundled) < 0) {
+      text = `On · ${v} installed, ${m.bundled} available`;
+      chip = "update";
+    } else {
+      text = v ? `On · ${v} installed` : "On · installed";
+      chip = "pushed";
+    }
+  } else if (m.on) {
+    text = "On · not installed yet: install the addon";
+    chip = "waiting";
+  } else {
+    text = installed ? "Off · still installed" : "Off";
+    chip = "waiting";
+  }
+  if (installed && installed.offInGame > 0) {
+    text += ` · off in the game for ${plural(installed.offInGame, "character")}`;
+    chip = "waiting";
+  }
+  return { text, chip };
+}
+
+/** Dotted integers, as the core compares them: "0.10.0" is after "0.9.1". */
+export function compareVersions(a: string, b: string): number {
+  const parts = (v: string) => v.replace(/^[vV]/, "").split(".").map((p) => parseInt(p, 10) || 0);
+  const x = parts(a);
+  const y = parts(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const d = (x[i] ?? 0) - (y[i] ?? 0);
+    if (d !== 0) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
+/** "Installed the Chronicle mod 0.3.0 into <folder>", "Removed the Chronicle mod from <folder>". */
+export function modChangeLines(changes: ModChange[]): string[] {
+  return changes.map((c) =>
+    c.change === "installed"
+      ? `Installed the ${c.name} mod${c.version ? ` ${c.version}` : ""} into ${c.path}`
+      : `Removed the ${c.name} mod from ${c.path}`,
+  );
+}
+
+/** What a mod's toggle did, for the activity log. */
+export function modToggledLines(r: ModToggleResult): string[] {
+  const lines = [`${r.name}: ${r.on ? "on" : "off"}.`, ...modChangeLines(r.changes)];
+  for (const path of r.waitingForAddon) lines.push(`${r.name} goes into ${path} with the addon: install the addon there.`);
+  if (r.changes.length) {
+    lines.push(
+      r.gameRunning
+        ? "The game is running: /reload or log out and in to load the change."
+        : "The game picks it up at the next login or /reload.",
+    );
+  }
+  return lines;
 }
 
 /** What the row says after an install: what went in, and how the game picks it up. */

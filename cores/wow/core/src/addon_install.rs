@@ -8,6 +8,10 @@
 //! app's install row and the heartbeat; `bundled_addon_version` reads the same line from the copy
 //! a front end would install (the app's resources, the CLI's `--from`), and `addon_state` says
 //! how the two compare (`compare_versions`: dotted integers).
+//!
+//! A WoW mod is its own addon folder beside `Ryna` (`Ryna_Chronicle`): `install_named`,
+//! `remove_named` and `installed_folder_version` do the same for any folder name; `install` is
+//! `install_named` with `Ryna`, unchanged.
 
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
@@ -48,8 +52,23 @@ pub fn parse_toc_version(toc: &str) -> Option<String> {
 /// The `## Version:` of the `Ryna.toc` in the addon folder `dir`; None when it can't be read or
 /// names no version.
 fn folder_version(dir: &Path) -> Option<String> {
-    let bytes = std::fs::read(dir.join(format!("{ADDON_NAME}.toc"))).ok()?;
+    folder_version_named(dir, ADDON_NAME)
+}
+
+/// The `## Version:` of `<name>.toc` in the addon folder `dir`.
+pub fn folder_version_named(dir: &Path, name: &str) -> Option<String> {
+    let bytes = std::fs::read(dir.join(format!("{name}.toc"))).ok()?;
     parse_toc_version(&String::from_utf8_lossy(&bytes))
+}
+
+/// `<install>/Interface/AddOns/<name>`, whether or not it's there.
+pub fn addon_dir_named(install: &Install, name: &str) -> PathBuf {
+    install.path.join("Interface").join("AddOns").join(name)
+}
+
+/// The installed version of the addon folder `name` (its `<name>.toc`), when it's there and says.
+pub fn installed_folder_version(install: &Install, name: &str) -> Option<String> {
+    folder_version_named(&addon_dir_named(install, name), name)
 }
 
 /// The installed addon's version, from `Interface/AddOns/Ryna/Ryna.toc`; None when the addon
@@ -173,11 +192,17 @@ fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
 /// Copy `source` (the `Ryna` folder) into `install`'s `Interface/AddOns/Ryna`, replacing what's
 /// there. Returns the installed folder.
 pub fn install(source: &Path, install: &Install) -> Result<PathBuf> {
+    install_named(source, install, ADDON_NAME)
+}
+
+/// Copy `source` into `install`'s `Interface/AddOns/<name>`, replacing what's there, the same way
+/// (staged beside it and swapped in). Returns the installed folder.
+pub fn install_named(source: &Path, install: &Install, name: &str) -> Result<PathBuf> {
     let addons = install.path.join("Interface").join("AddOns");
     std::fs::create_dir_all(&addons).with_context(|| format!("creating {}", addons.display()))?;
-    let target = addons.join(ADDON_NAME);
-    let staging = addons.join(format!(".{ADDON_NAME}.installing"));
-    let old = addons.join(format!(".{ADDON_NAME}.old"));
+    let target = addons.join(name);
+    let staging = addons.join(format!(".{name}.installing"));
+    let old = addons.join(format!(".{name}.old"));
     for leftover in [&staging, &old] {
         if leftover.exists() {
             std::fs::remove_dir_all(leftover)
@@ -202,6 +227,21 @@ pub fn install(source: &Path, install: &Install) -> Result<PathBuf> {
         std::fs::remove_dir_all(&old).with_context(|| format!("removing {}", old.display()))?;
     }
     Ok(target)
+}
+
+/// Remove `install`'s `Interface/AddOns/<name>` (a mod's folder; never the core's own). Returns
+/// whether there was one to remove.
+pub fn remove_named(install: &Install, name: &str) -> Result<bool> {
+    if name == ADDON_NAME || name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.')
+    {
+        bail!("not a mod's addon folder: {name:?}");
+    }
+    let target = addon_dir_named(install, name);
+    if !target.is_dir() {
+        return Ok(false);
+    }
+    std::fs::remove_dir_all(&target).with_context(|| format!("removing {}", target.display()))?;
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -314,6 +354,40 @@ mod tests {
                 "{from}"
             );
         }
+    }
+
+    #[test]
+    fn a_mod_folder_installs_beside_the_core_and_comes_out_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = addon(dir.path());
+        let m = dir.path().join("release/addon/Ryna_Chronicle");
+        std::fs::create_dir_all(m.join("Locales")).unwrap();
+        std::fs::write(m.join("Ryna_Chronicle.toc"), "## Version: 0.3.0\n").unwrap();
+        std::fs::write(m.join("Locales/enUS.lua"), "-- strings\n").unwrap();
+        let inst = Install {
+            path: dir.path().join("_forever_"),
+            flavor: Some("wowf".into()),
+        };
+        install(&a, &inst).unwrap();
+        assert_eq!(installed_folder_version(&inst, "Ryna_Chronicle"), None);
+        let to = install_named(&m, &inst, "Ryna_Chronicle").unwrap();
+        assert_eq!(to, addon_dir_named(&inst, "Ryna_Chronicle"));
+        assert!(to.join("Locales/enUS.lua").is_file());
+        assert_eq!(
+            installed_folder_version(&inst, "Ryna_Chronicle").as_deref(),
+            Some("0.3.0")
+        );
+        assert!(remove_named(&inst, "Ryna_Chronicle").unwrap());
+        assert!(!to.exists());
+        assert!(has_addon(&inst), "the core's folder is left alone");
+        assert!(
+            !remove_named(&inst, "Ryna_Chronicle").unwrap(),
+            "nothing left to remove"
+        );
+        for refused in ["Ryna", "", "../Ryna", ".Ryna.old"] {
+            assert!(remove_named(&inst, refused).is_err(), "{refused}");
+        }
+        assert!(has_addon(&inst));
     }
 
     #[test]

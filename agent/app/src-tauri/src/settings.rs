@@ -1,6 +1,7 @@
 //! The app's own settings, in its config folder (`settings.json`): only what the core doesn't
 //! keep itself. Launch at login lives with the OS (the autostart plugin asks it), not here.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,10 @@ pub struct Settings {
     /// "Keep raw logs on ryna.io": each fight's own log lines go up too (off by default).
     #[serde(default)]
     pub keep_raw: bool,
+    /// Each mod the person turned on or off, by id; a mod not here is its manifest's `defaultOn`
+    /// (Chronicle: on).
+    #[serde(default)]
+    pub mods: BTreeMap<String, bool>,
 }
 
 fn yes() -> bool {
@@ -31,6 +36,7 @@ impl Default for Settings {
             install_override: None,
             send_digests: true,
             keep_raw: false,
+            mods: BTreeMap::new(),
         }
     }
 }
@@ -81,6 +87,7 @@ mod tests {
             install_override: Some(PathBuf::from("/Games/World of Warcraft")),
             send_digests: false,
             keep_raw: true,
+            mods: BTreeMap::from([("chronicle".to_string(), false)]),
         };
         s.save(dir.path()).unwrap();
         assert_eq!(Settings::load(dir.path()), s);
@@ -90,5 +97,10 @@ mod tests {
         std::fs::write(dir.path().join(FILE), r#"{ "installOverride": null }"#).unwrap();
         let old = Settings::load(dir.path());
         assert!(old.send_digests && !old.keep_raw);
+        // Settings written before mods: none chosen, so each is its default.
+        assert!(old.mods.is_empty());
+        let v: serde_json::Value =
+            serde_json::from_slice(&serde_json::to_vec(&s).unwrap()).unwrap();
+        assert_eq!(v["mods"]["chronicle"], serde_json::json!(false));
     }
 }

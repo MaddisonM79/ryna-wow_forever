@@ -4,6 +4,7 @@
 -- (source `roster`), at most once per refresh window.
 
 local _, ns = ...
+if ns.off then return end
 
 local G = {}
 ns.Guild = G

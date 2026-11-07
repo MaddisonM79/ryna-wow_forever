@@ -3,6 +3,7 @@
 -- time they were read; closing the bank clears nothing.
 
 local _, ns = ...
+if ns.off then return end
 
 local B = {}
 ns.Containers = B

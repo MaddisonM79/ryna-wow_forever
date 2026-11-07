@@ -7,7 +7,7 @@ use tauri::AppHandle;
 use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_opener::OpenerExt as _;
 
-use crate::agent::{self, InstallResult, LoginCode, Status};
+use crate::agent::{self, InstallResult, LoginCode, ModToggleResult, Status};
 use crate::updates;
 
 /// The portal's page for this app.
@@ -111,6 +111,17 @@ pub async fn set_combat_settings(app: AppHandle, digests: bool, raw: bool) -> Re
 #[tauri::command]
 pub async fn install_addon(app: AppHandle, path: Option<String>) -> Result<InstallResult, String> {
     blocking(move || agent::install_addon(&app, path.as_deref())).await
+}
+
+/// Turns a mod on or off (kept in the settings), and installs or removes its folders in each
+/// install the addon belongs in.
+#[tauri::command]
+pub async fn set_mod_enabled(
+    app: AppHandle,
+    id: String,
+    on: bool,
+) -> Result<ModToggleResult, String> {
+    blocking(move || agent::set_mod_enabled(&app, &id, on)).await
 }
 
 /// Turns launch at login on or off; returns what the OS now says.
