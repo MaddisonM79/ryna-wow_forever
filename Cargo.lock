@@ -3423,19 +3423,34 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
-name = "ryna-wow"
-version = "0.2.5"
+name = "ryna"
+version = "0.2.6"
 dependencies = [
  "anyhow",
  "clap",
+ "ryna-agent",
  "ryna-wow-core",
  "serde_json",
 ]
 
 [[package]]
-name = "ryna-wow-app"
-version = "0.2.5"
+name = "ryna-agent"
+version = "0.2.6"
 dependencies = [
+ "directories",
+ "keyring",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "ryna-wow-app"
+version = "0.2.6"
+dependencies = [
+ "ryna-agent",
  "ryna-wow-core",
  "serde",
  "serde_json",
@@ -3450,13 +3465,11 @@ dependencies = [
 
 [[package]]
 name = "ryna-wow-core"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "anyhow",
- "directories",
  "flate2",
- "keyring",
- "reqwest 0.12.28",
+ "ryna-agent",
  "serde",
  "serde_json",
  "sha2",

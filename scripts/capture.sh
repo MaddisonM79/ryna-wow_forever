@@ -4,7 +4,7 @@
 #   scripts/capture.sh <path to WTF/Account/<ACCOUNT>/SavedVariables/Ryna.lua> [fixture-name]
 #   scripts/capture.sh --combat <path to Logs/WoWCombatLog-*.txt> [fixture-name] [--from HH:MM:SS] [--until HH:MM:SS]
 #
-# Combat-log mode (docs/wow.md section 9.8) writes agent/fixtures/<fixture-name>.txt (default
+# Combat-log mode (docs/wow.md section 9.8) writes cores/wow/fixtures/<fixture-name>.txt (default
 # combat-world.txt), keeping the log's structure and every NPC's name but
 #    - every player's and pet's name (the quoted name after a Player- or Pet- GUID, which covers
 #      the names in deaths and kills) becomes a stable fake, its "Name" and "Realm" parts each from
@@ -17,7 +17,7 @@
 # The raw log is copied into captures/ first, and the same leak check runs on the result.
 #
 # 1. Copies the file as it is into captures/ (gitignored: it never enters the tree).
-# 2. Writes a scrubbed copy to agent/fixtures/<fixture-name>.lua (default: captured.lua), where
+# 2. Writes a scrubbed copy to cores/wow/fixtures/<fixture-name>.lua (default: captured.lua), where
 #    - every character name ("First-Last", from fullName/firstName/lastName and roster/seen
 #      entries) becomes a stable fake (the first two characters become Aerin-Stormcall and
 #      Thorbrand-Ironhew, then Kesra-Duskmantle, ...), word by word, everywhere in the file;
@@ -54,10 +54,10 @@ if [ "${1:-}" = "--combat" ]; then
     esac
   done
   [ -f "$src" ] || { echo "no such file: $src" >&2; exit 1; }
-  mkdir -p "$repo/captures" "$repo/agent/fixtures"
+  mkdir -p "$repo/captures" "$repo/cores/wow/fixtures"
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   cp "$src" "$repo/captures/$stamp-$(basename "$src")"
-  out="$repo/agent/fixtures/$name.txt"
+  out="$repo/cores/wow/fixtures/$name.txt"
   leaks="$repo/captures/$stamp-combat-scrubbed-values.txt"
   FROM="$from" UNTIL="$until" LEAKS="$leaks" perl -e '
 use strict; use warnings;
@@ -113,7 +113,7 @@ close $fh;
   fi
   mv "$out.tmp" "$out"
   echo "raw copy:      captures/$stamp-$(basename "$src") (gitignored)"
-  echo "scrubbed copy: agent/fixtures/$name.txt ($(wc -l < "$out" | tr -d ' ') lines; review before committing)"
+  echo "scrubbed copy: cores/wow/fixtures/$name.txt ($(wc -l < "$out" | tr -d ' ') lines; review before committing)"
   exit 0
 fi
 
@@ -124,10 +124,10 @@ name="${2:-captured}"
 account="$(basename "$(dirname "$(dirname "$src")")")"
 [ "$(basename "$(dirname "$src")")" = "SavedVariables" ] || account=""
 
-mkdir -p "$repo/captures" "$repo/agent/fixtures"
+mkdir -p "$repo/captures" "$repo/cores/wow/fixtures"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 cp "$src" "$repo/captures/$stamp-Ryna.lua"
-out="$repo/agent/fixtures/$name.lua"
+out="$repo/cores/wow/fixtures/$name.lua"
 leaks="$repo/captures/$stamp-scrubbed-values.txt"
 
 ACCOUNT="$account" LEAKS="$leaks" perl -e '
@@ -189,4 +189,4 @@ if grep -F -w -f "$leaks" "$out.tmp" >/dev/null 2>&1; then
 fi
 mv "$out.tmp" "$out"
 echo "raw copy:      captures/$stamp-Ryna.lua (gitignored)"
-echo "scrubbed copy: agent/fixtures/$name.lua (review before committing)"
+echo "scrubbed copy: cores/wow/fixtures/$name.lua (review before committing)"

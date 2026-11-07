@@ -46,7 +46,7 @@ const syncLabel = computed(() => (status.value?.watching ? "Syncing while open" 
   </section>
   <p v-if="status && !status.signedIn && !status.clientIdIssued" class="banner">
     This build can't sign in yet: its sign-in client hasn't been issued. Developers can set
-    <code>RYNA_WOW_CLIENT_ID</code>.
+    <code>RYNA_CLIENT_ID</code>.
   </p>
   <p v-if="status?.keychainError" class="banner error">
     Couldn't read the sign-in from the system keychain: {{ status.keychainError }}

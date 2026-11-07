@@ -1,0 +1,28 @@
+{
+  "id": "wow",
+  "name": "World of Warcraft: Forever",
+  "version": "0.2.6",
+  "runtime": { "kind": "builtin" },
+  "resource": "https://api.ryna.io/wow/ingest",
+  "scopes": ["wow:ingest"],
+  "detect": {
+    "folders": [
+      "/Applications/World of Warcraft",
+      "~/Applications/World of Warcraft",
+      "C:\\Program Files (x86)\\World of Warcraft",
+      "C:\\Program Files\\World of Warcraft"
+    ]
+  },
+  "data": {
+    "reads": [
+      ".flavor.info",
+      "WTF/Account/*/SavedVariables/Ryna.lua",
+      "Logs/WoWCombatLog-*.txt",
+      "Interface/AddOns/Ryna/Ryna.toc"
+    ],
+    "writes": [
+      "Interface/AddOns/Ryna/"
+    ]
+  },
+  "mods": "mods/wow"
+}

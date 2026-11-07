@@ -74,13 +74,21 @@ when. It is for the community that plays, and for nothing else.
 - `docs/ryna-agent-cores-mods.md`: the design for where this goes: Ryna is the agent, games are cores,
   mods belong to cores, and a data layer carries game data into the game without an addon release.
 
-- `addon/`: the Lua addon, tagged for Forever (`addon/README.md`: what it records, settings, the
-  census sweep, translations).
-- `agent/`: the app, a Rust workspace (`Cargo.toml` at the root). `agent/core` is the library:
-  the SavedVariables reader, install discovery, the sign-in (OAuth device grant), the combat-log
-  tailer and fight parser, the pusher and the watch loop. `agent/app` is the Tauri desktop app
-  people install; `agent/cli` is a command line over the same core, for developers.
-  `agent/README.md` covers building, how it runs, releasing and signing.
+Ryna is **the agent**; each game is a **core** behind it; **mods** belong to a core. One Rust
+workspace (`Cargo.toml` at the root) holds the agent and the cores' Rust halves.
+
+- `agent/`: the agent. `agent/host` (crate `ryna-agent`) is what's the agent's and not any
+  game's: the sign-in (OAuth device grant) and token store, the HTTP client, the state folder, the
+  failure words, and `ryna_agent::core`, the one interface a core implements (its manifest and the
+  `Core` trait). `agent/app` is the Tauri desktop app people install; `agent/cli` is a command line
+  for developers. `agent/README.md` covers building, how it runs, releasing and signing.
+- `cores/`: the games (`cores/README.md`). `cores/wow` is World of Warcraft: Forever: its manifest
+  `core.json`; the Rust core `cores/wow/core` (crate `ryna-wow-core`: the SavedVariables reader,
+  install discovery, the combat-log tailer and fight parser, the pusher, the watch loop and the addon
+  installer); the in-game addon `cores/wow/addon/Ryna`, tagged for Forever
+  (`cores/wow/addon/README.md`: what it records, settings, the census sweep, translations); and the
+  scrubbed test fixtures in `cores/wow/fixtures`.
+- `mods/`: each core's mods (`mods/wow`), from stage 2 of the design.
 - `scripts/`: version checks, the release manifest, the CLI smoke test, and `capture.sh`, which
   turns a real `Ryna.lua` into a scrubbed test fixture.
 

@@ -16,7 +16,8 @@ path = "src/main.rs"
 tauri-build = { version = "=2.7.4", features = [] }
 
 [dependencies]
-ryna-wow-core = { path = "../../core" }
+ryna-agent = { path = "../../host" }
+ryna-wow-core = { path = "../../../cores/wow/core" }
 serde.workspace = true
 serde_json.workspace = true
 # Versions are exact: the Tauri CLI refuses a crate whose major.minor differs from its npm

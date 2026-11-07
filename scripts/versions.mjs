@@ -23,7 +23,7 @@ export function lockVersion(text, name) {
   return m ? m[1] : null;
 }
 
-export const CRATES = ["ryna-wow", "ryna-wow-core", "ryna-wow-app"];
+export const CRATES = ["ryna-agent", "ryna", "ryna-wow-core", "ryna-wow-app"];
 
 /** Every place's version, by a name to report it under. */
 export function readVersions(root) {
@@ -31,7 +31,9 @@ export function readVersions(root) {
   const found = {
     "Cargo.toml [workspace.package]": workspaceVersion(read("Cargo.toml")),
     "agent/app/package.json": JSON.parse(read("agent/app/package.json")).version ?? null,
-    "addon/Ryna/Ryna.toc": tocVersion(read("addon/Ryna/Ryna.toc")),
+    "cores/wow/addon/Ryna/Ryna.toc": tocVersion(read("cores/wow/addon/Ryna/Ryna.toc")),
+    // A core's manifest version is what its heartbeat reports; bundled cores take the agent's.
+    "cores/wow/core.json": JSON.parse(read("cores/wow/core.json")).version ?? null,
   };
   // tauri.conf.json falls back to the crate's version; if it ever names one, it must agree.
   const tauri = JSON.parse(read("agent/app/src-tauri/tauri.conf.json"));

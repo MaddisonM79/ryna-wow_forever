@@ -1,0 +1,23 @@
+[package]
+name = "ryna-agent"
+description = "Ryna, the agent: what every game's core shares (sign-in, the HTTP client, the state folder, failure words, cancel handles) and the interface a core implements."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+# The test doubles (MemoryStore, ScriptedTransport, FakeClock, test_config), for a core's own tests.
+testing = []
+
+[dependencies]
+directories.workspace = true
+keyring.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

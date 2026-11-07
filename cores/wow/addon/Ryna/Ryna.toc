@@ -1,0 +1,35 @@
+## Interface: 16001
+## Title: Ryna
+## Notes: Records your characters, bags, bank, quests, guild roster and a session journal for the Ryna companion app. /ryna for settings.
+## Author: Ryna contributors
+## Version: 0.2.6
+## SavedVariables: RynaDB
+
+Core.lua
+Locales\enUS.lua
+Locales\deDE.lua
+Locales\frFR.lua
+Locales\esES.lua
+Locales\esMX.lua
+Locales\itIT.lua
+Locales\ptBR.lua
+Locales\ruRU.lua
+Locales\koKR.lua
+Locales\zhCN.lua
+Locales\zhTW.lua
+Journal.lua
+Character.lua
+Zone.lua
+Containers.lua
+Quests.lua
+Guild.lua
+Sightings.lua
+Census.lua
+Status.lua
+Chronicle.lua
+Tooltip.lua
+Panel.lua
+Minimap.lua
+Slash.lua
+Init.lua
+AgentStatus.lua

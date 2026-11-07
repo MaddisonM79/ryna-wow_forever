@@ -1,44 +1,52 @@
-//! `ryna-wow`: the World of Warcraft: Forever companion agent's command line, for developers and
+//! `ryna`: the World of Warcraft: Forever companion agent's command line, for developers and
 //! for debugging. People install the desktop app, which runs the same core while it is open.
 //!
 //! Finds the game's install(s), reads each account's `Ryna.lua` (the addon's SavedVariables),
-//! and pushes a snapshot of it to the API as the person who signed in with `ryna-wow login`.
+//! and pushes a snapshot of it to the API as the person who signed in with `ryna login`.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
+// The agent's own parts (sign-in, config, HTTP, the state folder, the core interface).
+use ryna_agent::auth::{self, Auth, AuthError, KeyringStore, LoginStatus};
+use ryna_agent::cancel::CancelToken;
+use ryna_agent::config::Config;
+use ryna_agent::core::{Core, CoreContext, CoreControl, KeychainTokens};
+use ryna_agent::fix::Fix;
+use ryna_agent::http::HttpTransport;
+use ryna_agent::state_dir;
+use ryna_agent::util::{iso_utc, now_secs, SystemClock};
+use ryna_agent::AGENT_VERSION;
+// The WoW core: `watch` drives it through the interface; the developer commands below call it
+// directly (each marked).
 use ryna_wow_core::addon_install::AddonState;
-use ryna_wow_core::auth::{self, Auth, AuthError, KeyringStore, LoginStatus};
-use ryna_wow_core::config::Config;
 use ryna_wow_core::discovery::{self, Discovery};
-use ryna_wow_core::fix::Fix;
-use ryna_wow_core::http::HttpTransport;
 use ryna_wow_core::push::Api;
 use ryna_wow_core::runner::{self, Outcome, RunError, RunOptions, RunReport};
-use ryna_wow_core::state;
-use ryna_wow_core::util::{iso_utc, now_secs, SystemClock};
-use ryna_wow_core::watch::{CancelToken, WatchEvent, WatchOptions};
-use ryna_wow_core::{addon_install, lua, snapshot, AGENT_VERSION};
+use ryna_wow_core::watch::WatchEvent;
+use ryna_wow_core::wow_core::WowCore;
+use ryna_wow_core::{addon_install, lua, snapshot};
 
 #[derive(Parser)]
 #[command(
-    name = "ryna-wow",
+    name = "ryna",
     version,
     about = "The World of Warcraft: Forever companion agent (developer command line; the desktop app is the way to install it)"
 )]
 struct Cli {
     /// The game folder (`World of Warcraft`) or one product folder in it (`_forever_`), in place
     /// of the default install locations.
-    #[arg(long, global = true, env = "RYNA_WOW_INSTALL", value_name = "PATH")]
+    #[arg(long, global = true, env = "RYNA_INSTALL", value_name = "PATH")]
     install: Option<PathBuf>,
     /// The API origin (default https://api.ryna.io).
-    #[arg(long, global = true, env = "RYNA_WOW_API", value_name = "ORIGIN")]
+    #[arg(long, global = true, env = "RYNA_API", value_name = "ORIGIN")]
     api: Option<String>,
     /// The sign-in provider (default https://auth.nyratech.dev).
-    #[arg(long, global = true, env = "RYNA_WOW_ISSUER", value_name = "URL")]
+    #[arg(long, global = true, env = "RYNA_ISSUER", value_name = "URL")]
     issuer: Option<String>,
     #[command(subcommand)]
     command: Command,
@@ -120,7 +128,7 @@ fn main() -> ExitCode {
     match dispatch(cli) {
         Ok(code) => code,
         Err(e) => {
-            eprintln!("ryna-wow: {e:#}");
+            eprintln!("ryna: {e:#}");
             ExitCode::from(1)
         }
     }
@@ -164,8 +172,8 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
 /// The command that fixes a failure: the core's errors name none, so the CLI adds its own.
 fn hint(fix: Fix) -> Option<&'static str> {
     match fix {
-        Fix::SignIn => Some("run `ryna-wow login`"),
-        Fix::Update => Some("update ryna-wow, then run `ryna-wow install-addon`"),
+        Fix::SignIn => Some("run `ryna login`"),
+        Fix::Update => Some("update ryna, then run `ryna install-addon`"),
         Fix::Network | Fix::Other => None,
     }
 }
@@ -196,8 +204,8 @@ fn login(config: &Config) -> Result<ExitCode> {
     })
     .map_err(auth_error)?;
     match session.signed_in_as {
-        Some(who) => println!("Signed in as {who}. `ryna-wow run` now pushes your accounts."),
-        None => println!("Signed in. `ryna-wow run` now pushes your accounts as you."),
+        Some(who) => println!("Signed in as {who}. `ryna run` now pushes your accounts."),
+        None => println!("Signed in. `ryna run` now pushes your accounts as you."),
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -215,12 +223,15 @@ fn when(secs: Option<i64>) -> String {
 }
 
 fn status(config: &Config, install: Option<&Path>, from: Option<&Path>) -> Result<ExitCode> {
-    println!("ryna-wow {AGENT_VERSION}");
+    println!("ryna {AGENT_VERSION}");
     println!("API {}  sign-in {}", config.api, config.issuer);
     if !config.client_id_issued() {
-        println!("Device client: not issued yet (set RYNA_WOW_CLIENT_ID); `login` can't run until it is.");
+        println!(
+            "Device client: not issued yet (set RYNA_CLIENT_ID); `login` can't run until it is."
+        );
     }
     let beside = addon_install::beside_binary();
+    // stage 1: direct; the core interface takes this in stage 2 (the full status, not just its rows).
     let s = ryna_wow_core::status::status(config, install, from.or(beside.as_deref()));
     match &s.addon_bundled {
         Some(v) => println!("Addon to install: {v}"),
@@ -231,7 +242,7 @@ fn status(config: &Config, install: Option<&Path>, from: Option<&Path>) -> Resul
         (Some(e), _, _) => println!("Couldn't read the keychain: {e}"),
         (None, true, Some(who)) => println!("Signed in as {who}."),
         (None, true, None) => println!("Signed in (a refresh token is in the keychain)."),
-        (None, false, _) => println!("Not signed in: run `ryna-wow login`."),
+        (None, false, _) => println!("Not signed in: run `ryna login`."),
     }
 
     if s.installs.is_empty() {
@@ -247,7 +258,7 @@ fn status(config: &Config, install: Option<&Path>, from: Option<&Path>) -> Resul
             if let Some(b) = &s.addon_bundled {
                 match i.addon {
                     AddonState::Older | AddonState::Unknown => {
-                        addon.push_str(&format!(" ({b} available: `ryna-wow install-addon`)"))
+                        addon.push_str(&format!(" ({b} available: `ryna install-addon`)"))
                     }
                     AddonState::Newer => addon.push_str(&format!(" (newer than {b})")),
                     AddonState::NotInstalled | AddonState::Current => {}
@@ -261,7 +272,7 @@ fn status(config: &Config, install: Option<&Path>, from: Option<&Path>) -> Resul
         }
     }
     if s.accounts.is_empty() {
-        println!("\nNo Ryna.lua yet: install the addon (`ryna-wow install-addon`), log in to the game, then /reload or log out.");
+        println!("\nNo Ryna.lua yet: install the addon (`ryna install-addon`), log in to the game, then /reload or log out.");
     } else {
         println!("\nAccounts:");
     }
@@ -370,7 +381,8 @@ fn print_report(r: &RunReport) {
 /// One run; the exit code.
 fn run(config: &Config, install: Option<&Path>, opts: &RunOptions) -> Result<u8> {
     let dir =
-        state::state_dir().context("no place to keep the agent's state: set RYNA_WOW_STATE_DIR")?;
+        state_dir::state_dir().context("no place to keep the agent's state: set RYNA_STATE_DIR")?;
+    // stage 1: direct; the core interface takes this in stage 2 (one pass, then exit).
     let found: Discovery = discovery::discover(install);
     if found.installs.is_empty() {
         eprintln!("no installs found: point at the game with --install <folder>");
@@ -389,7 +401,7 @@ fn run(config: &Config, install: Option<&Path>, opts: &RunOptions) -> Result<u8>
             Ok(report.failure.map_or(0, |f| f.exit_code() as u8))
         }
         Err(RunError::Busy) => {
-            eprintln!("another ryna-wow run is in progress; not starting a second");
+            eprintln!("another ryna run is in progress; not starting a second");
             Ok(1)
         }
         Err(e) => Err(e.into()),
@@ -403,19 +415,19 @@ fn watch(
     interval: u64,
     combat: ryna_wow_core::combat::CombatOptions,
 ) -> Result<ExitCode> {
-    let mut opts = WatchOptions::new(
-        install.map(Path::to_path_buf),
-        Duration::from_secs(interval),
-    )
-    .context("no place to keep the agent's state: set RYNA_WOW_STATE_DIR")?;
-    opts.combat = combat;
+    let ctx = CoreContext {
+        state_dir: state_dir::state_dir()
+            .context("no place to keep the agent's state: set RYNA_STATE_DIR")?,
+        tokens: Arc::new(KeychainTokens::new(config.clone())),
+        game_folder: install.map(Path::to_path_buf),
+    };
+    let core = WowCore::new(Duration::from_secs(interval)).with_combat(combat);
     println!("Watching every {interval} s (Ctrl-C to stop).");
-    let cancel = CancelToken::new();
-    ryna_wow_core::watch::watch(config, &opts, &cancel, &mut |event| {
+    core.start(&ctx, &CoreControl::new(), &mut |event| {
         let stamp = iso_utc(now_secs());
         match &event {
             WatchEvent::SignedIn { signed_in: false } => {
-                println!("{stamp} not signed in: run `ryna-wow login`")
+                println!("{stamp} not signed in: run `ryna login`")
             }
             WatchEvent::SignedIn { .. } => {}
             WatchEvent::InstallFound { path, flavor } => {
@@ -505,6 +517,7 @@ fn watch(
 }
 
 fn install_addon(install: Option<&Path>, from: Option<&Path>) -> Result<ExitCode> {
+    // stage 1: direct; the core interface takes this in stage 2 (the addon is the core's first mod-like install).
     let source = match from {
         Some(dir) => addon_install::resolve_source(dir)?,
         None => addon_install::beside_binary().context(
@@ -535,6 +548,7 @@ fn install_addon(install: Option<&Path>, from: Option<&Path>) -> Result<ExitCode
 }
 
 fn parse(file: &Path, raw: bool, account: Option<&str>) -> Result<ExitCode> {
+    // stage 1: direct; the core interface takes this in stage 2 (a debug view of the core's reader).
     let text = std::fs::read(file).with_context(|| format!("reading {}", file.display()))?;
     let parsed =
         lua::parse(&String::from_utf8_lossy(&text)).with_context(|| file.display().to_string())?;
@@ -560,7 +574,7 @@ fn parse(file: &Path, raw: bool, account: Option<&str>) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// `ryna-wow combat <file>`: the fights in a log, as the agent would cut and summarise them.
+/// `ryna combat <file>`: the fights in a log, as the agent would cut and summarise them.
 fn combat(
     file: &Path,
     digest: Option<&Path>,
@@ -568,6 +582,7 @@ fn combat(
     account_key: &str,
     full: bool,
 ) -> Result<ExitCode> {
+    // stage 1: direct; the core interface takes this in stage 2 (a debug view of the core's parser).
     use ryna_wow_core::combat::{self, segment, CombatOptions};
     let bytes = std::fs::read(file).with_context(|| format!("reading {}", file.display()))?;
     let text = String::from_utf8_lossy(&bytes);

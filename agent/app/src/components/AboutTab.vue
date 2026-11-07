@@ -18,7 +18,7 @@ const LINKS = [
 
 const LICENSE_URL = `${REPO}/blob/main/LICENSE`;
 
-// What the app is built on (agent/app/package.json, src-tauri/Cargo.toml, agent/core/Cargo.toml).
+// What the app is built on (agent/app/package.json, src-tauri/Cargo.toml, agent/host/Cargo.toml, cores/wow/core/Cargo.toml).
 const THIRD_PARTY = [
   { name: "Tauri 2", what: "the window and tray, with its updater, autostart, opener and dialog plugins", licence: "MIT or Apache-2.0" },
   { name: "Vue 3", what: "this window's interface", licence: "MIT" },

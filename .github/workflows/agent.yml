@@ -5,9 +5,9 @@ name: agent
 on:
   push:
     branches: [main]
-    paths: ["agent/**", "scripts/**", "Cargo.toml", "Cargo.lock", ".github/workflows/agent.yml"]
+    paths: ["agent/**", "cores/**", "scripts/**", "Cargo.toml", "Cargo.lock", ".github/workflows/agent.yml"]
   pull_request:
-    paths: ["agent/**", "scripts/**", "Cargo.toml", "Cargo.lock", ".github/workflows/agent.yml"]
+    paths: ["agent/**", "cores/**", "scripts/**", "Cargo.toml", "Cargo.lock", ".github/workflows/agent.yml"]
 
 permissions:
   contents: read
@@ -38,10 +38,10 @@ jobs:
       - run: cargo test --locked
       # The CLI as built, against the fixtures and a fake `Program Files (x86)\World of Warcraft`
       # tree: --version, parse (JSON), combat, and install discovery through `status --install`.
-      - run: cargo build --locked -p ryna-wow
+      - run: cargo build --locked -p ryna
       - name: Smoke-test the CLI
         shell: bash
-        run: scripts/smoke-cli.sh "target/debug/ryna-wow${{ runner.os == 'Windows' && '.exe' || '' }}"
+        run: scripts/smoke-cli.sh "target/debug/ryna${{ runner.os == 'Windows' && '.exe' || '' }}"
       # The release scripts' tests, and that the versions agree (the tag is checked at release).
       - if: runner.os == 'Linux'
         run: node --test scripts/release.test.mjs

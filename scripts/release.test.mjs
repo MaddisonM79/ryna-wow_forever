@@ -11,8 +11,8 @@ test("reads each place's version", () => {
     workspaceVersion('[workspace]\nmembers = []\n\n[workspace.package]\nversion = "0.2.0"\nedition = "2021"\n\n[profile.release]\nversion = "9"\n'),
     "0.2.0",
   );
-  const lock = '[[package]]\nname = "ryna-wow"\nversion = "0.2.0"\n\n[[package]]\nname = "ryna-wow-app"\nversion = "0.1.0"\n';
-  assert.equal(lockVersion(lock, "ryna-wow"), "0.2.0");
+  const lock = '[[package]]\nname = "ryna"\nversion = "0.2.0"\n\n[[package]]\nname = "ryna-wow-app"\nversion = "0.1.0"\n';
+  assert.equal(lockVersion(lock, "ryna"), "0.2.0");
   assert.equal(lockVersion(lock, "ryna-wow-app"), "0.1.0");
   assert.equal(lockVersion(lock, "ryna-wow-core"), null);
 });
@@ -21,9 +21,9 @@ test("refuses versions that disagree, or a tag that doesn't match", () => {
   const ok = { a: "0.2.0", b: "0.2.0" };
   assert.deepEqual(agree(ok, "v0.2.0"), { version: "0.2.0", problems: [] });
   assert.deepEqual(agree(ok, null), { version: "0.2.0", problems: [] });
-  const off = agree({ a: "0.2.0", "addon/Ryna/Ryna.toc": "0.1.0" }, "v0.2.0");
+  const off = agree({ a: "0.2.0", "cores/wow/addon/Ryna/Ryna.toc": "0.1.0" }, "v0.2.0");
   assert.equal(off.version, null);
-  assert.match(off.problems[0], /disagree[\s\S]*0\.1\.0  addon\/Ryna\/Ryna\.toc/);
+  assert.match(off.problems[0], /disagree[\s\S]*0\.1\.0  cores\/wow\/addon\/Ryna\/Ryna\.toc/);
   assert.match(agree(ok, "v0.3.0").problems[0], /the tag is v0\.3\.0/);
   assert.match(agree({ a: null, b: "0.2.0" }, null).problems[0], /a: no version found/);
 });

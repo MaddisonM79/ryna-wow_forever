@@ -1,5 +1,5 @@
 [package]
-name = "ryna-wow"
+name = "ryna"
 description = "The World of Warcraft: Forever companion agent: finds your addon's SavedVariables and pushes them to your backend."
 version.workspace = true
 edition.workspace = true
@@ -8,12 +8,13 @@ repository.workspace = true
 rust-version.workspace = true
 
 [[bin]]
-name = "ryna-wow"
+name = "ryna"
 path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-ryna-wow-core = { path = "../core" }
+ryna-agent = { path = "../host" }
+ryna-wow-core = { path = "../../cores/wow/core" }
 serde_json.workspace = true
 

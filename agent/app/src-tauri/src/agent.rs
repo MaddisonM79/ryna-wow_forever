@@ -1,23 +1,25 @@
-//! The app's side of the core: one watch loop at a time on its own thread, the sign-in, and the
-//! status the window shows. Nothing here outlives the app: quitting cancels the loop and any
+//! The app's side of the agent: one core run at a time on its own thread (the WoW core, driven
+//! through `ryna_agent::core::Core`), the sign-in, and the status the window shows. Nothing here outlives the app: quitting cancels the loop and any
 //! sign-in, and there is no service, scheduled task or launchd job behind it.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use ryna_agent::auth::{self, AuthError, DeviceLogin, KeyringStore, TokenStore};
+use ryna_agent::cancel::CancelToken;
+use ryna_agent::config::Config;
+pub use ryna_agent::core::Phase;
+use ryna_agent::core::{Activity, Core, CoreContext, CoreControl, KeychainTokens, StatusRow};
+use ryna_agent::fix::Fix;
 use ryna_wow_core::addon_install;
-use ryna_wow_core::auth::{self, AuthError, DeviceLogin, KeyringStore, TokenStore};
-use ryna_wow_core::cancel::CancelToken;
-use ryna_wow_core::config::Config;
 use ryna_wow_core::discovery::{self, Install};
-use ryna_wow_core::fix::Fix;
 use ryna_wow_core::status::{
     self as core_status, AccountStatus, CombatStatus, InstallStatus, LastRunStatus,
 };
-use ryna_wow_core::watch::{self, WatchControl, WatchEvent, WatchOptions};
+use ryna_wow_core::wow_core::WowCore;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -25,7 +27,7 @@ use crate::settings::Settings;
 
 /// How often the loop looks for new saves while the app is open.
 pub const INTERVAL: Duration = Duration::from_secs(60);
-/// Every `WatchEvent`, as the core serialises it (`{"event": "pushed", ...}`).
+/// Every core event, as the core serialises it (the WoW core's `WatchEvent`: `{"event": "pushed", ...}`).
 pub const AGENT_EVENT: &str = "agent-event";
 /// `true` or `false`: whether a watch loop is running.
 pub const WATCH_STATE: &str = "watch-state";
@@ -33,28 +35,18 @@ pub const WATCH_STATE: &str = "watch-state";
 /// cancelled).
 pub const LOGIN_FINISHED: &str = "login-finished";
 
-/// The device client id: `RYNA_WOW_CLIENT_ID` when it is set where the app runs, else one baked
-/// in at compile time (`RYNA_WOW_CLIENT_ID` in the build's environment), else the core's
+/// The device client id: `RYNA_CLIENT_ID` when it is set where the app runs, else one baked
+/// in at compile time (`RYNA_CLIENT_ID` in the build's environment), else the core's
 /// placeholder, which `login` refuses. API and issuer come from the core (env overrides).
 pub fn config() -> Config {
     let mut config = Config::resolve(None, None);
-    let baked = option_env!("RYNA_WOW_CLIENT_ID")
+    let baked = option_env!("RYNA_CLIENT_ID")
         .map(str::trim)
         .filter(|id| !id.is_empty());
     if let (false, Some(id)) = (config.client_id_issued(), baked) {
         config.client_id = id.to_string();
     }
     config
-}
-
-/// What an account's row shows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Phase {
-    Waiting,
-    Pushing,
-    Pushed,
-    Error,
 }
 
 /// The code to show the person, and where to check it: the core's `DeviceLogin` (less the
@@ -134,8 +126,8 @@ fn sentence(e: &AuthError) -> String {
 /// What changes while the app runs.
 #[derive(Default)]
 pub struct Live {
-    /// The running loop's control; None (or cancelled) when nothing is watching.
-    control: Option<WatchControl>,
+    /// The running core's control; None (or stopped) when nothing is watching.
+    control: Option<CoreControl>,
     /// The last loop's thread, joined by the next loop before it starts so two never overlap.
     worker: Option<JoinHandle<()>>,
     /// Each account's row state, by its `Ryna.lua` path.
@@ -150,7 +142,7 @@ pub struct Live {
 
 impl Live {
     fn watching(&self) -> bool {
-        self.control.as_ref().is_some_and(|c| !c.is_cancelled())
+        self.control.as_ref().is_some_and(|c| !c.is_stopped())
     }
 
     fn login_running(&self) -> bool {
@@ -159,36 +151,16 @@ impl Live {
             .is_some_and(|t| !t.is_cancelled())
     }
 
-    /// One event's effect on the rows and the last error.
-    pub fn observe(&mut self, event: &WatchEvent) {
-        match event {
-            WatchEvent::AccountFileChanged { path, .. } => {
-                self.phases.insert(path.clone(), Phase::Waiting);
-            }
-            WatchEvent::Pushing { path, .. } => {
-                self.phases.insert(path.clone(), Phase::Pushing);
-            }
-            WatchEvent::Pushed { path, .. } => {
-                self.phases.insert(path.clone(), Phase::Pushed);
-            }
-            WatchEvent::Error {
-                path: Some(path),
-                advice,
-                ..
-            } => {
-                self.phases.insert(path.clone(), Phase::Error);
-                self.last_error = Some(advice.clone());
-            }
-            WatchEvent::Error {
-                path: None, advice, ..
-            } => self.last_error = Some(advice.clone()),
-            WatchEvent::FightFailed {
-                fix: Fix::SignIn | Fix::Network,
-                advice,
-                ..
-            } => self.last_error = Some(advice.clone()),
-            WatchEvent::PassFinished { ok: true, .. } => self.last_error = None,
-            _ => {}
+    /// One event's effect on the rows and the last error (what the core's `activity` says of it).
+    pub fn observe(&mut self, activity: &Activity) {
+        if let Some((key, phase)) = &activity.row {
+            self.phases.insert(key.clone(), *phase);
+        }
+        if let Some(error) = &activity.error {
+            self.last_error = Some(error.clone());
+        }
+        if activity.clears_error {
+            self.last_error = None;
         }
     }
 }
@@ -243,7 +215,7 @@ pub fn start_watch(app: &AppHandle) {
         if live.watching() {
             return;
         }
-        let control = WatchControl::new();
+        let control = CoreControl::new();
         live.control = Some(control.clone());
         let previous = live.worker.take();
         let install = live.settings.install_override.clone();
@@ -270,7 +242,7 @@ pub fn stop_watch(app: &AppHandle) {
 pub fn cancel(app: &AppHandle) {
     let control = app.state::<Agent>().live().control.take();
     if let Some(control) = control {
-        control.cancel();
+        control.stop();
     }
 }
 
@@ -288,9 +260,9 @@ pub fn sync_now(app: &AppHandle) {
         .live()
         .control
         .clone()
-        .filter(|c| !c.is_cancelled());
+        .filter(|c| !c.is_stopped());
     match running {
-        Some(control) => control.request_pass(),
+        Some(control) => control.sync(),
         None => start_watch(app),
     }
 }
@@ -303,9 +275,34 @@ fn restart_if_watching(app: &AppHandle) {
     }
 }
 
-fn emit_event(app: &AppHandle, event: &WatchEvent) {
-    app.state::<Agent>().live().observe(event);
-    let _ = app.emit(AGENT_EVENT, event);
+/// What the WoW core is started with: the agent's state folder, the keychain's tokens and the
+/// chosen game folder. None when there's no state folder.
+fn context(config: &Config, install: Option<PathBuf>) -> Option<CoreContext> {
+    Some(CoreContext {
+        state_dir: ryna_agent::state_dir::state_dir()?,
+        tokens: Arc::new(KeychainTokens::new(config.clone())),
+        game_folder: install,
+    })
+}
+
+/// Run `core` until `control` stops it, telling `on_event` everything it does; a core that can't
+/// run (or no state folder) becomes one failure event. Whatever ended it, `control` is stopped.
+pub fn drive<C: Core>(
+    core: &C,
+    ctx: Option<&CoreContext>,
+    control: &CoreControl,
+    on_event: &mut dyn FnMut(&C::Event),
+) {
+    let result = match ctx {
+        Some(ctx) => core
+            .start(ctx, control, &mut |event| on_event(&event))
+            .map_err(|e| e.to_string()),
+        None => Err("there's no folder to keep the agent's state in".to_string()),
+    };
+    if let Err(message) = result {
+        on_event(&core.failed(message, Fix::Other));
+    }
+    control.stop();
 }
 
 fn run_loop(
@@ -313,23 +310,15 @@ fn run_loop(
     config: &Config,
     install: Option<PathBuf>,
     combat: ryna_wow_core::combat::CombatOptions,
-    control: &WatchControl,
+    control: &CoreControl,
 ) {
-    let result = match WatchOptions::new(install, INTERVAL) {
-        Some(mut opts) => {
-            opts.combat = combat;
-            watch::watch_with_control(config, &opts, control, &mut |event: WatchEvent| {
-                emit_event(app, &event)
-            })
-            .map_err(|e| e.to_string())
-        }
-        None => Err("there's no folder to keep the agent's state in".to_string()),
-    };
-    if let Err(message) = result {
-        emit_event(app, &WatchEvent::error(None, None, message, Fix::Other));
-    }
+    let core = WowCore::new(INTERVAL).with_combat(combat);
+    let ctx = context(config, install);
+    drive(&core, ctx.as_ref(), control, &mut |event| {
+        app.state::<Agent>().live().observe(&core.activity(event));
+        let _ = app.emit(AGENT_EVENT, event);
+    });
     // This loop has ended, whether asked to or not; a newer loop's control is left alone.
-    control.cancel();
     let watching = app.state::<Agent>().watching();
     let _ = app.emit(WATCH_STATE, watching);
 }
@@ -511,10 +500,33 @@ pub struct Status {
     pub state_dir: Option<String>,
     /// The combat log: the newest log, fights uploaded tonight, the last fight.
     pub combat: CombatStatus,
+    /// Each core's status card, as the core lays it out (through the core interface; the window
+    /// still draws its own cards from the fields above in stage 1).
+    pub cores: Vec<CoreView>,
     /// "Send fight digests".
     pub send_digests: bool,
     /// "Keep raw logs on ryna.io".
     pub keep_raw: bool,
+}
+
+/// A core's card: what it is, and its rows.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoreView {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub rows: Vec<StatusRow>,
+}
+
+fn core_view<C: Core>(core: &C, ctx: Option<&CoreContext>) -> CoreView {
+    let m = core.manifest();
+    CoreView {
+        id: m.id.clone(),
+        name: m.name.clone(),
+        version: m.version.clone(),
+        rows: ctx.map(|ctx| core.status_rows(ctx)).unwrap_or_default(),
+    }
 }
 
 fn display(p: &Path) -> String {
@@ -550,11 +562,20 @@ pub fn status(app: &AppHandle) -> Status {
         last_run,
         combat,
         state_dir,
-    } = core_status::status(
-        &agent.config,
-        install_override.as_deref(),
-        bundled_addon(app).ok().as_deref(),
-    );
+    } = {
+        // stage 1: direct; the core interface takes this in stage 2 (the window's own cards read
+        // the core's full status; `cores` below is the same core through the interface).
+        core_status::status(
+            &agent.config,
+            install_override.as_deref(),
+            bundled_addon(app).ok().as_deref(),
+        )
+    };
+    let wow = WowCore::new(INTERVAL).with_bundled_addon(bundled_addon(app).ok());
+    let cores = vec![core_view(
+        &wow,
+        context(&agent.config, install_override.clone()).as_ref(),
+    )];
     let accounts = accounts
         .into_iter()
         .map(|account| AccountView {
@@ -582,13 +603,14 @@ pub fn status(app: &AppHandle) -> Status {
         login,
         state_dir,
         combat,
+        cores,
         send_digests: settings.send_digests,
         keep_raw: settings.keep_raw,
     }
 }
 
 /// Where the bundled addon is: the app's resources (`addon/Ryna`, from the repository's
-/// `addon/Ryna`), or in a debug build the repository itself.
+/// `cores/wow/addon/Ryna`), or in a debug build the repository itself.
 fn bundled_addon(app: &AppHandle) -> Result<PathBuf, String> {
     let mut tried = Vec::new();
     if let Ok(dir) = app
@@ -598,7 +620,8 @@ fn bundled_addon(app: &AppHandle) -> Result<PathBuf, String> {
         tried.push(dir);
     }
     #[cfg(debug_assertions)]
-    let checkout = Some(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../addon/Ryna"));
+    let checkout =
+        Some(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../cores/wow/addon/Ryna"));
     #[cfg(not(debug_assertions))]
     let checkout: Option<PathBuf> = None;
     tried.extend(checkout);
@@ -658,8 +681,9 @@ fn targets<'a>(
 
 /// Copy the bundled addon into one install (`only`, an `InstallStatus::path`) or into each
 /// Forever install (or, when a folder was chosen, every install found there), as
-/// `ryna-wow install-addon` does.
+/// `ryna install-addon` does.
 pub fn install_addon(app: &AppHandle, only: Option<&str>) -> Result<InstallResult, String> {
+    // stage 1: direct; the core interface takes this in stage 2 (installing the core's addon).
     let source = bundled_addon(app)?;
     let version = addon_install::bundled_addon_version(&source);
     let chosen = install_override(app);
@@ -685,9 +709,18 @@ pub fn install_addon(app: &AppHandle, only: Option<&str>) -> Result<InstallResul
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ryna_agent::core::{CoreHeartbeat, CoreManifest};
+    use ryna_wow_core::watch::WatchEvent;
+    use ryna_wow_core::wow_core::activity;
     use serde_json::json;
 
     const A: &str = "/wow/_forever_/WTF/Account/A/SavedVariables/Ryna.lua";
+
+    impl Live {
+        fn observe_event(&mut self, event: &WatchEvent) {
+            self.observe(&activity(event));
+        }
+    }
 
     fn failed(path: Option<&str>) -> WatchEvent {
         WatchEvent::error(None, path.map(str::to_string), "offline".into(), Fix::Other)
@@ -696,28 +729,28 @@ mod tests {
     #[test]
     fn rows_follow_the_events_and_a_good_pass_clears_the_error() {
         let mut live = Live::default();
-        live.observe(&WatchEvent::Pushing {
+        live.observe_event(&WatchEvent::Pushing {
             label: "UNT1".into(),
             path: A.into(),
         });
         assert_eq!(live.phases[A], Phase::Pushing);
-        live.observe(&failed(Some(A)));
+        live.observe_event(&failed(Some(A)));
         assert_eq!(live.phases[A], Phase::Error);
         assert_eq!(live.last_error.as_deref(), Some("offline"));
-        live.observe(&WatchEvent::Pushed {
+        live.observe_event(&WatchEvent::Pushed {
             label: "UNT1".into(),
             path: A.into(),
             characters: 2,
             result: json!({}),
         });
         assert_eq!(live.phases[A], Phase::Pushed);
-        live.observe(&WatchEvent::PassFinished {
+        live.observe_event(&WatchEvent::PassFinished {
             ok: true,
             next_in_secs: 60,
         });
         assert_eq!(live.last_error, None);
         // The neutral words, not the error itself.
-        live.observe(&WatchEvent::error(
+        live.observe_event(&WatchEvent::error(
             None,
             None,
             "the API is unreachable or failing after 3 tries: x".into(),
@@ -726,7 +759,7 @@ mod tests {
         assert_eq!(live.last_error.as_deref(), Some("Couldn't reach the API"));
         // A fight that couldn't go up for the same reason says so too; a refusal doesn't.
         live.last_error = None;
-        live.observe(&WatchEvent::FightFailed {
+        live.observe_event(&WatchEvent::FightFailed {
             key: "k".into(),
             fight: "Fights".into(),
             message: "refused".into(),
@@ -734,7 +767,7 @@ mod tests {
             advice: "refused".into(),
         });
         assert_eq!(live.last_error, None);
-        live.observe(&WatchEvent::FightFailed {
+        live.observe_event(&WatchEvent::FightFailed {
             key: "k".into(),
             fight: "Fights".into(),
             message: "offline".into(),
@@ -748,12 +781,12 @@ mod tests {
     fn a_loop_counts_as_watching_until_its_control_is_cancelled() {
         let mut live = Live::default();
         assert!(!live.watching());
-        let control = WatchControl::new();
+        let control = CoreControl::new();
         live.control = Some(control.clone());
         assert!(live.watching());
-        control.request_pass();
+        control.sync();
         assert!(live.watching());
-        control.cancel();
+        control.stop();
         assert!(!live.watching());
     }
 
@@ -823,5 +856,102 @@ mod tests {
         assert_eq!(expired.error.as_deref(), Some("The sign-in code expired."));
         assert_eq!(expired.fix, Some(Fix::SignIn));
         assert!(LoginFinished::from_result(&Ok(())).ok);
+    }
+
+    /// A core that runs one pass of events, or can't start at all.
+    struct FakeCore {
+        refuse: bool,
+    }
+
+    impl Core for FakeCore {
+        type Event = String;
+        type Error = std::io::Error;
+        fn manifest(&self) -> &CoreManifest {
+            ryna_wow_core::wow_core::manifest()
+        }
+        fn start(
+            &self,
+            _ctx: &CoreContext,
+            control: &CoreControl,
+            events: &mut dyn FnMut(String),
+        ) -> Result<(), std::io::Error> {
+            if self.refuse {
+                return Err(std::io::Error::other("no disk"));
+            }
+            events("pushing".into());
+            control.sync();
+            events("passFinished".into());
+            Ok(())
+        }
+        fn activity(&self, event: &String) -> Activity {
+            Activity {
+                clears_error: event == "passFinished",
+                ..Activity::default()
+            }
+        }
+        fn failed(&self, message: String, _fix: Fix) -> String {
+            format!("failed: {message}")
+        }
+        fn status_rows(&self, _ctx: &CoreContext) -> Vec<StatusRow> {
+            vec![StatusRow::new("Game", "fake", None)]
+        }
+        fn heartbeat(&self, _ctx: &CoreContext) -> CoreHeartbeat {
+            CoreHeartbeat {
+                core: "fake".into(),
+                version: "0.0.0".into(),
+                fields: json!({}),
+            }
+        }
+    }
+
+    fn fake_context() -> CoreContext {
+        CoreContext {
+            state_dir: PathBuf::from("/nowhere"),
+            tokens: Arc::new(KeychainTokens::new(Config::resolve(
+                Some("https://api.test".into()),
+                Some("https://idp.test".into()),
+            ))),
+            game_folder: None,
+        }
+    }
+
+    #[test]
+    fn the_glue_drives_any_core_through_the_interface() {
+        let ctx = fake_context();
+        let control = CoreControl::new();
+        let mut seen = Vec::new();
+        drive(
+            &FakeCore { refuse: false },
+            Some(&ctx),
+            &control,
+            &mut |e| seen.push(e.clone()),
+        );
+        assert_eq!(seen, ["pushing", "passFinished"]);
+        // Whatever ended the run, its control is stopped, so the app stops counting it as watching.
+        assert!(control.is_stopped());
+
+        let control = CoreControl::new();
+        let mut seen = Vec::new();
+        drive(&FakeCore { refuse: true }, Some(&ctx), &control, &mut |e| {
+            seen.push(e.clone())
+        });
+        assert_eq!(seen, ["failed: no disk"]);
+        assert!(control.is_stopped());
+
+        let mut seen = Vec::new();
+        drive(
+            &FakeCore { refuse: false },
+            None,
+            &CoreControl::new(),
+            &mut |e| seen.push(e.clone()),
+        );
+        assert_eq!(
+            seen,
+            ["failed: there's no folder to keep the agent's state in"]
+        );
+
+        let view = core_view(&FakeCore { refuse: false }, Some(&ctx));
+        assert_eq!((view.id.as_str(), view.rows.len()), ("wow", 1));
+        assert!(core_view(&FakeCore { refuse: false }, None).rows.is_empty());
     }
 }

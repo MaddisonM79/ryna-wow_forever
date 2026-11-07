@@ -1,0 +1,21 @@
+[package]
+name = "ryna-wow-core"
+description = "The World of Warcraft: Forever core for Ryna: SavedVariables reader, snapshot builder, install discovery, combat-log tail, addon installer and pusher."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ryna-agent = { path = "../../../agent/host" }
+anyhow.workspace = true
+flate2.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+ryna-agent = { path = "../../../agent/host", features = ["testing"] }
+tempfile.workspace = true

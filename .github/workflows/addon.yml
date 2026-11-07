@@ -3,9 +3,9 @@ name: addon
 on:
   push:
     branches: [main]
-    paths: ["addon/**", ".github/workflows/addon.yml"]
+    paths: ["cores/wow/addon/**", ".github/workflows/addon.yml"]
   pull_request:
-    paths: ["addon/**", ".github/workflows/addon.yml"]
+    paths: ["cores/wow/addon/**", ".github/workflows/addon.yml"]
 
 permissions:
   contents: read
@@ -20,8 +20,8 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q lua5.1 luarocks
           sudo luarocks install luacheck
-      - run: luacheck addon/ --config addon/.luacheckrc --no-color
+      - run: luacheck cores/wow/addon/ --config cores/wow/addon/.luacheckrc --no-color
       - name: Every addon file parses as Lua 5.1
-        run: for f in addon/Ryna/*.lua addon/Ryna/Locales/*.lua; do luac5.1 -p "$f" || exit 1; done
+        run: for f in cores/wow/addon/Ryna/*.lua cores/wow/addon/Ryna/Locales/*.lua; do luac5.1 -p "$f" || exit 1; done
       - name: Every translatable string is in Locales/enUS.lua and the locale templates
-        run: node addon/tools/strings.mjs
+        run: node cores/wow/addon/tools/strings.mjs

@@ -65,6 +65,21 @@ export interface UploadedFight {
   players: number;
 }
 
+/** One row of a core's status card (`ryna_agent::core::StatusRow`). */
+export interface StatusRow {
+  label: string;
+  value: string;
+  chip: "pushed" | "waiting" | "update" | "error" | null;
+}
+
+/** A core's card, as the core lays it out through the agent's interface (not drawn yet). */
+export interface CoreView {
+  id: string;
+  name: string;
+  version: string;
+  rows: StatusRow[];
+}
+
 /** The combat log's side (the core's `CombatStatus`). */
 export interface CombatStatus {
   active: boolean;
@@ -101,6 +116,8 @@ export interface Status {
   login: LoginCode | null;
   stateDir: string | null;
   combat: CombatStatus;
+  /** Each core's card through the core interface (stage 1: carried, not drawn). */
+  cores: CoreView[];
   /** "Send fight digests". */
   sendDigests: boolean;
   /** "Keep raw logs on ryna.io". */

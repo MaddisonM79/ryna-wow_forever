@@ -81,18 +81,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - run: cargo build --release --locked -p ryna-wow --target ${{ matrix.target }}
+      - run: cargo build --release --locked -p ryna --target ${{ matrix.target }}
       # The binary that ships, where the runner can run it (the macOS runners are Apple silicon,
       # so the x86_64 build is only built here; the check job smoke-tests every OS on main).
       - name: Smoke-test the binary
         if: matrix.target != 'x86_64-apple-darwin'
         shell: bash
-        run: scripts/smoke-cli.sh "target/${{ matrix.target }}/release/ryna-wow${{ matrix.exe }}"
+        run: scripts/smoke-cli.sh "target/${{ matrix.target }}/release/ryna${{ matrix.exe }}"
       - name: Name the binary for its target
         shell: bash
         run: |
           mkdir -p dist
-          cp "target/${{ matrix.target }}/release/ryna-wow${{ matrix.exe }}" "dist/ryna-wow-${{ matrix.target }}${{ matrix.exe }}"
+          cp "target/${{ matrix.target }}/release/ryna${{ matrix.exe }}" "dist/ryna-${{ matrix.target }}${{ matrix.exe }}"
       - uses: actions/upload-artifact@v4
         with:
           name: cli-${{ matrix.target }}
@@ -230,9 +230,9 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: The addon zip (addon/Ryna, as the app carries it)
+      - name: The addon zip (cores/wow/addon/Ryna, as the app carries it)
         run: |
-          (cd addon && zip -r -X "../dist/Ryna-${VERSION}.zip" Ryna -x '*.DS_Store')
+          (cd cores/wow/addon && zip -r -X "../../../dist/Ryna-${VERSION}.zip" Ryna -x '*.DS_Store')
           unzip -l "dist/Ryna-${VERSION}.zip" | tail -n 3
       - name: latest.json, when the updater artifacts were signed
         run: node scripts/latest-json.mjs dist "$VERSION" "$TAG" "$GITHUB_REPOSITORY"
