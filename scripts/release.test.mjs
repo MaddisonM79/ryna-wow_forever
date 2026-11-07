@@ -60,6 +60,8 @@ test("latest.json lists each signed artifact by platform", () => {
     "Ryna_0.2.0_x64.app.tar.gz.sig",
     "Ryna_0.2.0_x64-setup.exe",
     "Ryna_0.2.0_x64-setup.exe.sig",
+    "Ryna_0.2.0_amd64.AppImage",
+    "Ryna_0.2.0_amd64.AppImage.sig",
     "Ryna_0.2.0_aarch64.dmg",
     "Ryna-0.2.0.zip",
   ];
@@ -71,13 +73,30 @@ test("latest.json lists each signed artifact by platform", () => {
     repo: "MaddisonM79/ryna_agent",
     date: "2026-11-06T00:00:00Z",
   });
-  assert.deepEqual(Object.keys(m.platforms).sort(), ["darwin-aarch64", "darwin-x86_64", "windows-x86_64", "windows-x86_64-nsis"]);
+  assert.deepEqual(Object.keys(m.platforms).sort(), ["darwin-aarch64", "darwin-x86_64", "linux-x86_64", "windows-x86_64", "windows-x86_64-nsis"]);
   assert.equal(m.version, "0.2.0");
   assert.equal(m.platforms["darwin-aarch64"].signature, "sig of Ryna_0.2.0_aarch64.app.tar.gz");
   assert.equal(
     m.platforms["windows-x86_64"].url,
     "https://github.com/MaddisonM79/ryna_agent/releases/download/v0.2.0/Ryna_0.2.0_x64-setup.exe",
   );
+  assert.equal(
+    m.platforms["linux-x86_64"].url,
+    "https://github.com/MaddisonM79/ryna_agent/releases/download/v0.2.0/Ryna_0.2.0_amd64.AppImage",
+  );
+  assert.equal(m.platforms["linux-x86_64"].signature, "sig of Ryna_0.2.0_amd64.AppImage");
+});
+
+test("an unsigned AppImage (a build without the key) is not a platform", () => {
+  const m = manifest({
+    files: ["Ryna_0.2.0_amd64.AppImage", "Ryna_0.2.0_x64-setup.exe", "Ryna_0.2.0_x64-setup.exe.sig"],
+    sig: (n) => `sig of ${n}`,
+    version: "0.2.0",
+    tag: "v0.2.0",
+    repo: "o/r",
+    date: "d",
+  });
+  assert.deepEqual(Object.keys(m.platforms).sort(), ["windows-x86_64", "windows-x86_64-nsis"]);
 });
 
 test("no signatures, no manifest", () => {

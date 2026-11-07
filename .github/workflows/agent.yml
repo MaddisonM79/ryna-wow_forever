@@ -49,13 +49,13 @@ jobs:
         run: node scripts/check-versions.mjs
 
   # The desktop app (agent/app, crate ryna-wow-app): its web frontend, then fmt, clippy, tests
-  # and the installers (.dmg on macOS, the NSIS .exe on Windows), unsigned and without an
-  # updater key (that's release.yml's).
+  # and the installers (.dmg on macOS, the NSIS .exe on Windows, the AppImage on Linux), unsigned
+  # and without an updater key (that's release.yml's).
   app:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-latest, windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -63,6 +63,13 @@ jobs:
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: rustfmt, clippy
+      # What Tauri 2 needs on Ubuntu (release.yml has the same list): the webview, the tray
+      # library, SVG icons, and patchelf for the AppImage.
+      - name: "Linux: the webview and tray libraries"
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf
       - uses: pnpm/action-setup@v4
         with:
           package_json_file: agent/app/package.json
@@ -89,6 +96,7 @@ jobs:
           mkdir -p dist-app
           cp target/release/bundle/dmg/*.dmg dist-app/ 2>/dev/null || true
           cp target/release/bundle/nsis/*.exe dist-app/ 2>/dev/null || true
+          cp target/release/bundle/appimage/*.AppImage dist-app/ 2>/dev/null || true
           ls -l dist-app
           test -n "$(ls dist-app)"
       - uses: actions/upload-artifact@v4

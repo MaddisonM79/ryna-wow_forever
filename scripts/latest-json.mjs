@@ -7,6 +7,7 @@
 //   Ryna_<v>_aarch64.app.tar.gz  darwin-aarch64
 //   Ryna_<v>_x64.app.tar.gz      darwin-x86_64
 //   Ryna_<v>_x64-setup.exe       windows-x86_64 (and windows-x86_64-nsis)
+//   Ryna_<v>_amd64.AppImage      linux-x86_64
 // Its URL is the asset on the tag's release, which is what the app downloads. Writes nothing
 // (and says so) when there are no signatures, which is a build without the signing key.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -17,6 +18,7 @@ const PLATFORMS = [
   { re: /_aarch64\.app\.tar\.gz$/, keys: ["darwin-aarch64"] },
   { re: /_x64\.app\.tar\.gz$/, keys: ["darwin-x86_64"] },
   { re: /_x64-setup\.exe$/, keys: ["windows-x86_64", "windows-x86_64-nsis"] },
+  { re: /_amd64\.AppImage$/, keys: ["linux-x86_64"] },
 ];
 
 /**

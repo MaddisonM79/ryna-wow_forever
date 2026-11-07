@@ -1,6 +1,7 @@
-# A release, from a `v*` tag: the CLI for three targets, the app for macOS (arm64 and x86_64) and
-# Windows x64, the addon zip, SHA256SUMS, and (when the updater key is set up) the updater's
-# signed artifacts and latest.json, all on one GitHub Release with generated notes.
+# A release, from a `v*` tag: the CLI for four targets, the app for macOS (arm64 and x86_64),
+# Windows x64 and Linux x86_64 (an AppImage), the addon zip, SHA256SUMS, and (when the updater
+# key is set up) the updater's signed artifacts and latest.json, all on one GitHub Release with
+# generated notes.
 #
 # Every secret is optional (agent/README.md "Releasing"); without them the release is unsigned
 # and can't update anyone, but still builds. Run it by hand (workflow_dispatch) to build all of
@@ -71,6 +72,7 @@ jobs:
           - { os: macos-latest, target: aarch64-apple-darwin, exe: "" }
           - { os: macos-latest, target: x86_64-apple-darwin, exe: "" }
           - { os: windows-latest, target: x86_64-pc-windows-msvc, exe: ".exe" }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, exe: "" }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -108,6 +110,7 @@ jobs:
           - { os: macos-latest, target: aarch64-apple-darwin, arch: aarch64 }
           - { os: macos-latest, target: x86_64-apple-darwin, arch: x64 }
           - { os: windows-latest, target: x86_64-pc-windows-msvc, arch: x64 }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, arch: amd64 }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -115,6 +118,14 @@ jobs:
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: ${{ matrix.target }}
+      # Tauri 2 on Ubuntu: the webview (WebKitGTK 4.1), the tray (libayatana-appindicator), SVG
+      # icons (librsvg), and patchelf for the AppImage. The AppImage carries the webview and GTK;
+      # the tray library is loaded at run time, so a Linux user installs that one (agent/README.md "Linux").
+      - name: "Linux: the webview and tray libraries"
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf
       - uses: pnpm/action-setup@v4
         with:
           package_json_file: agent/app/package.json
@@ -201,10 +212,16 @@ jobs:
               cp "$bundle/macos/Ryna.app.tar.gz" "dist-app/Ryna_${VERSION}_${{ matrix.arch }}.app.tar.gz"
               cp "$bundle/macos/Ryna.app.tar.gz.sig" "dist-app/Ryna_${VERSION}_${{ matrix.arch }}.app.tar.gz.sig"
             fi
-          else
+          elif [ "$RUNNER_OS" = Windows ]; then
             # The NSIS installer is also the updater's artifact; its .sig is there when signed.
             cp "$bundle"/nsis/*-setup.exe dist-app/
             cp "$bundle"/nsis/*-setup.exe.sig dist-app/ 2>/dev/null || true
+          else
+            # Linux: the AppImage is the updater's artifact too (Ryna_<version>_amd64.AppImage);
+            # unsigned, like the Windows build.
+            cp "$bundle"/appimage/*.AppImage dist-app/
+            cp "$bundle"/appimage/*.AppImage.sig dist-app/ 2>/dev/null || true
+            test -f "dist-app/Ryna_${VERSION}_${{ matrix.arch }}.AppImage"
           fi
           ls -l dist-app
       - uses: actions/upload-artifact@v4
