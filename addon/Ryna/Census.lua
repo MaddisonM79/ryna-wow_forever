@@ -1,8 +1,9 @@
 -- Census: the /who sweep. A sweep asks the server who is online with a list of generic queries
 -- (level brackets, split by class and then by zone where an answer is capped) and records each
 -- answer as one `who` journal event { query, count, batch } and a `seen` event per row (source
--- `who`, the same batch id). Runs from /ryna census, the panel's "Run census now" button, and,
--- with the censusSweep setting on, every 30 minutes while the player is parked in a city.
+-- `who`, the same batch id). Runs from /ryna census, the panel's "Run census now" button, the
+-- "Next census query" key binding (Bindings.xml, Slash.lua), and, with the censusSweep setting
+-- on, every 30 minutes while the player is parked in a city.
 --
 -- Some clients (Forever 1.60.1 on the 12.x engine) treat SendWho as a hardware-event call: it
 -- works only inside a click or a typed command, and is refused from a timer. So a manual sweep
@@ -617,18 +618,37 @@ function C.Start(manual)
   return true
 end
 
--- The panel's button and /ryna census: the next query of a click sweep, else a new sweep. Called
--- synchronously from the click or the slash command, never from a timer.
-function C.Request()
+-- A key held down or tapped fast mustn't fill the chat: from the key binding, a refusal prints at
+-- most once per GAP seconds. The pace itself is the checks in C.Request, whatever calls it.
+local lastKeyNote
+local function note(fromKey, msg)
+  if fromKey then
+    local now = GetTime()
+    if lastKeyNote and now - lastKeyNote < GAP then return end
+    lastKeyNote = now
+  end
+  ns.Print(msg)
+end
+
+-- The panel's button, /ryna census and the "Next census query" key binding (fromKey): the next
+-- query of a click sweep, else a new sweep. Called synchronously from the click, the slash command
+-- or the key press, never from a timer.
+function C.Request(fromKey)
   local sw = C.sweep
+  if sw and fromKey and not sw.byClicks then
+    note(true, string.format(L["census sweep: running, %s"], progress(sw)))
+    return false
+  end
   if not (sw and sw.byClicks) then return C.Start(true) end
   if sw.awaiting then
-    ns.Print(L["census sweep: waiting for the server's answer to the last query."])
+    note(fromKey, fromKey and L["census sweep: waiting for the server."]
+      or L["census sweep: waiting for the server's answer to the last query."])
     return false
   end
   local wait = math.ceil(GAP - (GetTime() - (sw.sentAt or 0)))
   if wait > 0 then
-    ns.Print(string.format(L["census sweep: the server takes one query every few seconds; "
+    note(fromKey, fromKey and string.format(L["census sweep: next query in %ds."], wait)
+      or string.format(L["census sweep: the server takes one query every few seconds; "
       .. "try again in %ds."], wait))
     return false
   end

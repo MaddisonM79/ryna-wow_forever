@@ -89,6 +89,11 @@ L["Run census now"] = true
 L["Next census query (%d of %d)"] = true
 L["Census: not allowed by the game"] = true
 L["Try again"] = true
+-- Under that button. "Next census query" is the key binding's name (Slash.lua), and
+-- "Key Bindings > AddOns > Ryna" is where the game's Key Bindings settings list it: use the game's
+-- own words for those in your language.
+L["Bind a key to Next census query in Key Bindings > AddOns > Ryna to run a sweep "
+  .. "with taps instead of clicks. /ryna census does the same from chat."] = true
 -- Replaces the city census switch's description where the game allows /who only from a click.
 L["The game only allows /who from a click on this client."] = true
 L["Advanced combat logging"] = true
@@ -190,6 +195,11 @@ L["census sweep started: one query per click (Next census query, or /ryna census
 L["census sweep: waiting for the server's answer to the last query."] = true
 L["census sweep: the server takes one query every few seconds; "
   .. "try again in %ds."] = true
+-- The same three, briefer, when the key binding is pressed (printed at most once per 4 seconds).
+-- %s: "%d of %d queries, %s so far" (above).
+L["census sweep: running, %s"] = true
+L["census sweep: waiting for the server."] = true
+L["census sweep: next query in %ds."] = true
 L["census sweep: this client has no /who for addons."] = true
 L["census sweep: not now, %s."] = true
 L["census sweep started: asking the server who is online, one query every 4s."] = true
@@ -257,3 +267,7 @@ L["%d caught error"] = true
 L["%d caught errors"] = true
 L["combat logging: %s"] = true
 L["usage: /ryna combatlog instances||always||never (now %s)"] = true
+
+-- Slash.lua: the key binding, in Key Bindings > AddOns: its header (the addon's name) and its name.
+L["Ryna"] = true
+L["Next census query"] = true

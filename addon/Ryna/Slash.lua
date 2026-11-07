@@ -1,5 +1,6 @@
 -- Slash commands: /ryna (opens the panel), /ryna status, /ryna combatlog instances|always|never,
 -- /ryna debug on|off|toggle, /ryna census [stop], /ryna help. Status and help go to the default chat frame.
+-- Also the census key binding's function, Ryna_CensusNext (Bindings.xml).
 -- The chat frame reads "|" as the start of an escape code, so a literal one is written "||".
 -- Command words (status, combatlog, instances, on, off, ...) are never translated.
 
@@ -142,3 +143,13 @@ end
 
 SLASH_RYNA1 = "/ryna"
 SlashCmdList.RYNA = function(msg) ns.Run("/ryna", ns.Slash, msg) end
+
+-- The key binding (Bindings.xml): Key Bindings -> AddOns -> Ryna -> Next census query. A key press
+-- is a hardware event, like a click, so the query goes out from here, synchronously; never move this
+-- call behind a timer. The names are the game's BINDING_* globals, set here so they're localised.
+_G.BINDING_HEADER_RYNA = L["Ryna"]
+_G.BINDING_NAME_RYNA_CENSUS_NEXT = L["Next census query"]
+
+function Ryna_CensusNext()
+  ns.Run("census key", ns.Census.Request, true)
+end

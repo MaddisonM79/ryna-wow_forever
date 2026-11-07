@@ -385,6 +385,11 @@ function build.census(f)
     end
     P.sweepText = text(f, "GameFontHighlightSmall", 11)
     P.sweepText:SetWidth(WIDTH - 320)
+    -- ">" rather than an arrow: the game's font has no arrow glyph.
+    P.keyHint = text(f, "GameFontDisableSmall", 10)
+    P.keyHint:SetWidth(WIDTH - 100)
+    P.keyHint:SetText(L["Bind a key to Next census query in Key Bindings > AddOns > Ryna to run a sweep "
+      .. "with taps instead of clicks. /ryna census does the same from chat."])
   end
   P.privacy = text(f, "GameFontDisableSmall", 10)
   P.privacy:SetText(L["The census keeps who was seen, never what they said. "
@@ -440,7 +445,8 @@ function layout.census(s, settings)
     P.sweepText:ClearAllPoints()
     P.sweepText:SetPoint("LEFT", retry and P.sweepRetry or P.sweepButton, "RIGHT", 8, 0)
     P.sweepText:SetText(C and C.StatusLine() or "")
-    s.add(P.sweepButton, 22, 34, 14)
+    s.add(P.sweepButton, 22, 34, 6)
+    s.text(P.keyHint, 34, 14)
   end
   s.text(P.privacy, 4, 6)
 end

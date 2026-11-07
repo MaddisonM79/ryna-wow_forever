@@ -136,6 +136,14 @@ person's name, and nothing about you is sent.**
   weren't already seen in the last 10 minutes). An automatic sweep prints only debug lines. The
   last sweep's summary is kept in `RynaDB.census` and shown beside the Census tab's button and on
   the Status tab ("Last sweep: 412 players, 20 minutes ago").
+- **A key for it**: Key Bindings → AddOns → Ryna → **Next census query** (`Bindings.xml`, which the
+  game loads from the addon's folder by itself) does what the Census tab's button does: it starts a
+  sweep, or in `click` mode sends its next query. A key press is a hardware event like a click, so
+  the binding calls `Ryna_CensusNext()`, which sends the query right there, never from a timer; a
+  sweep in `click` mode runs with taps instead of clicks. Its pace is the button's (not within 4
+  seconds of the last query, not while one is waiting for its answer), so a held or hammered key
+  sends nothing extra, and its "not yet" lines are brief ("census sweep: next query in 3s.") and
+  print at most once every 4 seconds. The Census tab says so under the button.
 
 `RynaDB.client` holds the client's version and Interface number and how it returned your character's
 name parts, overwritten each login, so the format can be checked against a real client.
@@ -178,7 +186,8 @@ nameplates on** button ("Friendly nameplates are on", greyed, once they are). Th
 now** button (greyed while a
 sweep runs; **Next census query (2 of 7)** or **Census: not allowed by the game** with a **Try
 again** link on clients that restrict `/who`, see "Three modes") with the last sweep's summary
-beside it, and the census's promise: who was seen, never
+beside it; under it, how to bind a key to **Next census query** (Key Bindings > AddOns > Ryna) and
+that `/ryna census` does the same; and the census's promise: who was seen, never
 what they said, and the data is never sold or used for advertising.
 
 **Messages**: up to 10 notices from the companion app, newest first ("No messages" when there are
