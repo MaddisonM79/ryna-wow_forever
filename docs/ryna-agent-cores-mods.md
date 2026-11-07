@@ -18,8 +18,8 @@ written before any plumbing code, the way `docs/wow.md` in the api repo was writ
 **Chronicle is the first mod** (Maddison, 2026-11-07): the WoW core lays the foundation, the files
 and what the game requires, and Chronicle is the first thing built on it, then an automation mod
 (quests first), then things like selling greys. The **data layer** (section 7) is the agent's, shared
-by every core, and is not a mod either. Where exactly the core ends and Chronicle begins is the open
-question in section 12.
+by every core, and is not a mod either. The core is the plumbing only, the essential support for any mod;
+everything recorded about a character is Chronicle (section 12).
 
 Rules that don't move, from the README: the data is never sold or used for advertising; only what the
 person can see in their own files leaves their computer; the agent signs in as them and never sees a
@@ -245,9 +245,10 @@ Maddison's; the agent can carry both old and new clients for a release or two.
 1. **The seam.** Split `agent/core` into the agent host and the WoW core behind the interface in
    section 4, manifests included, behaviour identical, tests green, one release. Nothing visible changes.
 2. **Mod plumbing, and Chronicle becomes the first mod.** Manifest, bundled source, toggles in the
-   agent and the panel, install/remove, the `actsInGame` wording. Chronicle (kills, loot, tooltips, the
-   coming in-game window) moves out of the core addon into the first mod, on by default since it is
-   data and touches nothing. Then the automation mod, quests first, then selling greys and the like.
+   agent and the panel, install/remove, the `actsInGame` wording. Chronicle, which is everything the addon records about a
+   character (the record, bags and bank, quests, guild, journal events, census, kills and loot) plus the
+   tooltips and the coming in-game window, moves out of the core addon into the first mod, on by default
+   since it is data and touches nothing; the core keeps only the plumbing. Then the automation mod, quests first, then selling greys and the like.
 3. **Data layer v1.** Parse the three caches, upload them, pool them, write `Data/names.lua` and
    `Data/quests.lua` back down; the kills table gains names for creatures never targeted; the
    Chronicle window (0.2.x plan) reads community numbers from the same files.
@@ -257,10 +258,14 @@ Maddison's; the agent can carry both old and new clients for a release or two.
 
 ## 12. Open questions (Maddison's)
 
-- **Where the WoW core ends and Chronicle begins.** Today's addon records identity, level, gold,
-  played time, gear, professions, reputations, bags and bank, quests, the guild roster, zones, deaths,
-  the census sightings, and (since 0.2.2) kills and loot. Which of those are the core's foundation and
-  which are Chronicle's is Maddison's call; the stage 2 split follows it.
+- Settled 2026-11-07, Maddison: **the core is the plumbing only**, "the essential support for any mod
+  we make": the saved file and its schema, the event dispatcher, the journal mechanism (append, dedupe,
+  prune), settings and their defaults, the panel frame and its tabs, locales, the agent-status and data
+  files, the slash command, error reporting, and the agent side's install discovery, addon management
+  and sign-in. Everything recorded *about* a character is Chronicle: the record (identity, level, gold,
+  played, gear, professions, reputations), bags and bank, quests, the guild roster, zones and deaths,
+  the census sightings, kills and loot, the tooltips and the coming window. The stage 2 split follows
+  this line.
 - **CurseForge: yes, for the future**, and to be discussed before it happens: what exactly is listed
   (the core addon, Chronicle, every mod?), how a CurseForge installer learns they need the agent, and
   whether the agent simply takes over managing the addon when it finds a CurseForge copy.
