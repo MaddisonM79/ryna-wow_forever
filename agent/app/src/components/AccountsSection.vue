@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { Phase } from "../api";
 import { ago, when } from "../describe";
-import CombatLine from "./CombatLine.vue";
 import { now, status } from "../store";
 
 const PHASE_WORDS: Record<Phase, string> = {
@@ -41,6 +40,5 @@ const PHASE_WORDS: Record<Phase, string> = {
         </tr>
       </tbody>
     </table>
-    <p class="muted fights"><CombatLine /></p>
   </section>
 </template>

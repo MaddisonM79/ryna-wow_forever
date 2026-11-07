@@ -96,7 +96,11 @@ main {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 8px 16px 0;
+  padding: 0 16px 0 8px;
+}
+
+main > .banner {
+  margin: 10px 8px 0;
 }
 
 section {
@@ -371,12 +375,90 @@ code {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
-/* The Accounts section's line about fights. */
-.fights {
-  margin-top: 0.5rem;
+/* The shell: the sidebar of pages on the left, the open page beside it. */
+.shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
 }
 
-/* The tab row: under the header, above the panel. */
+.sidebar {
+  flex: none;
+  width: 176px;
+  padding: 8px 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-right: 1px solid var(--border);
+}
+
+.sidebar button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 8px);
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 10px;
+}
+
+.sidebar button:hover {
+  color: var(--text);
+  border-color: transparent;
+  background: var(--wait-bg);
+}
+
+.sidebar button[aria-current="page"] {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.sidebar button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.sidebar .glyph {
+  flex: none;
+}
+
+.sidebar .label {
+  line-height: 1.25;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* Narrow windows: the sidebar is icons only, each with its name as a tooltip. */
+@media (max-width: 700px) {
+  .sidebar {
+    width: 44px;
+  }
+  .sidebar button {
+    justify-content: center;
+    padding: 6px 0;
+  }
+  .sidebar .label {
+    display: none;
+  }
+}
+
+.content,
+.core-page {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The tab row inside a core's page: above its panel. */
 .tabs {
   flex: none;
   display: flex;
@@ -526,7 +608,9 @@ h2.sub {
 .cards > section.wide {
   grid-column: 1 / -1;
 }
-@media (max-width: 620px) {
+/* One column when two would be cramped: with the full sidebar below 772 px, with the narrow
+   one below 640 px. */
+@media (max-width: 772px) and (min-width: 701px), (max-width: 640px) {
   .cards {
     grid-template-columns: minmax(0, 1fr);
   }
