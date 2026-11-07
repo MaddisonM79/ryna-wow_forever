@@ -176,7 +176,7 @@ mod tests {
         assert_eq!(
             updater["endpoints"],
             json!([
-                "https://github.com/MaddisonM79/ryna-wow_forever/releases/latest/download/latest.json"
+                "https://github.com/MaddisonM79/ryna_agent/releases/latest/download/latest.json"
             ])
         );
         // Artifacts are switched on by scripts/tauri.mjs only when a key is there to sign them.

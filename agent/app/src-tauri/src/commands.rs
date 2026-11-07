@@ -132,7 +132,7 @@ pub async fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String
 /// Where "Open" links may point: the project's own pages, nothing else, so the page can't be made to
 /// open an arbitrary URL.
 const OPENABLE: [&str; 2] = [
-    "https://github.com/MaddisonM79/ryna-wow_forever",
+    "https://github.com/MaddisonM79/ryna_agent",
     "https://ryna.io",
 ];
 

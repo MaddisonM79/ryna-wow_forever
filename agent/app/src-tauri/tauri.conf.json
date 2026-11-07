@@ -27,7 +27,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/MaddisonM79/ryna-wow_forever/releases/latest/download/latest.json"
+        "https://github.com/MaddisonM79/ryna_agent/releases/latest/download/latest.json"
       ],
       "pubkey": "",
       "requireSignedVersion": true,

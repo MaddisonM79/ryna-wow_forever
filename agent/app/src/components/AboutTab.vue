@@ -6,7 +6,7 @@ import { copyText } from "../clipboard";
 import { status } from "../store";
 import UpdateControl from "./UpdateControl.vue";
 
-const REPO = "https://github.com/MaddisonM79/ryna-wow_forever";
+const REPO = "https://github.com/MaddisonM79/ryna_agent";
 
 // The window has no command to open an arbitrary URL (only the portal and the sign-in page), so
 // these are shown as text to select or copy.

@@ -17,7 +17,7 @@ and not a goal.
 You need an account on the backend first. For ryna.io that means Maddison has turned the WoW app on
 for you; if you can open [ryna.io/wow](https://ryna.io/wow) and see a page, you're set.
 
-**1. Get the app** from the [latest release](https://github.com/MaddisonM79/ryna-wow_forever/releases/latest).
+**1. Get the app** from the [latest release](https://github.com/MaddisonM79/ryna_agent/releases/latest).
 Pick one file:
 
 | You have | Download |

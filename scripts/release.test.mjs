@@ -44,7 +44,7 @@ test("latest.json lists each signed artifact by platform", () => {
     sig: (n) => `sig of ${n}\n`,
     version: "0.2.0",
     tag: "v0.2.0",
-    repo: "MaddisonM79/ryna-wow_forever",
+    repo: "MaddisonM79/ryna_agent",
     date: "2026-11-06T00:00:00Z",
   });
   assert.deepEqual(Object.keys(m.platforms).sort(), ["darwin-aarch64", "darwin-x86_64", "windows-x86_64", "windows-x86_64-nsis"]);
@@ -52,7 +52,7 @@ test("latest.json lists each signed artifact by platform", () => {
   assert.equal(m.platforms["darwin-aarch64"].signature, "sig of Ryna_0.2.0_aarch64.app.tar.gz");
   assert.equal(
     m.platforms["windows-x86_64"].url,
-    "https://github.com/MaddisonM79/ryna-wow_forever/releases/download/v0.2.0/Ryna_0.2.0_x64-setup.exe",
+    "https://github.com/MaddisonM79/ryna_agent/releases/download/v0.2.0/Ryna_0.2.0_x64-setup.exe",
   );
 });
 
