@@ -171,3 +171,54 @@ L["Lock the strip"] = nil
 L["Unlocked, Shift-drag moves it. Right-clicking the strip locks or unlocks it too."] = nil
 -- A button: the strip back to its default place (top of the screen).
 L["Reset position"] = nil
+-- The Recording tab's button that opens the Chronicle window, and the line under it.
+L["Open the Chronicle window"] = nil
+L["Also /chronicle. Your session, your kills with their drops, your loot and your "
+  .. "levels, in its own window."] = nil
+-- The Chronicle window: its title (the mod's name) and its four tabs.
+L["Chronicle"] = nil
+L["Session"] = nil
+L["Loot"] = nil
+L["Levels"] = nil
+-- The Session tab: the column heading over its numbers, "Since" (when the session started), and the
+-- heading over this session's kills.
+L["This session"] = nil
+L["Since"] = nil
+L["Kills this session"] = nil
+-- The Kills tab's columns: creature, kills, experience, the zone of the last kill, when ("2 hours ago").
+L["Creature"] = nil
+L["Last zone"] = nil
+L["Last"] = nil
+-- A creature row's tooltip: "Killed: 42 (30 yours)", "Last: Westfall, 2 hours ago", "Corpses looted: 40",
+-- then "Drops" and per item "12 of 40 (30%)" (how many corpses dropped it; %% prints one %).
+L["Killed"] = nil
+L["%s (%s yours)"] = nil
+L["%s, %s"] = nil
+L["Corpses looted"] = nil
+L["Drops"] = nil
+L["%d of %d (%d%%)"] = nil
+-- The Loot tab's columns: item, times looted, how many in all, where from, when.
+L["Item"] = nil
+L["Looted"] = nil
+L["Count"] = nil
+L["From"] = nil
+-- Where loot came from, besides a creature's name and fishing: a chest, vein, herb or pool, or a
+-- container item (a bag or box opened).
+L["object"] = nil
+L["container"] = nil
+L["From: %s"] = nil
+-- The Levels tab's columns: the level, the date it was reached, the time played at it, and the total
+-- played time when it was reached. "before the journal": reached more than 30 days ago (no date).
+L["Level"] = nil
+L["Reached"] = nil
+L["Time at the level"] = nil
+L["Played when reached"] = nil
+L["before the journal"] = nil
+-- A list with nothing in it: the search matched nothing, or nothing is recorded yet.
+L["Nothing matches."] = nil
+L["Nothing recorded yet."] = nil
+L["Your own numbers for this character. Hover a row for more."] = nil
+-- /ryna help's line for the window's command. Keep /ryna chronicle, /chronicle and the tab words
+-- (kills, loot, levels, session) in English: they are what the player types.
+L["/ryna chronicle (or /chronicle): the Chronicle window; "
+  .. "/chronicle kills, loot, levels or session opens that tab"] = nil

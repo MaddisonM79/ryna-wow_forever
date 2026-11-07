@@ -29,7 +29,7 @@ Status.lua
 Chronicle.lua
 Session.lua
 Strip.lua
-Session.lua
+Window.lua
 Tooltip.lua
 Tabs.lua
 Init.lua

@@ -1,6 +1,6 @@
 -- Tabs: Chronicle's two tabs in the core's panel (Ryna.Panel.AddTab), Recording and Census, built
 -- with the core's widgets (Ryna.Panel.Widgets). The combat-log controls are the core's (its
--- Advanced tab). Recording also has the session strip's settings.
+-- Advanced tab). Recording also has the session strip's settings and opens the Chronicle window.
 
 local _, ns = ...
 if ns.off then return end
@@ -30,7 +30,7 @@ function build.recording(f)
     L["Adds your own kills and drops to creature and item tooltips: how many you killed, what they dropped "
     .. "for you and how often."])
   toggle(P.tooltips, "tooltips")
-  -- In game: the session strip (Strip.lua).
+  -- In game: the session strip (Strip.lua) and the Chronicle window (Window.lua).
   P.liveHeader = text(f, "GameFontNormal")
   P.liveHeader:SetText(L["In game"])
   P.strip = checkbox(f, L["Show the session strip"],
@@ -44,6 +44,13 @@ function build.recording(f)
   if P.stripReset then
     P.stripReset:SetScript("OnClick", function() ns.Run("session strip", ns.Strip.ResetPosition) end)
   end
+  P.openWindow = button(f, L["Open the Chronicle window"], 220, 22)
+  if P.openWindow then
+    P.openWindow:SetScript("OnClick", function() ns.Run("chronicle window", ns.Window.Open) end)
+  end
+  P.windowHint = text(f, "GameFontDisableSmall", 10)
+  P.windowHint:SetText(L["Also /chronicle. Your session, your kills with their drops, your loot and your "
+    .. "levels, in its own window."])
 end
 
 function layout.recording(s, settings)
@@ -59,6 +66,15 @@ function layout.recording(s, settings)
   P.stripLock.setActive(settings.sessionStrip)
   P.stripLock.place(s, 30)
   if P.stripReset then s.add(P.stripReset, 22, 8, 8) end
+  if P.openWindow then
+    P.openWindow:ClearAllPoints()
+    if P.stripReset then
+      P.openWindow:SetPoint("LEFT", P.stripReset, "RIGHT", 8, 0)
+    else
+      s.add(P.openWindow, 22, 8, 8)
+    end
+  end
+  s.text(P.windowHint, 8, 6)
 end
 
 function build.census(f)

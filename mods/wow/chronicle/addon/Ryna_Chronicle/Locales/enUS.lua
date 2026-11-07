@@ -163,3 +163,54 @@ L["Lock the strip"] = true
 L["Unlocked, Shift-drag moves it. Right-clicking the strip locks or unlocks it too."] = true
 -- A button: the strip back to its default place (top of the screen).
 L["Reset position"] = true
+-- The Recording tab's button that opens the Chronicle window, and the line under it.
+L["Open the Chronicle window"] = true
+L["Also /chronicle. Your session, your kills with their drops, your loot and your "
+  .. "levels, in its own window."] = true
+-- The Chronicle window: its title (the mod's name) and its four tabs.
+L["Chronicle"] = true
+L["Session"] = true
+L["Loot"] = true
+L["Levels"] = true
+-- The Session tab: the column heading over its numbers, "Since" (when the session started), and the
+-- heading over this session's kills.
+L["This session"] = true
+L["Since"] = true
+L["Kills this session"] = true
+-- The Kills tab's columns: creature, kills, experience, the zone of the last kill, when ("2 hours ago").
+L["Creature"] = true
+L["Last zone"] = true
+L["Last"] = true
+-- A creature row's tooltip: "Killed: 42 (30 yours)", "Last: Westfall, 2 hours ago", "Corpses looted: 40",
+-- then "Drops" and per item "12 of 40 (30%)" (how many corpses dropped it; %% prints one %).
+L["Killed"] = true
+L["%s (%s yours)"] = true
+L["%s, %s"] = true
+L["Corpses looted"] = true
+L["Drops"] = true
+L["%d of %d (%d%%)"] = true
+-- The Loot tab's columns: item, times looted, how many in all, where from, when.
+L["Item"] = true
+L["Looted"] = true
+L["Count"] = true
+L["From"] = true
+-- Where loot came from, besides a creature's name and fishing: a chest, vein, herb or pool, or a
+-- container item (a bag or box opened).
+L["object"] = true
+L["container"] = true
+L["From: %s"] = true
+-- The Levels tab's columns: the level, the date it was reached, the time played at it, and the total
+-- played time when it was reached. "before the journal": reached more than 30 days ago (no date).
+L["Level"] = true
+L["Reached"] = true
+L["Time at the level"] = true
+L["Played when reached"] = true
+L["before the journal"] = true
+-- A list with nothing in it: the search matched nothing, or nothing is recorded yet.
+L["Nothing matches."] = true
+L["Nothing recorded yet."] = true
+L["Your own numbers for this character. Hover a row for more."] = true
+-- /ryna help's line for the window's command. Keep /ryna chronicle, /chronicle and the tab words
+-- (kills, loot, levels, session) in English: they are what the player types.
+L["/ryna chronicle (or /chronicle): the Chronicle window; "
+  .. "/chronicle kills, loot, levels or session opens that tab"] = true
