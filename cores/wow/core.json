@@ -1,7 +1,7 @@
 {
   "id": "wow",
   "name": "World of Warcraft: Forever",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "runtime": { "kind": "builtin" },
   "resource": "https://api.ryna.io/wow/ingest",
   "scopes": ["wow:ingest"],

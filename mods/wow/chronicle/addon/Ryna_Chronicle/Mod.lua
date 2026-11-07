@@ -28,7 +28,7 @@ if type(R) ~= "table" or type(R.API) ~= "number" or R.API < 1 or type(R.Register
 end
 
 ns.NAME = addonName
-ns.VERSION = "0.3.1"
+ns.VERSION = "0.3.2"
 ns.API = R
 
 for _, name in ipairs({ "Try", "Fn", "IsSecret", "NonEmpty", "Now", "Locale", "Print", "PrintRaw", "Debug",
