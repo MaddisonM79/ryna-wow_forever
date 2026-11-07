@@ -26,7 +26,7 @@ L["debug messages off."] = nil
 L["an error in %s was caught (reported once): %s"] = nil
 
 -- Init.lua
--- The login line, after "Ryna 0.2.0: ".
+-- The login line, after "Ryna 0.2.1: ".
 L["recording. /ryna for settings."] = nil
 L["the companion app hasn't synced recently."] = nil
 

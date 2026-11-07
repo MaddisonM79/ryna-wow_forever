@@ -17,7 +17,7 @@ L["debug messages off."] = true
 L["an error in %s was caught (reported once): %s"] = true
 
 -- Init.lua
--- The login line, after "Ryna 0.2.0: ".
+-- The login line, after "Ryna 0.2.1: ".
 L["recording. /ryna for settings."] = true
 L["the companion app hasn't synced recently."] = true
 
