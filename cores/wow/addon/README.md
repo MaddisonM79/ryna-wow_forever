@@ -169,14 +169,17 @@ plain buttons with the selected one lit where it doesn't.
 **Status**: the character you're on; what's been recorded (items in your bags and bank, equipped
 gear, quests in your log and completed, guild members); how many journal events this session and in
 all, and the session id; the Chronicle's totals ("Chronicle: 41 creatures, 112 items", or "Chronicle:
-off"); whether combat logging is on right now and the mode; whether the census is on ("Census: on"
+off"); this session's kills and experience per hour ("Session: 42 kills, 3,120 XP/h", from the session
+strip's numbers, below); whether combat logging is on right now and the mode; whether the census is on ("Census: on"
 or "Census: off");
 and the companion app: "Synced 12 minutes ago as <name>", or "Not synced yet. Sign in from the Ryna
 companion app.", its version, and "Update available" when the app knows of a newer addon or app.
 Signing in happens in the companion app, never in the game: an addon can't reach the network.
 
 **Recording** (Chronicle's): one line on what is recorded about your own characters, Record kills
-and loot, and Show my numbers on tooltips.
+and loot, and Show my numbers on tooltips; then **In game**: Show the session strip, Lock the strip
+(greyed while the strip is hidden), a **Reset position** button (the strip back to the top of the
+screen) and an **Open the Chronicle window** button.
 
 **Census**: first, "Ryna never sends /who itself. When you type /who, the results are recorded as
 sightings, like players you see on nameplates or in chat." Then Take part in the census, with its
@@ -213,6 +216,8 @@ The settings (saved in `RynaDB.settings`; if the game loses them, the defaults c
 | Advanced combat logging | Advanced | on | Sets the game's `advancedCombatLogging`, so fights are logged with positions and health (see below). |
 | Record kills and loot | Recording | on | Counts kills, the experience they give, and loot into the character record (see "Kills and loot"). Off: nothing is counted; the totals so far are kept. |
 | Show my numbers on tooltips | Recording | on | Adds your own kill and loot numbers to creature and item tooltips. |
+| Show the session strip | Recording | on | The session strip on screen (`sessionStrip`; see "The session strip"). Off: hidden; the session is still counted, and the window and the Status line still show it. |
+| Lock the strip | Recording | off | Locked, the strip can't be dragged (`sessionStripLocked`). Right-clicking the strip switches it too. Its place is `sessionStripPos` (Reset position clears it); the panel's Defaults keeps it. |
 | Take part in the census | Census | on | Records the other players you see. Off: **no** `seen` events at all, from chat, players nearby, your group, your guild roster or your own `/who`; the addon records only your own characters (and still your guild's roster, which is your guild's own list). |
 | Record who I see in chat | Census | on | Part of the census. A `seen` event for who speaks in chat (only who, never what). Off: chat isn't looked at. |
 | Record other players in my group | Census | on | Part of the census. Off: no `seen` events for group members, and `group` events say only that you joined, changed or left a group, without the member list. |
@@ -225,6 +230,66 @@ The settings are for the whole game account (`RynaDB` is account-wide), not per 
 `censusSweep`, the switch for the deleted `/who` sweep, is gone: the core removes it from
 `RynaDB.settings` on load, and Chronicle removes the sweep's own state (`RynaDB.census`) at login.
 Neither the companion app nor the API reads them.
+
+## The session strip
+
+Chronicle's in-game numbers for the session you're playing, on one line at the top of the screen
+(`RynaChronicleStrip`):
+
+    Kills 42 · 3,120 XP/h · 1g 20s/h · 2 quests · 1h 12m
+
+Kills this session, experience per hour, money per hour (the net change: what you gained less what
+you spent; whole silver once it's a gold or more), quests turned in and the time since you logged
+in. It's the game's own small font on a translucent black backdrop and nothing more, so it sits as
+well in the default UI as in a dark one like ElvUI's. Hovering it shows when the session started,
+kills, experience, levels gained, money (net, and gained / spent), quests, items looted and deaths,
+with the per-hour rates, and the session's top 8 creatures (kills and experience). A **click** opens
+the Chronicle window; a **right-click** locks or unlocks it (said in chat); unlocked, **Shift-drag**
+moves it, and the place is kept (`RynaDB.settings.sessionStripPos`). It's clamped to the screen.
+
+What a session counts (Chronicle's `Session.lua`, kept in memory): kills by creature (count and
+experience; the same signals as the lifetime kills, so with Record kills and loot off there are
+none), experience gained (each `PLAYER_XP_UPDATE`'s change, a level-up adding what was left of the
+old bar), money gained and spent (each `PLAYER_MONEY`'s change), quests turned in, deaths, items
+looted (stack sizes counted) and the time since login. Rates are per hour, worked out when they're
+shown; in the first minute they're taken over a minute, so one early kill doesn't read as 3,600 an
+hour. **A `/reload` keeps the session**: at logout (a `/reload` is one) it's written to
+`RynaDB.chronicle.session`, and the first `PLAYER_ENTERING_WORLD` after the reload (its
+`isReloadingUi`) takes it back for the same character; a real login starts a new one. Nothing else is
+saved, and the companion app doesn't read it.
+
+It redraws when something it shows changes, at most every half second, and every 5 seconds for the
+clock, and only while it's shown.
+
+## The Chronicle window
+
+`/chronicle` (or `/ryna chronicle`), a click on the strip, or the Recording tab's button opens a
+window of its own (`RynaChronicleWindow`; not the settings panel). It moves by dragging and closes
+with Escape or its close button. Its four tabs, for the character you're on:
+
+- **Session**: the session's numbers (since, kills, experience, levels gained, money, gained /
+  spent, quests, items looted, deaths) with the per-hour rates, then this session's kills by
+  creature (name, kills, experience), most first.
+- **Kills**: every creature you've killed (the record's `kills`), most first: name, kills,
+  experience, the last kill's zone and when. A search box filters by name. Hovering a row shows that
+  creature's numbers (kills and how many were yours, experience, last zone, corpses looted) and its
+  drops: each item looted from its corpses, in its quality colour, as "12 of 40 (30%)" of the corpses
+  you opened.
+- **Loot**: every item you've looted (`loot`), newest first: the name in its quality colour (the
+  game's `ITEM_QUALITY_COLORS`), how often, how many in all, where it came from (the creature's name,
+  "object" for a chest, vein, herb or pool, "container", "fishing"; the top two) and when. A search
+  box filters by name; hovering a row shows the item's own tooltip and all its sources.
+- **Levels**: the journal's `level` events for this character, oldest first: the level, when you
+  reached it, the time played at it (the difference of the played totals at two level-ups; for the
+  current level, `/played`'s time at this level, counted on) and the played total when you reached it.
+  The journal keeps 30 days, so a level reached before then shows as the current level only, "before
+  the journal".
+
+Each list is one fixed set of 15 rows over a sorted view of the data, scrolled with the mouse wheel
+or the bar beside it: only the rows on screen are filled, so 2,000 creatures cost what 15 do. A view
+is sorted again only when its data or its search changed. The window redraws when something it shows
+changes (a kill or loot counted, experience, money, a quest, a death, a level), at most every half
+second, and only while it's open.
 
 ## The minimap button
 
@@ -279,6 +344,8 @@ positions and health in the log, turn on **Advanced Combat Logging** in the game
   print as one summary line per scan, and nearby players at most one line per 5 seconds.
   Your own `/who` prints one line per answer: its count, how many were recorded, and how many were
   skipped by the window or appeared twice.
+- `/ryna chronicle`, or `/chronicle`: opens or closes the Chronicle window (Chronicle's);
+  `/chronicle session|kills|loot|levels` opens it on that tab.
 - `/ryna help`: the commands.
 
 ## Installing by hand
