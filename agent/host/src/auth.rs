@@ -117,14 +117,98 @@ pub trait TokenStore {
     fn access_token(&self) -> Option<AccessToken>;
     fn set_access_token(&self, token: &AccessToken) -> Result<(), String>;
     fn clear(&self) -> Result<(), String>;
+    /// The kept sign-in lasts only until this computer restarts (Linux with no Secret Service
+    /// running: the kernel keyring is all there is).
+    fn until_reboot(&self) -> bool {
+        false
+    }
 }
 
-/// The OS keychain (macOS Keychain, Windows Credential Manager, Linux keyutils), service
-/// `ryna`. Sign-ins to an IdP other than the default are kept under their own names, so a
-/// local-API sign-in never replaces the real one.
+/// The OS keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service with the
+/// kernel keyring as its cache), service `ryna`. Sign-ins to an IdP other than the default are
+/// kept under their own names, so a local-API sign-in never replaces the real one.
 pub struct KeyringStore {
     refresh_account: String,
     access_account: String,
+}
+
+/// Linux: the Secret Service (gnome-keyring, KeePassXC, KWallet) keeps a sign-in across reboots,
+/// with the kernel keyring (`keyutils`) in front of it as a cache. A desktop without one (a bare
+/// Hyprland, a headless box) has only the kernel keyring, so the sign-in lasts until a reboot;
+/// the choice is made once per process, by asking the session bus.
+#[cfg(target_os = "linux")]
+mod linux {
+    use keyring::keyutils::KeyutilsCredential;
+    use keyring::keyutils_persistent::KeyutilsPersistentCredential;
+    use keyring::secret_service::SsCredential;
+    use keyring::{Entry, Error};
+    use std::sync::OnceLock;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Backend {
+        /// Secret Service, cached in the kernel keyring: survives a reboot.
+        SecretService,
+        /// The kernel keyring alone: until a reboot.
+        Keyutils,
+    }
+
+    /// What a probe of the Secret Service says about it. An item that isn't there, or a store
+    /// that is locked or wants to prompt, is a Secret Service that answered; a failure to reach
+    /// one (no session bus, nothing providing `org.freedesktop.secrets`) is none.
+    pub fn backend_for(probe: Result<Vec<u8>, Error>) -> Backend {
+        match probe {
+            Ok(_) | Err(Error::NoEntry | Error::NoStorageAccess(_) | Error::Ambiguous(_)) => {
+                Backend::SecretService
+            }
+            Err(_) => Backend::Keyutils,
+        }
+    }
+
+    pub fn backend(service: &str) -> Backend {
+        static BACKEND: OnceLock<Backend> = OnceLock::new();
+        *BACKEND.get_or_init(|| {
+            let probe = SsCredential::new_with_target(None, service, "probe")
+                .and_then(|c| keyring::credential::CredentialApi::get_secret(&c));
+            backend_for(probe)
+        })
+    }
+
+    pub fn entry(service: &str, account: &str) -> Result<Entry, String> {
+        let credential: Box<keyring::Credential> = match backend(service) {
+            Backend::SecretService => Box::new(
+                KeyutilsPersistentCredential::new_with_target(None, service, account)
+                    .map_err(|e| e.to_string())?,
+            ),
+            Backend::Keyutils => Box::new(
+                KeyutilsCredential::new_with_target(None, service, account)
+                    .map_err(|e| e.to_string())?,
+            ),
+        };
+        Ok(Entry::new_with_credential(credential))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn a_secret_service_that_answers_is_used_even_when_locked_or_empty() {
+            assert_eq!(backend_for(Ok(b"x".to_vec())), Backend::SecretService);
+            assert_eq!(backend_for(Err(Error::NoEntry)), Backend::SecretService);
+            assert_eq!(
+                backend_for(Err(Error::NoStorageAccess("locked".into()))),
+                Backend::SecretService
+            );
+        }
+
+        #[test]
+        fn no_secret_service_means_the_kernel_keyring() {
+            assert_eq!(
+                backend_for(Err(Error::PlatformFailure("no session bus".into()))),
+                Backend::Keyutils
+            );
+        }
+    }
 }
 
 impl KeyringStore {
@@ -140,6 +224,12 @@ impl KeyringStore {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    fn entry(account: &str) -> Result<keyring::Entry, String> {
+        linux::entry(KEYRING_SERVICE, account)
+    }
+
+    #[cfg(not(target_os = "linux"))]
     fn entry(account: &str) -> Result<keyring::Entry, String> {
         keyring::Entry::new(KEYRING_SERVICE, account).map_err(|e| e.to_string())
     }
@@ -168,6 +258,16 @@ impl KeyringStore {
 }
 
 impl TokenStore for KeyringStore {
+    fn until_reboot(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            linux::backend(KEYRING_SERVICE) == linux::Backend::Keyutils
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            false
+        }
+    }
     fn refresh_token(&self) -> Result<Option<String>, String> {
         Self::get(&self.refresh_account)
     }
@@ -636,6 +736,8 @@ pub mod testing {
         pub refresh: RefCell<Option<String>>,
         pub access: RefCell<Option<AccessToken>>,
         pub fail_writes: Cell<u32>,
+        /// Plays a Linux box with no Secret Service.
+        pub until_reboot: Cell<bool>,
     }
 
     impl MemoryStore {
@@ -677,6 +779,9 @@ pub mod testing {
             *self.refresh.borrow_mut() = None;
             *self.access.borrow_mut() = None;
             Ok(())
+        }
+        fn until_reboot(&self) -> bool {
+            self.until_reboot.get()
         }
     }
 }

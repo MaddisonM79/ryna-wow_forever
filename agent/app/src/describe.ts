@@ -292,6 +292,18 @@ export interface HeaderState {
   chip: "pushed" | "pushing" | "error" | "update" | "waiting";
 }
 
+/**
+ * The note under a sign-in that won't outlive a restart (Linux with no Secret Service running),
+ * else null: a sign-in that is kept needs no note, and one that isn't there has nothing to lose.
+ */
+export function signInNote(s: Pick<Status, "signedIn" | "signInUntilReboot">): string | null {
+  if (!s.signedIn || !s.signInUntilReboot) return null;
+  return (
+    "This sign-in lasts until the computer restarts: no Secret Service is running to keep it. " +
+    "Install gnome-keyring or KeePassXC (and let it start with your session), then sign in again."
+  );
+}
+
 /** What the header's chip needs from the status. */
 export type HeaderStatus = Pick<Status, "signedIn" | "watching" | "lastRun" | "lastError"> & {
   accounts: Pick<AccountView, "phase">[];

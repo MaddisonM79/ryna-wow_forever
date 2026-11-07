@@ -147,6 +147,8 @@ export interface Status {
   signedIn: boolean;
   signedInAs: string | null;
   keychainError: string | null;
+  /** The sign-in lasts only until a restart: Linux with no Secret Service running. */
+  signInUntilReboot: boolean;
   watching: boolean;
   installs: InstallView[];
   /** The bundled addon's version, when this build carries one that says. */

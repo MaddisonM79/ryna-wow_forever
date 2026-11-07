@@ -1,6 +1,6 @@
 import { describe as group, expect, it } from "vitest";
 import type { AddonState, InstallView } from "./api";
-import { addonRow, ago, describe, installedLines, installedMessage } from "./describe";
+import { addonRow, ago, describe, installedLines, installedMessage, signInNote } from "./describe";
 
 function install(addon: AddonState, addonVersion: string | null): InstallView {
   return { path: "/wow/_forever_", flavor: "wowf", forever: true, hasAddon: addon !== "notInstalled", addonVersion, addon };
@@ -145,5 +145,14 @@ group("the addon's row", () => {
     expect(installedMessage({ ...done, gameRunning: true })[1]).toBe(
       "The game is running: /reload or log out and in to load it.",
     );
+  });
+});
+
+group("the sign-in note", () => {
+  it("warns only when a kept sign-in won't outlive a restart", () => {
+    expect(signInNote({ signedIn: true, signInUntilReboot: true })).toMatch(/until the computer restarts/);
+    expect(signInNote({ signedIn: true, signInUntilReboot: true })).toMatch(/gnome-keyring or KeePassXC/);
+    expect(signInNote({ signedIn: true, signInUntilReboot: false })).toBeNull();
+    expect(signInNote({ signedIn: false, signInUntilReboot: true })).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { api } from "../api";
-import { headerState } from "../describe";
+import { headerState, signInNote } from "../describe";
 import { cancelSignIn, login, loginBusy, loginError, signIn, signOut, status } from "../store";
 
 const who = computed(() => status.value?.signedInAs ?? "you");
@@ -53,5 +53,6 @@ const head = computed(() => (status.value ? headerState(status.value) : null));
   <p v-if="status?.keychainError" class="banner error">
     Couldn't read the sign-in from the system keychain: {{ status.keychainError }}
   </p>
+  <p v-if="status && signInNote(status)" class="banner">{{ signInNote(status) }}</p>
   <p v-if="loginError" class="banner error">{{ loginError }}</p>
 </template>

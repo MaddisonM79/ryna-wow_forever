@@ -13,7 +13,7 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 // The agent's own parts (sign-in, config, HTTP, the state folder, the core interface).
-use ryna_agent::auth::{self, Auth, AuthError, KeyringStore, LoginStatus};
+use ryna_agent::auth::{self, Auth, AuthError, KeyringStore, LoginStatus, TokenStore};
 use ryna_agent::cancel::CancelToken;
 use ryna_agent::config::Config;
 use ryna_agent::core::{Core, CoreContext, CoreControl, KeychainTokens};
@@ -208,8 +208,16 @@ fn login(config: &Config) -> Result<ExitCode> {
         Some(who) => println!("Signed in as {who}. `ryna run` now pushes your accounts."),
         None => println!("Signed in. `ryna run` now pushes your accounts as you."),
     }
+    if KeyringStore::for_issuer(&config.issuer).until_reboot() {
+        println!("{UNTIL_REBOOT}");
+    }
     Ok(ExitCode::SUCCESS)
 }
+
+/// Linux with no Secret Service: the sign-in is in the kernel keyring only.
+const UNTIL_REBOOT: &str = "This sign-in lasts until the computer restarts: no Secret Service is \
+     running to keep it. Install gnome-keyring or KeePassXC (and let it start with your session), \
+     then sign in again.";
 
 fn logout(config: &Config) -> Result<ExitCode> {
     let http = HttpTransport::new().map_err(anyhow::Error::msg)?;
@@ -244,6 +252,9 @@ fn status(config: &Config, install: Option<&Path>, from: Option<&Path>) -> Resul
         (None, true, Some(who)) => println!("Signed in as {who}."),
         (None, true, None) => println!("Signed in (a refresh token is in the keychain)."),
         (None, false, _) => println!("Not signed in: run `ryna login`."),
+    }
+    if s.signed_in && s.sign_in_until_reboot {
+        println!("{UNTIL_REBOOT}");
     }
 
     if s.installs.is_empty() {

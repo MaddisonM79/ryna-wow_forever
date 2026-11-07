@@ -23,8 +23,16 @@ clap = { version = "4", features = ["derive", "env"] }
 directories = "6"
 # gzip for the combat digests and raw segments (already in the tree through Tauri).
 flate2 = "1"
-# keyring 3: the OS keychain on each target (no D-Bus on Linux, so CI needs no system libraries).
-keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
+# keyring 3: the OS keychain on each target. On Linux the Secret Service (gnome-keyring, KeePassXC,
+# KWallet) over zbus, which is pure Rust (no libdbus, so CI needs no system libraries), with the
+# kernel keyring as the cache, and alone when no Secret Service answers (see auth::KeyringStore).
+keyring = { version = "3", features = [
+  "apple-native",
+  "windows-native",
+  "linux-native-async-persistent",
+  "async-io",
+  "crypto-rust",
+] }
 # Blocking, rustls with the webpki roots: no OpenSSL to link on any target.
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }

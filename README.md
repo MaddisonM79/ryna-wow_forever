@@ -43,8 +43,10 @@ Linux builds aren't signed; check the download against `SHA256SUMS`. Ryna lives 
 you play, so your bar needs a tray that speaks StatusNotifierItem (Omarchy's bar has one; on another
 Hyprland or Sway setup, Waybar's `tray` module) and the system needs `libayatana-appindicator`
 (the Arch package of that name; Ubuntu's `libayatana-appindicator3-1`). Without it Ryna still runs,
-but has no tray icon, so closing the window quits it. On Hyprland, if you'd rather Ryna float than
-tile, its window class is `ryna-wow-app`:
+but has no tray icon, so closing the window quits it. Your sign-in is kept in the system's Secret
+Service (gnome-keyring, or KeePassXC with its Secret Service integration on); without one running,
+Ryna keeps it in the kernel keyring instead and tells you the sign-in lasts until you restart. On
+Hyprland, if you'd rather Ryna float than tile, its window class is `ryna-wow-app`:
 
 ```
 windowrulev2 = float, class:^(ryna-wow-app)$

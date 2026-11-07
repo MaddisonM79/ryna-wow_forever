@@ -488,6 +488,8 @@ pub struct Status {
     pub signed_in_as: Option<String>,
     /// The keychain couldn't be read (so signed-in is unknown).
     pub keychain_error: Option<String>,
+    /// The sign-in lasts only until a restart (Linux with no Secret Service running).
+    pub sign_in_until_reboot: bool,
     pub watching: bool,
     pub installs: Vec<InstallStatus>,
     /// The bundled addon's version (its `Ryna.toc`), when this build carries one that says.
@@ -558,6 +560,7 @@ pub fn status(app: &AppHandle) -> Status {
         signed_in,
         signed_in_as,
         keychain_error,
+        sign_in_until_reboot,
         installs,
         addon_bundled,
         accounts,
@@ -600,6 +603,7 @@ pub fn status(app: &AppHandle) -> Status {
         signed_in,
         signed_in_as,
         keychain_error,
+        sign_in_until_reboot,
         watching,
         installs,
         addon_bundled,

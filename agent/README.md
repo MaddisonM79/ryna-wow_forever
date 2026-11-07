@@ -225,9 +225,15 @@ and the AppImage needs nothing from it. What the system provides:
   (`~/.steam/steam/steamapps/compatdata/*/pfx`, `~/.local/share/Steam/...`, and the Flatpak's).
   A prefix elsewhere: *Choose folder…* in the Game tab and pick the `World of Warcraft` folder
   under its `drive_c`. "The game is running" is `pgrep` for `Wow.exe` (any case).
-- **The sign-in.** The token is kept in the kernel keyring (`keyutils`, no D-Bus), which does not
-  survive a reboot: you sign in again after one. The state folder is `~/.local/share/io.ryna.app`,
-  the app's settings `~/.config/io.ryna.app`.
+- **The sign-in.** The token is kept in the Secret Service (`org.freedesktop.secrets`: gnome-keyring,
+  KeePassXC with its Secret Service integration on, or KWallet), under the service `ryna`, with the
+  kernel keyring (`keyutils`) in front of it as a cache. The client is `keyring`'s zbus one, pure
+  Rust, so the build needs no D-Bus library. When nothing answers on the session bus (no provider
+  installed, or it isn't running: Omarchy ships none), the kernel keyring is all there is and the
+  sign-in lasts until a reboot; `ryna status` and the app's header say so. The choice is made once
+  per process (`KeyringStore` in `host/src/auth.rs`), so after installing a provider, start Ryna
+  again and sign in again. The state folder is `~/.local/share/io.ryna.app`, the app's settings
+  `~/.config/io.ryna.app`.
 
 Building it yourself needs Tauri's Ubuntu/Arch prerequisites (the webview and tray development
 libraries): the `apt-get` line in `.github/workflows/agent.yml` is the Ubuntu list.

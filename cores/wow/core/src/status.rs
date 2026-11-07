@@ -110,6 +110,9 @@ pub struct Status {
     pub signed_in_as: Option<String>,
     /// The keychain couldn't be read (so `signed_in` is unknown and false).
     pub keychain_error: Option<String>,
+    /// The kept sign-in lasts only until this computer restarts: Linux with no Secret Service
+    /// (gnome-keyring, KeePassXC, KWallet) running, where the kernel keyring is all there is.
+    pub sign_in_until_reboot: bool,
     pub installs: Vec<InstallStatus>,
     /// The version of the addon this front end would install (the app's bundled copy, the CLI's
     /// `--from`), when it has one and its `.toc` says.
@@ -230,6 +233,7 @@ pub fn status_with(
         signed_in,
         signed_in_as,
         keychain_error,
+        sign_in_until_reboot: store.until_reboot(),
         installs,
         addon_bundled,
         accounts,
@@ -342,8 +346,20 @@ mod tests {
         );
         assert!(!s.signed_in);
         assert_eq!(s.signed_in_as, None);
+        assert!(!s.sign_in_until_reboot);
         assert!(s.installs.is_empty() && s.accounts.is_empty());
         assert_eq!(s.addon_bundled, None);
         assert_eq!((s.last_run, s.last_error, s.state_dir), (None, None, None));
+    }
+
+    #[test]
+    fn a_sign_in_that_wont_outlive_a_restart_says_so() {
+        // Linux with no Secret Service: the store keeps the token until a reboot and says so.
+        let store = MemoryStore::with_refresh("r1");
+        store.until_reboot.set(true);
+        let s = status_with(&test_config(), &store, &Discovery::default(), None, None);
+        assert!(s.signed_in && s.sign_in_until_reboot);
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["signInUntilReboot"], serde_json::json!(true));
     }
 }
