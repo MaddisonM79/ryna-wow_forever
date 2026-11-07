@@ -1,0 +1,266 @@
+# A release, from a `v*` tag: the CLI for three targets, the app for macOS (arm64 and x86_64) and
+# Windows x64, the addon zip, SHA256SUMS, and (when the updater key is set up) the updater's
+# signed artifacts and latest.json, all on one GitHub Release with generated notes.
+#
+# Every secret is optional (agent/README.md "Releasing"); without them the release is unsigned
+# and can't update anyone, but still builds. Run it by hand (workflow_dispatch) to build all of
+# it without publishing: from a branch it is always a dry run; from a tag, untick dry_run to
+# publish that tag.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build everything and keep it as a workflow artifact; publish nothing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: "1.98"
+
+jobs:
+  # One version everywhere (addon TOC, package.json, the cargo workspace, Cargo.lock) and, on a
+  # tag, the tag too: a mismatch stops the release here, before anything builds.
+  versions:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+      publish: ${{ steps.v.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: node --test scripts/
+      - id: v
+        env:
+          EVENT: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          # No pipes: a failed check must fail the step (the default shell has no pipefail).
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            out="$(node scripts/check-versions.mjs --tag "$GITHUB_REF_NAME")"
+            tag="$GITHUB_REF_NAME"
+            if [ "$EVENT" = push ] || [ "$DRY_RUN" = false ]; then publish=true; else publish=false; fi
+          else
+            out="$(node scripts/check-versions.mjs)"
+            # Not a tag: a dry run, with URLs for the tag this version would get.
+            tag="v${out#version=}"
+            publish=false
+          fi
+          printf '%s\ntag=%s\npublish=%s\n' "$out" "$tag" "$publish" >> "$GITHUB_OUTPUT"
+          echo "$out, tag $tag, publish $publish"
+
+  cli:
+    needs: versions
+    strategy:
+      matrix:
+        include:
+          - { os: macos-latest, target: aarch64-apple-darwin, exe: "" }
+          - { os: macos-latest, target: x86_64-apple-darwin, exe: "" }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, exe: ".exe" }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: ${{ matrix.target }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: cargo build --release --locked -p ryna-wow --target ${{ matrix.target }}
+      # The binary that ships, where the runner can run it (the macOS runners are Apple silicon,
+      # so the x86_64 build is only built here; the check job smoke-tests every OS on main).
+      - name: Smoke-test the binary
+        if: matrix.target != 'x86_64-apple-darwin'
+        shell: bash
+        run: scripts/smoke-cli.sh "target/${{ matrix.target }}/release/ryna-wow${{ matrix.exe }}"
+      - name: Name the binary for its target
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/ryna-wow${{ matrix.exe }}" "dist/ryna-wow-${{ matrix.target }}${{ matrix.exe }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  app:
+    needs: versions
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, target: aarch64-apple-darwin, arch: aarch64 }
+          - { os: macos-latest, target: x86_64-apple-darwin, arch: x64 }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, arch: x64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: ${{ matrix.target }}
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: agent/app/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: agent/app/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: agent/app
+      - run: pnpm test
+        working-directory: agent/app
+      # An unset secret is an empty string, and Tauri's bundler treats an empty APPLE_CERTIFICATE
+      # as one to import. So each group goes into the environment only when all of it is set:
+      # updater signing, macOS code signing, notarization (needs code signing), Windows signing.
+      - name: Signing (only what is set up)
+        shell: bash
+        env:
+          IN_TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          IN_TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          IN_APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          IN_APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          IN_APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          IN_APPLE_ID: ${{ secrets.APPLE_ID }}
+          IN_APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          IN_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          IN_AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          IN_AZURE_TRUSTED_SIGNING_ACCOUNT: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT }}
+          IN_AZURE_TRUSTED_SIGNING_PROFILE: ${{ secrets.AZURE_TRUSTED_SIGNING_PROFILE }}
+          IN_AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          IN_AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          IN_AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: |
+          put() { # name value: into $GITHUB_ENV, safe for any value
+            local d="RYNA_EOF_$RANDOM$RANDOM"
+            { echo "$1<<$d"; echo "$2"; echo "$d"; } >> "$GITHUB_ENV"
+          }
+          all() { local n v; for n in "$@"; do v="IN_$n"; [ -n "${!v}" ] || return 1; done; }
+          group() { # label names...: export all of them, or none
+            local label="$1" n v; shift
+            if all "$@"; then
+              for n in "$@"; do v="IN_$n"; put "$n" "${!v}"; done
+              echo "$label: on"; return 0
+            fi
+            echo "$label: off (needs $*)"; return 1
+          }
+          if group "updater signing" TAURI_SIGNING_PRIVATE_KEY; then
+            # A key made without a password has none to set; the bundler then wants it empty.
+            put TAURI_SIGNING_PRIVATE_KEY_PASSWORD "$IN_TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+          fi
+          if [ "$RUNNER_OS" = macOS ]; then
+            if group "macOS code signing" APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY; then
+              group "notarization" APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID || true
+            else
+              echo "notarization: off (needs macOS code signing first)"
+            fi
+          fi
+          if [ "$RUNNER_OS" = Windows ]; then
+            if group "Windows signing" AZURE_TRUSTED_SIGNING_ENDPOINT AZURE_TRUSTED_SIGNING_ACCOUNT \
+                AZURE_TRUSTED_SIGNING_PROFILE AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_CLIENT_SECRET; then
+              put RYNA_SIGN_WINDOWS 1
+            fi
+          fi
+      # What bundle.windows.signCommand runs (agent/app/scripts/release-config.mjs), on the app
+      # exe and the installer, before the updater signs the installer.
+      - if: env.RYNA_SIGN_WINDOWS == '1'
+        run: cargo install artifact-signing-cli --version 0.12.0 --locked
+      # scripts/tauri.mjs adds the updater key (agent/app/updater.pub), the updater artifacts
+      # (only with TAURI_SIGNING_PRIVATE_KEY) and the Windows sign command (only with Azure).
+      - run: pnpm tauri build --ci --target ${{ matrix.target }}
+        working-directory: agent/app
+      - name: Collect the installer and the updater's files
+        shell: bash
+        env:
+          VERSION: ${{ needs.versions.outputs.version }}
+        run: |
+          set -euo pipefail
+          bundle="target/${{ matrix.target }}/release/bundle"
+          mkdir -p dist-app
+          if [ "$RUNNER_OS" = macOS ]; then
+            cp "$bundle"/dmg/*.dmg dist-app/
+            # Both macOS builds call it Ryna.app.tar.gz: name each for its architecture.
+            if [ -f "$bundle/macos/Ryna.app.tar.gz" ]; then
+              cp "$bundle/macos/Ryna.app.tar.gz" "dist-app/Ryna_${VERSION}_${{ matrix.arch }}.app.tar.gz"
+              cp "$bundle/macos/Ryna.app.tar.gz.sig" "dist-app/Ryna_${VERSION}_${{ matrix.arch }}.app.tar.gz.sig"
+            fi
+          else
+            # The NSIS installer is also the updater's artifact; its .sig is there when signed.
+            cp "$bundle"/nsis/*-setup.exe dist-app/
+            cp "$bundle"/nsis/*-setup.exe.sig dist-app/ 2>/dev/null || true
+          fi
+          ls -l dist-app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ matrix.target }}
+          path: dist-app/*
+          if-no-files-found: error
+
+  release:
+    needs: [versions, cli, app]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.versions.outputs.version }}
+      TAG: ${{ needs.versions.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: The addon zip (addon/Ryna, as the app carries it)
+        run: |
+          (cd addon && zip -r -X "../dist/Ryna-${VERSION}.zip" Ryna -x '*.DS_Store')
+          unzip -l "dist/Ryna-${VERSION}.zip" | tail -n 3
+      - name: latest.json, when the updater artifacts were signed
+        run: node scripts/latest-json.mjs dist "$VERSION" "$TAG" "$GITHUB_REPOSITORY"
+      - name: SHA256SUMS
+        run: |
+          cd dist
+          sha256sum -- * > ../SHA256SUMS
+          mv ../SHA256SUMS .
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ needs.versions.outputs.version }}
+          path: dist/*
+      - name: Publish the release
+        if: needs.versions.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A pre-release tag (v0.3.0-rc.1) is marked so; it is never "latest", so the
+          # updater (releases/latest/download/latest.json) doesn't offer it.
+          pre=()
+          case "$TAG" in *-*) pre=(--prerelease) ;; esac
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --verify-tag --title "Ryna $VERSION" --generate-notes "${pre[@]}"
+          fi
+      - name: Dry run
+        if: needs.versions.outputs.publish != 'true'
+        run: |
+          echo "Dry run: nothing published. The files are the release-$VERSION workflow artifact."

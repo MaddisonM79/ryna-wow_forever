@@ -13,6 +13,7 @@ import {
   type Status,
 } from "./api";
 import { describe } from "./describe";
+import { startUpdates } from "./updates";
 
 export interface LogLine {
   id: number;
@@ -158,6 +159,8 @@ export async function start(): Promise<void> {
     now.value = Date.now() / 1000;
   }, 30_000);
   await refresh();
+  // At launch, then every 6 hours; each finding goes to the activity log.
+  await startUpdates(log);
 }
 
 /** Point the agent at a folder, or back at the usual places with null. */

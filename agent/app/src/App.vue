@@ -7,6 +7,7 @@ import InstallsSection from "./components/InstallsSection.vue";
 import AccountsSection from "./components/AccountsSection.vue";
 import ActivityLog from "./components/ActivityLog.vue";
 import SettingsSection from "./components/SettingsSection.vue";
+import UpdateBanner from "./components/UpdateBanner.vue";
 
 onMounted(() => {
   void start();
@@ -15,6 +16,7 @@ onMounted(() => {
 
 <template>
   <AppHeader />
+  <UpdateBanner />
   <main>
     <p v-if="loadError" class="banner error">Couldn't read the app's status: {{ loadError }}</p>
     <template v-if="status">

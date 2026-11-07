@@ -8,6 +8,7 @@ mod agent;
 mod commands;
 mod game;
 mod settings;
+mod updates;
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -66,6 +67,9 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        // Always registered: a build without a key has an empty pubkey, and `updates` never
+        // calls it then.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // Off until the person turns it on in Settings. On macOS it's a login item (through
         // System Events), not a launchd job: the app opens at login, nothing else runs.
         .plugin(tauri_plugin_autostart::init(
@@ -76,6 +80,7 @@ fn main() {
             let config = agent::config();
             let signed_in = agent::signed_in(&config);
             app.manage(agent::Agent::new(config, app.path().app_config_dir().ok()));
+            app.manage(updates::Updates::default());
             build_tray(app)?;
             if signed_in {
                 agent::start_watch(app.handle());
@@ -103,6 +108,8 @@ fn main() {
             commands::install_addon,
             commands::set_autostart,
             commands::open_portal,
+            commands::check_for_update,
+            commands::install_update,
         ])
         .build(tauri::generate_context!())
         .expect("the app failed to start");

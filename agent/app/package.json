@@ -1,7 +1,7 @@
 {
   "name": "ryna-wow-app",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Ryna, the World of Warcraft: Forever companion app (Tauri 2 over agent/core).",
   "license": "MIT",
   "type": "module",
@@ -11,7 +11,7 @@
     "build": "vue-tsc --noEmit && vite build",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
-    "tauri": "tauri",
+    "tauri": "node scripts/tauri.mjs",
     "icon": "node scripts/make-icon.mjs && tauri icon app-icon.png"
   },
   "dependencies": {

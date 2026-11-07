@@ -209,6 +209,14 @@ section .banner {
   margin: 8px 0 0;
 }
 
+.banner.update {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .banner.error {
   background: var(--err-bg);
   color: var(--err-text);
