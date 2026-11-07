@@ -202,6 +202,47 @@ data layer is about a person. The same mechanism carries a core's data to a mod.
 
 Nothing here needs a new addon release: a data refresh is an agent sync.
 
+### 7.1 The census without an account (decided 2026-11-07)
+
+Today a sighting reaches ryna.io only inside a snapshot posted with a signed-in person's agent token,
+so every census row has an account behind it. Maddison's decision: **installing Ryna is the consent,
+and the census may be contributed without an account**, traced by a **submission ID** instead of a
+person. The design:
+
+- **A device key.** On first run the agent mints a keypair (Ed25519) and keeps the private key in
+  the keychain or credential store beside the tokens. The **submission ID** is the public key's
+  fingerprint. Census uploads are signed with it, so nobody can send under someone else's ID, and an
+  ID accumulates a history. The ID is shown on the Census tab and in the agent's Status, so a person
+  can quote it if they ever need to.
+- **A census route** of its own, `POST /v1/wow/census` (section to come in `docs/wow.md`): the
+  `seen` events and `who` events as the addon writes them, the observer's realm and faction, the
+  submission ID, a timestamp, the signature over the body. No token. The existing snapshot path keeps
+  carrying sightings for signed-in people (their rows are attributed to the account *and* the ID), so
+  nothing changes for them.
+- **Reputation, not identity, keeps the numbers honest** (the API, aggregates only):
+  - *Quarantine.* Rows from an ID with no history sit unweighted until other observers corroborate
+    them: a sighting counts once a second ID has seen the same character within the same day, or the
+    ID has a week of sightings that mostly overlap others'.
+  - *Rate limits.* Per ID per hour, sized to what one client can see (nameplates and chat in a city
+    at peak), with the excess dropped and noted.
+  - *Weight.* An ID whose sightings nobody else ever sees loses weight over time; an ID that
+    reports impossible things (a character in two zones at once, levels going down, more distinct
+    players per hour than a client can render) is zeroed and its rows excluded; the operator sees why
+    in Admin. Excluding an ID removes its rows from the aggregates; nothing is ever shown about the ID.
+  - *Re-minting is cheap, so new IDs start at zero.* That is the point: a fresh ID can't move the
+    numbers until it behaves like a real client for a while.
+- **Privacy.** The observer is an install, not a person: the who-saw-whom log holds the ID, which
+  links to no account unless the person also signs in. The "Census privacy" rules in `docs/wow.md`
+  (coarse last-seen, zone not subzone, no per-character hours, every lookup logged, no removal path)
+  are unchanged; reading the census still needs an account, since lookups are logged to someone.
+- **What stays signed-in.** Everything about a person's own characters. The census is the one thing
+  the agent does before, or without, signing in; the Census tab says "contributes without an account"
+  in plain words, with the same switches to stop any of it.
+- **Stages.** (a) The device key and the signed census route, with sightings attributed to both account
+  and ID for signed-in people, so the reputation data accrues before anyone relies on it. (b) Quarantine
+  and weighting, with the Admin view of IDs. (c) The agent's "census only" mode: the Census tab and
+  the core run with no sign-in.
+
 ## 8. Identity
 
 Today: one device client per game (`ryna-wow`, the Palworld agent's), each a public client at
