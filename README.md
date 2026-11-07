@@ -1,57 +1,88 @@
-# ryna-wow_forever
+# Ryna for World of Warcraft: Forever
 
-The player-side half of a World of Warcraft: Forever companion: a game addon and a small agent that
-runs on your computer, reads what the addon and the game write to disk, and sends summaries to a
-backend. Characters, bags and bank, gold, quests, professions, the guild roster, and every fight
-from the combat log, parsed locally into per-fight totals, ability breakdowns and timelines.
+Ryna is a companion for World of Warcraft: Forever: a game addon plus a small desktop app for the
+computer you play on. The addon records what your characters have and do; the app reads that, and
+the game's own combat log, while it's open, and sends it to a backend where you can look at it. For
+the people on [ryna.io](https://ryna.io/wow) that's characters, bags, bank and gold, quests, played
+time per level, every fight with its meters and timelines, a guild roster, and a pooled census of
+who's out there.
 
-The hosted half (the API, the web portal with the trends and meters, and the assistant connector)
-is private and runs at ryna.io for its own people. This repository is the part that lives on your
-machine, published so it can be read, audited and reused. Anyone can run a backend that speaks the
-same format; that is allowed and not a goal.
+This repository is the part that lives on your machine, published so it can be read, audited and
+reused. The hosted half (the API, the web portal and the assistant connector) is private and runs
+at ryna.io for its own people. Anyone can run a backend that speaks the same format; that's allowed
+and not a goal.
 
-## Status
+## Install
 
-Pre-alpha. The design is settled and nothing here is usable yet. The order of work:
+You need an account on the backend first. For ryna.io that means Maddison has turned the WoW app on
+for you; if you can open [ryna.io/wow](https://ryna.io/wow) and see a page, you're set.
 
-1. Addon and agent core: identity, gold, bags, bank, professions, reputations, quests, roster, pushed
-   from a command-line agent on macOS.
-2. Combat log: tailing, segmenting fights, aggregating, pushing summaries.
-3. The desktop app (macOS and Windows), the only thing a player installs; it syncs while it is open.
-4. Guild: roster-driven membership, guild bank, guild runs.
+**1. Get the app** from the [latest release](https://github.com/MaddisonM79/ryna-wow_forever/releases/latest).
+Pick one file:
 
-## What is in here
+| You have | Download |
+|---|---|
+| A Mac with Apple silicon (M1 or later) | `Ryna_<version>_aarch64.dmg` |
+| A Mac with an Intel chip | `Ryna_<version>_x64.dmg` |
+| Windows | `Ryna_<version>_x64-setup.exe` |
 
-- `addon/`: the Lua addon, tagged for Forever. It writes a table to SavedVariables on logout and
-  `/reload`, and turns combat logging on inside instances. Its panel is `/ryna`.
-- `agent/`: the agent, a Rust workspace (`Cargo.toml` at the root). `agent/core` is the library:
-  the SavedVariables reader, install discovery, the sign-in (OAuth device grant: the agent never
-  sees your password), the pusher, and the watch loop. `agent/cli` is a command line over it for
-  developers; the desktop app (`agent/app`) that people install runs the same core while it is
-  open. `agent/fixtures` holds scrubbed test files.
-- `scripts/capture.sh`: turns a real `Ryna.lua` into a scrubbed fixture (the original stays in the
-  gitignored `captures/`).
+On a Mac, open the disk image and drag Ryna into Applications. The app is signed by Nyra Security
+LLC and notarized by Apple, so it opens like any other app. On Windows the installer isn't signed
+yet, so SmartScreen will say "Windows protected your PC": click *More info*, then *Run anyway*. The
+`SHA256SUMS` file on the release lets you check what you downloaded.
 
-## Releases and updates
+**2. Install the addon.** Open Ryna. The *Game* section finds World of Warcraft: Forever in its usual
+place (`/Applications/World of Warcraft/_forever_` on a Mac, `C:\Program Files (x86)\World of
+Warcraft\_forever_` on Windows); if yours is elsewhere, *Choose folder…*. Click **Install addon**.
+It copies the addon that came inside the app into the game's `Interface/AddOns`. If the game is
+already running, restart it so it sees the new addon.
 
-The desktop app, the addon zip and the CLI come from GitHub Releases, built by
-`.github/workflows/release.yml` from a `vX.Y.Z` tag once the addon's TOC, the app and the crates
-all carry that version (`scripts/check-versions.mjs`). An installed app checks for a newer release
-at launch and every 6 hours and offers to update and restart; the addon comes inside the app, so
-that's the addon's update too. Each update is verified against a signing key before it installs.
-How to cut one, and the optional signing secrets: `agent/README.md`, "Releasing".
+**3. Sign in.** Click **Sign in**. Ryna shows a short code and opens a sign-in page in your browser;
+check the page shows the same code, then allow it. Ryna never sees your password: it gets a token
+for itself, kept in your keychain (or Windows credential store), and that's what it signs in with
+from then on.
+
+**4. Play.** Leave Ryna open while you play; it syncs only while it's open, and quitting it stops
+everything. The addon writes its file when you log out or type `/reload`, so your first character
+appears on ryna.io after your first logout. Every game account under the same install is picked up,
+so two accounts open at once both sync.
+
+In game, `/ryna` opens the addon's panel: what it's recording, the census settings, messages from
+the app, and a debug toggle. There's a minimap button too.
+
+**Updates.** Ryna checks for a newer release when it opens and every six hours, and offers to
+update and restart. Each update is checked against a signing key before it installs. The addon
+travels inside the app, so when the app updates, the *Game* section offers the matching addon.
 
 ## What leaves your computer
 
-Only what you can see in the addon's SavedVariables file and in the per-fight summaries the agent
-computes: your characters, their inventory, quests, professions and reputations; the guild roster;
-and for each fight, who was in it (character names and in-game ids), what they did, and when. Raw
-combat-log text is uploaded only if you turn that on. Nothing is read from anywhere but the game's
-own folder, and the agent signs in as you, to the backend you point it at.
+Only what you can see in the addon's SavedVariables file (`WTF/Account/<account>/SavedVariables/Ryna.lua`)
+and in the per-fight summaries the app computes: your characters, their inventory, quests,
+professions and reputations; the guild roster; and for each fight, who was in it (character names
+and in-game ids), what they did, and when. Raw combat-log text is uploaded only if you turn that on
+in Ryna's settings. Chat is never recorded: the addon keeps who it saw and where, never what anyone
+said. Nothing is read from anywhere but the game's own folder, and the app signs in as you, to the
+backend you point it at. Your game account's folder name is hashed before it leaves the computer;
+only its last four characters go along as a label, so you can tell two accounts apart.
 
 The data is never sold and never used for advertising. That includes the pooled census of players
 seen in the world, which exists so the people who play can see how many of them there are and
 when. It is for the community that plays, and for nothing else.
+
+## What is in here
+
+- `addon/`: the Lua addon, tagged for Forever (`addon/README.md`: what it records, settings, the
+  census sweep, translations).
+- `agent/`: the app, a Rust workspace (`Cargo.toml` at the root). `agent/core` is the library:
+  the SavedVariables reader, install discovery, the sign-in (OAuth device grant), the combat-log
+  tailer and fight parser, the pusher and the watch loop. `agent/app` is the Tauri desktop app
+  people install; `agent/cli` is a command line over the same core, for developers.
+  `agent/README.md` covers building, how it runs, releasing and signing.
+- `scripts/`: version checks, the release manifest, the CLI smoke test, and `capture.sh`, which
+  turns a real `Ryna.lua` into a scrubbed test fixture.
+
+Releases are built by `.github/workflows/release.yml` from a `vX.Y.Z` tag: macOS (both chips)
+and Windows, the addon zip, `SHA256SUMS`, and the updater's signed artifacts and `latest.json`.
 
 ## Licence
 
