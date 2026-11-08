@@ -34,6 +34,7 @@ use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use zeroize::Zeroizing;
 
 use super::inventory::{Inventory, GAME_FILES};
 use crate::discovery::{Install, SAVED_VARIABLES_FILE};
@@ -355,7 +356,20 @@ pub fn backup(
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("the API's answer has no backup id"))?
         .to_string();
-    let key: [u8; 32] = b64_array(&created["dataKey"], "data key")?;
+    // From here an error leaves a pending backup on ryna.io: delete it (the daily prune would,
+    // in a day).
+    let abandon = |e: anyhow::Error| -> anyhow::Error {
+        match delete(api, &id) {
+            Ok(()) => e.context(
+                "the backup didn't finish, and what was sent of it was deleted from ryna.io",
+            ),
+            Err(_) => e.context(
+                "the backup didn't finish (ryna.io drops what was sent of it within a day)",
+            ),
+        }
+    };
+    let key: Zeroizing<[u8; 32]> =
+        Zeroizing::new(b64_array(&created["dataKey"], "data key").map_err(&abandon)?);
     let max_bytes = created
         .get("maxBytes")
         .and_then(Value::as_u64)
@@ -369,13 +383,15 @@ pub fn backup(
             .pointer("/partBytes/max")
             .and_then(Value::as_u64)
             .map_or(PART_MAX, |m| m as usize),
-    )?;
-    let ciphertext = encrypt(&built.zip, &key, &nonce, &id)?;
+    )
+    .map_err(&abandon)?;
+    let ciphertext = encrypt(&built.zip, &key, &nonce, &id).map_err(&abandon)?;
+    drop(key);
     if ciphertext.len() > max_bytes {
-        bail!(
+        return Err(abandon(anyhow!(
             "the backup is {} bytes, over the {max_bytes} the API takes",
             ciphertext.len()
-        );
+        )));
     }
     let ranges = parts(ciphertext.len(), size);
     let mut uploaded = Vec::new();
@@ -393,11 +409,13 @@ pub fn backup(
                 size,
                 Duration::from_secs(300),
             )
-            .with_context(|| format!("uploading part {n} of {}", ranges.len()))?;
+            .with_context(|| format!("uploading part {n} of {}", ranges.len()))
+            .map_err(&abandon)?;
         let etag = answer
             .get("etag")
             .and_then(Value::as_str)
-            .ok_or_else(|| anyhow!("the API's answer for part {n} has no etag"))?;
+            .ok_or_else(|| anyhow!("the API's answer for part {n} has no etag"))
+            .map_err(&abandon)?;
         uploaded.push(json!({ "n": n, "etag": etag }));
     }
     progress(Progress {
@@ -405,18 +423,41 @@ pub fn backup(
         done: ranges.len(),
         total: ranges.len(),
     });
-    let done = api
-        .settings_call(
-            Method::Post,
-            &backup_url(&id, "/complete"),
-            Some(&json!({
-                "parts": uploaded,
-                "bytes": ciphertext.len(),
-                "sha256": sha256_hex(&ciphertext),
-            })),
-            Duration::from_secs(120),
-        )
-        .context("finishing the backup")?;
+    let completed = api.settings_call(
+        Method::Post,
+        &backup_url(&id, "/complete"),
+        Some(&json!({
+            "parts": uploaded,
+            "bytes": ciphertext.len(),
+            "sha256": sha256_hex(&ciphertext),
+        })),
+        Duration::from_secs(120),
+    );
+    let done = match completed {
+        Ok(done) => done,
+        // The answer may have been lost after ryna.io finished it (a retry then finds it no
+        // longer pending): ask what became of it.
+        Err(e) => match api.settings_call(
+            Method::Get,
+            &backup_url(&id, ""),
+            None,
+            Duration::from_secs(30),
+        ) {
+            Ok(row)
+                if row.get("status").and_then(Value::as_str) == Some("ready")
+                    && row.get("bytes").and_then(Value::as_u64)
+                        == Some(ciphertext.len() as u64) =>
+            {
+                row
+            }
+            Ok(_) => return Err(abandon(anyhow::Error::from(e).context("finishing the backup"))),
+            Err(_) => {
+                return Err(anyhow::Error::from(e).context(
+                    "finishing the backup (ryna.io didn't say whether it finished: look in the list of backups)",
+                ))
+            }
+        },
+    };
     Ok(BackupDone {
         id,
         created_at: done.get("createdAt").cloned().unwrap_or(Value::Null),
@@ -452,12 +493,18 @@ pub fn delete(api: &Api, id: &str) -> Result<()> {
     Ok(())
 }
 
-/// The account folder in `install` a backup of account `key` goes into: `chosen` when given, else
-/// the one whose name hashes to `key`.
-pub fn account_for(install: &Install, key: &str, chosen: Option<&str>) -> Result<String> {
+/// The account folder in `install` a backup of account `key` goes into: the one whose name hashes
+/// to `key`. `chosen` names one instead; one that isn't the backup's own is refused unless
+/// `other_account` (the command line's `--account` with `--force`; the app never sets it).
+pub fn account_for(
+    install: &Install,
+    key: &str,
+    chosen: Option<&str>,
+    other_account: bool,
+) -> Result<String> {
     let all = super::inventory::accounts(install);
     if let Some(c) = chosen {
-        return all
+        let folder = all
             .into_iter()
             .find(|a| a.eq_ignore_ascii_case(c))
             .ok_or_else(|| {
@@ -465,14 +512,20 @@ pub fn account_for(install: &Install, key: &str, chosen: Option<&str>) -> Result
                     "there's no account folder {c} in {}",
                     install.path.display()
                 )
-            });
+            })?;
+        if account_key(&folder) != key && !other_account {
+            bail!(
+                "this backup belongs to another game account, not {folder}: nothing was written (restore it into the account it came from)"
+            );
+        }
+        return Ok(folder);
     }
     all.iter()
         .find(|a| account_key(a) == key)
         .cloned()
         .ok_or_else(|| {
             anyhow!(
-                "this backup is of a game account that isn't in {} (its folders: {}); choose one to restore it into",
+                "this backup belongs to a game account that isn't in {} (its folders: {}): nothing was written",
                 install.path.display(),
                 if all.is_empty() { "none".to_string() } else { all.join(", ") }
             )
@@ -488,15 +541,7 @@ pub fn restorable_path(path: &str, key: &str) -> Option<String> {
         .strip_prefix(key)?
         .strip_prefix('/')?;
     let parts: Vec<&str> = rest.split('/').collect();
-    let plain = |p: &str| {
-        !p.is_empty()
-            && p != "."
-            && p != ".."
-            && !p.contains(['\\', ':', '\0'])
-            && !p.starts_with(' ')
-            && !p.ends_with([' ', '.'])
-    };
-    if !parts.iter().all(|p| plain(p)) {
+    if !parts.iter().all(|p| super::plain_component(p)) {
         return None;
     }
     let lua = |f: &str| {
@@ -553,23 +598,33 @@ pub fn read_zip(zip_bytes: &[u8]) -> Result<(Manifest, RestoredFiles)> {
     Ok((manifest, out))
 }
 
-/// Restore backup `id` into `install`: download, check, decrypt, check every file, then (unless
-/// `dry_run`) keep each file it replaces as `.ryna.bak` and write. `account` chooses the account
-/// folder; else it's the one the backup was made from. Refuses to write while the game runs unless
-/// `force`.
-#[allow(clippy::too_many_arguments)]
+/// How a restore goes.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RestoreOptions<'a> {
+    /// The account folder to restore into; else the one the backup was made from.
+    pub account: Option<&'a str>,
+    /// Allow `account` to be another account than the backup's (the command line's `--force`).
+    pub other_account: bool,
+    /// Say what would be written, writing nothing.
+    pub dry_run: bool,
+    /// Write even though the game seems to be running (the command line's `--force`).
+    pub force: bool,
+}
+
+/// Restore backup `id` into `install`: download, check, decrypt, check every file, then (unless a
+/// dry run) write the files that differ, each replaced one kept as `.ryna.bak`, all put back if a
+/// write fails ([`super::write_all`]). `game_running` is asked before the download and again right
+/// before the first write.
 pub fn restore(
     api: &Api,
     id: &str,
     install: &Install,
-    account: Option<&str>,
-    dry_run: bool,
-    game_running: bool,
-    force: bool,
+    opts: RestoreOptions,
+    game_running: &dyn Fn() -> bool,
     progress: &mut dyn FnMut(Progress),
 ) -> Result<RestoreReport> {
-    if !dry_run {
-        super::refuse_if_running(game_running, force)?;
+    if !opts.dry_run {
+        super::refuse_if_running(game_running(), opts.force)?;
     }
     progress(Progress {
         stage: "downloading",
@@ -584,7 +639,7 @@ pub fn restore(
             Duration::from_secs(30),
         )
         .with_context(|| format!("opening backup {id}"))?;
-    let key: [u8; 32] = b64_array(&opened["dataKey"], "data key")?;
+    let key: Zeroizing<[u8; 32]> = Zeroizing::new(b64_array(&opened["dataKey"], "data key")?);
     let nonce: [u8; 12] = b64_array(&opened["nonce"], "nonce")?;
     let want_bytes = opened.get("bytes").and_then(Value::as_u64);
     let want_sha = opened
@@ -605,8 +660,9 @@ pub fn restore(
         bail!("the downloaded backup doesn't match what ryna.io says it is (its size or sha256): nothing was written");
     }
     let plain = decrypt(&ciphertext, &key, &nonce, id)?;
+    drop(key);
     let (manifest, files) = read_zip(&plain)?;
-    let folder = account_for(install, &manifest.account, account)?;
+    let folder = account_for(install, &manifest.account, opts.account, opts.other_account)?;
     let root: PathBuf = install.path.join("WTF").join("Account").join(&folder);
     let abs = |rel: &str| rel.split('/').fold(root.clone(), |p, c| p.join(c));
     let mut report = RestoreReport {
@@ -623,21 +679,20 @@ pub fn restore(
         written: false,
         backups: Vec::new(),
     };
-    if dry_run {
+    if opts.dry_run {
         return Ok(report);
     }
-    // Asked again: the download can take a while, and the game may have been started.
-    super::refuse_if_running(game_running, force)?;
-    for (i, (rel, bytes)) in files.iter().enumerate() {
-        progress(Progress {
-            stage: "writing",
-            done: i,
-            total: files.len(),
-        });
-        if super::replace_file(&abs(rel), bytes)?.is_some() {
-            report.backups.push(format!("{rel}{}", super::BAK_SUFFIX));
-        }
-    }
+    progress(Progress {
+        stage: "writing",
+        done: 0,
+        total: files.len(),
+    });
+    let pairs: Vec<(&str, &[u8])> = files
+        .iter()
+        .map(|(rel, bytes)| (rel.as_str(), bytes.as_slice()))
+        .collect();
+    let done = super::write_all(&root, &pairs, game_running, opts.force)?;
+    report.backups = done.backups;
     report.written = true;
     Ok(report)
 }
@@ -683,6 +738,10 @@ mod tests {
         seen: RefCell<Vec<(Method, String, Vec<u8>)>>,
         /// Flip a byte of the content served back.
         tamper: Cell<bool>,
+        /// Finish the next `complete` but lose its answer.
+        lose_complete: Cell<bool>,
+        /// Refuse this part with PART_SIZE.
+        refuse_part: Cell<Option<u64>>,
     }
 
     impl FakeApi {
@@ -695,6 +754,8 @@ mod tests {
                 next: Cell::new(1),
                 seen: RefCell::new(Vec::new()),
                 tamper: Cell::new(false),
+                lose_complete: Cell::new(false),
+                refuse_part: Cell::new(None),
             }
         }
 
@@ -796,11 +857,15 @@ mod tests {
                         return Ok(Self::refused("PART_SIZE"));
                     }
                     let n: u64 = n.parse().unwrap();
+                    if self.refuse_part.get() == Some(n) {
+                        return Ok(Self::refused("PART_SIZE"));
+                    }
                     b.parts.insert(n, req.body.clone());
                     Self::ok(json!({ "n": n, "etag": format!("etag-{n}") }))
                 }
                 (Method::Post, [id, "complete"]) => {
-                    let Some(b) = backups.get_mut(*id) else {
+                    // Only a pending backup can be completed, as on the API.
+                    let Some(b) = backups.get_mut(*id).filter(|b| !b.ready) else {
                         return Ok(Self::not_found());
                     };
                     let body: Value = serde_json::from_slice(&req.body).unwrap();
@@ -827,8 +892,18 @@ mod tests {
                     b.sha256 = body["sha256"].as_str().unwrap().into();
                     assert_eq!(b.sha256, sha256_hex(&b.content));
                     b.ready = true;
+                    if self.lose_complete.replace(false) {
+                        return Err("connection reset".into());
+                    }
                     Self::ok(json!({ "id": id, "createdAt": NOW, "bytes": b.content.len() }))
                 }
+                (Method::Get, [id]) => match backups.get(*id) {
+                    Some(b) => Self::ok(json!({
+                        "id": id, "status": if b.ready { "ready" } else { "pending" },
+                        "createdAt": NOW, "bytes": b.content.len(), "manifest": [],
+                    })),
+                    None => Self::not_found(),
+                },
                 (Method::Get, []) => Self::ok(json!({
                     "backups": backups.iter().filter(|(_, b)| b.ready).rev().map(|(id, b)| json!({
                         "id": id, "createdAt": NOW, "bytes": b.content.len(), "machine": b.machine,
@@ -882,6 +957,25 @@ mod tests {
         |_| {}
     }
 
+    fn no() -> bool {
+        false
+    }
+
+    fn yes() -> bool {
+        true
+    }
+
+    fn dry() -> RestoreOptions<'static> {
+        RestoreOptions {
+            dry_run: true,
+            ..RestoreOptions::default()
+        }
+    }
+
+    fn write() -> RestoreOptions<'static> {
+        RestoreOptions::default()
+    }
+
     #[test]
     fn parts_split_at_the_boundaries() {
         assert_eq!(parts(0, 10), Vec::<Range<usize>>::new());
@@ -933,6 +1027,10 @@ mod tests {
             "SavedVariables/.lua",
             "a\\b/Aerin/config-cache.wtf",
             "C:/Aerin/config-cache.wtf",
+            "SavedVariables/CON.lua",
+            "SavedVariables/com1.lua",
+            "Stormcall/NUL/config-cache.wtf",
+            "LPT9/Aerin/SavedVariables/x.lua",
             "",
         ] {
             assert_eq!(ok(bad), None, "{bad}");
@@ -1060,7 +1158,7 @@ mod tests {
         std::fs::write(&elv, "ElvDB = { [\"broken\"] = true }\n").unwrap();
         std::fs::remove_file(root.join("Stormcall/Aerin/macros-cache.txt")).unwrap();
         let dry = with_api(&fake, |api| {
-            restore(api, &done.id, &i, None, true, true, false, &mut quiet())
+            restore(api, &done.id, &i, dry(), &yes, &mut quiet())
         })
         .unwrap();
         assert!(!dry.written && dry.backups.is_empty());
@@ -1081,14 +1179,14 @@ mod tests {
 
         // The game running: refused, nothing written.
         let e = with_api(&fake, |api| {
-            restore(api, &done.id, &i, None, false, true, false, &mut quiet())
+            restore(api, &done.id, &i, write(), &yes, &mut quiet())
         })
         .unwrap_err();
         assert!(e.to_string().contains("close it first"));
         assert_ne!(std::fs::read(&elv).unwrap(), original);
 
         let report = with_api(&fake, |api| {
-            restore(api, &done.id, &i, None, false, false, false, &mut quiet())
+            restore(api, &done.id, &i, write(), &no, &mut quiet())
         })
         .unwrap();
         assert!(report.written);
@@ -1210,7 +1308,7 @@ mod tests {
         let elv = root.join("SavedVariables/ElvUI.lua");
         let original = std::fs::read(&elv).unwrap();
         std::fs::write(&elv, "x").unwrap();
-        let report = restore(&api, &done.id, &i, None, false, false, false, &mut quiet()).unwrap();
+        let report = restore(&api, &done.id, &i, write(), &no, &mut quiet()).unwrap();
         assert!(report.written);
         assert_eq!(std::fs::read(&elv).unwrap(), original);
         delete(&api, &done.id).unwrap();
@@ -1235,7 +1333,7 @@ mod tests {
         std::fs::write(&elv, "changed").unwrap();
         fake.tamper.set(true);
         let e = with_api(&fake, |api| {
-            restore(api, &done.id, &i, None, false, false, false, &mut quiet())
+            restore(api, &done.id, &i, write(), &no, &mut quiet())
         })
         .unwrap_err()
         .to_string();
@@ -1245,23 +1343,161 @@ mod tests {
     }
 
     #[test]
-    fn a_restore_finds_its_account_or_is_told_one() {
+    fn a_restore_finds_its_account_and_refuses_another() {
         let dir = tempfile::tempdir().unwrap();
         let i = elvui_tree(dir.path());
         std::fs::create_dir_all(i.path.join("WTF/Account/OTHER")).unwrap();
+        let k = account_key("ACCOUNT1");
+        assert_eq!(account_for(&i, &k, None, false).unwrap(), "ACCOUNT1");
         assert_eq!(
-            account_for(&i, &account_key("ACCOUNT1"), None).unwrap(),
+            account_for(&i, &k, Some("account1"), false).unwrap(),
             "ACCOUNT1"
         );
-        assert_eq!(
-            account_for(&i, &account_key("ACCOUNT1"), Some("other")).unwrap(),
-            "OTHER"
-        );
-        let e = account_for(&i, &account_key("GONE"), None)
+        // Another account than the backup's: refused, unless asked for outright.
+        let e = account_for(&i, &k, Some("OTHER"), false)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("belongs to another game account"), "{e}");
+        assert_eq!(account_for(&i, &k, Some("other"), true).unwrap(), "OTHER");
+        let e = account_for(&i, &account_key("GONE"), None, false)
             .unwrap_err()
             .to_string();
         assert!(e.contains("ACCOUNT1, OTHER"), "{e}");
-        assert!(account_for(&i, "x", Some("NOPE")).is_err());
+        assert!(account_for(&i, "x", Some("NOPE"), true).is_err());
+    }
+
+    #[test]
+    fn the_app_cant_restore_into_another_account_and_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let i = elvui_tree(dir.path());
+        let other = i.path.join("WTF/Account/OTHER");
+        std::fs::create_dir_all(&other).unwrap();
+        let inv = inventory(&i, "ACCOUNT1").unwrap();
+        let fake = FakeApi::new(PART_MIN, PART_MAX);
+        let done = with_api(&fake, |api| {
+            backup(api, &inv, Include::Addons, "h", NOW, &mut quiet())
+        })
+        .unwrap();
+        let into_other = RestoreOptions {
+            account: Some("OTHER"),
+            ..RestoreOptions::default()
+        };
+        let e = with_api(&fake, |api| {
+            restore(api, &done.id, &i, into_other, &no, &mut quiet())
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("another game account"), "{e}");
+        assert!(std::fs::read_dir(&other).unwrap().next().is_none());
+        let forced = RestoreOptions {
+            other_account: true,
+            ..into_other
+        };
+        let r = with_api(&fake, |api| {
+            restore(api, &done.id, &i, forced, &no, &mut quiet())
+        })
+        .unwrap();
+        assert_eq!(r.account, "OTHER");
+        assert!(other.join("SavedVariables/ElvUI.lua").is_file());
+    }
+
+    #[test]
+    fn a_game_started_during_the_download_stops_the_restore() {
+        let dir = tempfile::tempdir().unwrap();
+        let i = elvui_tree(dir.path());
+        let root = account_dir(&i);
+        let inv = inventory(&i, "ACCOUNT1").unwrap();
+        let fake = FakeApi::new(PART_MIN, PART_MAX);
+        let done = with_api(&fake, |api| {
+            backup(api, &inv, Include::Addons, "h", NOW, &mut quiet())
+        })
+        .unwrap();
+        std::fs::write(root.join("SavedVariables/ElvUI.lua"), "changed").unwrap();
+        // Closed when asked before the download, running when asked again before the writes.
+        let asked = Cell::new(0);
+        let running = || {
+            asked.set(asked.get() + 1);
+            asked.get() > 1
+        };
+        let e = with_api(&fake, |api| {
+            restore(api, &done.id, &i, write(), &running, &mut quiet())
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("close it first"), "{e}");
+        assert_eq!(asked.get(), 2);
+        assert_eq!(
+            std::fs::read_to_string(root.join("SavedVariables/ElvUI.lua")).unwrap(),
+            "changed"
+        );
+        assert!(!root.join("SavedVariables/ElvUI.lua.ryna.bak").exists());
+    }
+
+    #[test]
+    fn a_restore_leaves_files_that_havent_changed_and_their_backups() {
+        let dir = tempfile::tempdir().unwrap();
+        let i = elvui_tree(dir.path());
+        let root = account_dir(&i);
+        let inv = inventory(&i, "ACCOUNT1").unwrap();
+        let fake = FakeApi::new(PART_MIN, PART_MAX);
+        let done = with_api(&fake, |api| {
+            backup(api, &inv, Include::Addons, "h", NOW, &mut quiet())
+        })
+        .unwrap();
+        let bak = root.join("SavedVariables/ElvUI.lua.ryna.bak");
+        std::fs::write(&bak, "an older backup").unwrap();
+        let r = with_api(&fake, |api| {
+            restore(api, &done.id, &i, write(), &no, &mut quiet())
+        })
+        .unwrap();
+        assert!(r.written && r.backups.is_empty(), "{r:?}");
+        assert_eq!(std::fs::read_to_string(&bak).unwrap(), "an older backup");
+    }
+
+    #[test]
+    fn a_lost_complete_answer_is_checked_not_failed() {
+        let dir = tempfile::tempdir().unwrap();
+        let i = elvui_tree(dir.path());
+        let inv = inventory(&i, "ACCOUNT1").unwrap();
+        let fake = FakeApi::new(PART_MIN, PART_MAX);
+        fake.lose_complete.set(true);
+        let done = with_api(&fake, |api| {
+            backup(api, &inv, Include::Addons, "h", NOW, &mut quiet())
+        })
+        .unwrap();
+        // The retry found it no longer pending (a 404); the row says it's ready.
+        let seen = fake.methods();
+        assert_eq!(
+            seen.iter()
+                .filter(|(_, p)| p.ends_with("/complete"))
+                .count(),
+            2
+        );
+        assert_eq!(
+            seen.last().unwrap(),
+            &(Method::Get, format!("{SETTINGS_BACKUPS_PATH}/{}", done.id))
+        );
+        assert_eq!(with_api(&fake, list).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn an_abandoned_upload_is_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let i = elvui_tree(dir.path());
+        let inv = inventory(&i, "ACCOUNT1").unwrap();
+        let fake = FakeApi::new(64, 256);
+        fake.refuse_part.set(Some(2));
+        let e = with_api(&fake, |api| {
+            backup(api, &inv, Include::All, "h", NOW, &mut quiet())
+        })
+        .unwrap_err();
+        let text = format!("{e:#}");
+        assert!(
+            text.contains("deleted from ryna.io") && text.contains("PART_SIZE"),
+            "{text}"
+        );
+        assert!(fake.backups.borrow().is_empty());
+        assert_eq!(fake.methods().last().unwrap().0, Method::Delete);
     }
 
     #[test]

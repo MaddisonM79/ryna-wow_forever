@@ -25,13 +25,14 @@ pub mod inventory;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
+use serde::Serialize;
 
 /// The copy kept of each file a copy or restore replaced (`ElvUI.lua.ryna.bak`).
 pub const BAK_SUFFIX: &str = ".ryna.bak";
 
 /// What a write says when the game is running and it wasn't forced.
 pub const GAME_RUNNING: &str =
-    "the game is running: close it first (it rewrites these files when you log out, so a change made now would be lost)";
+    "the game is running, or Ryna can't tell that it isn't: close it first (it rewrites these files when you log out, so a change made now would be lost)";
 
 /// Refuse to write while the game runs, unless forced (the command line's `--force` only).
 pub fn refuse_if_running(game_running: bool, force: bool) -> Result<()> {
@@ -48,23 +49,171 @@ pub fn bak_path(path: &Path) -> PathBuf {
     path.with_file_name(name)
 }
 
-/// Put `bytes` at `path`: its folder made if it isn't there, the file it replaces (if any) kept as
-/// `<path>.ryna.bak` (replacing an older one), then the new bytes through a temporary file and a
-/// rename. Returns the backup's path when one was written.
-pub fn replace_file(path: &Path, bytes: &[u8]) -> Result<Option<PathBuf>> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).with_context(|| format!("making {}", dir.display()))?;
+/// A Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`), with or without
+/// an extension, in any case: never a file there.
+pub fn windows_device_name(part: &str) -> bool {
+    let stem = part
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .trim_end()
+        .to_ascii_uppercase();
+    matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || ((stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.len() == 4
+            && matches!(stem.as_bytes()[3], b'1'..=b'9'))
+}
+
+/// Whether `part` is one plain path component on every OS: not empty, `.` or `..`; no slash,
+/// backslash, colon or NUL; no space at the start, no space or dot at the end (Windows drops
+/// them); not a Windows device name.
+pub fn plain_component(part: &str) -> bool {
+    !part.is_empty()
+        && part != "."
+        && part != ".."
+        && !part.contains(['/', '\\', ':', '\0'])
+        && !part.starts_with(' ')
+        && !part.ends_with([' ', '.'])
+        && !windows_device_name(part)
+}
+
+/// What [`write_all`] did, by account-relative path.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Written {
+    pub written: Vec<String>,
+    /// Already these bytes: left alone, and their `.ryna.bak` with them.
+    pub unchanged: Vec<String>,
+    /// The `.ryna.bak` copies made.
+    pub backups: Vec<String>,
+}
+
+struct Pending<'a> {
+    rel: &'a str,
+    path: PathBuf,
+    data: &'a [u8],
+    existed: bool,
+}
+
+/// Write `files` (account-relative path, bytes) under `root`, all or nothing as far as the disk
+/// lets it:
+///
+/// - every path is plain components, and none of them (nor the file) is a link, else nothing is
+///   written;
+/// - a file that already holds the bytes is left alone (its `.ryna.bak` too);
+/// - `game_running` is asked right before the first write, and refuses unless `force`;
+/// - every replaced file is copied to `<file>.ryna.bak` first, then the files are written (each
+///   through a temporary file and a rename);
+/// - when a write fails, the files written before it are put back from their `.ryna.bak` (or
+///   removed, when they were new), and the error says which.
+pub fn write_all(
+    root: &Path,
+    files: &[(&str, &[u8])],
+    game_running: &dyn Fn() -> bool,
+    force: bool,
+) -> Result<Written> {
+    let mut done = Written::default();
+    let mut todo: Vec<Pending> = Vec::new();
+    for (rel, data) in files {
+        let parts: Vec<&str> = rel.split('/').collect();
+        if !parts.iter().all(|p| plain_component(p)) {
+            bail!("{rel} isn't a path this mod writes: nothing was written");
+        }
+        let p = parts.iter().fold(root.to_path_buf(), |p, c| p.join(c));
+        // No link anywhere on the way, the file included (a missing part ends the walk).
+        let mut walk = root.to_path_buf();
+        for c in &parts {
+            walk.push(c);
+            match std::fs::symlink_metadata(&walk) {
+                Ok(m) if m.file_type().is_symlink() => bail!(
+                    "{} is a link, and Ryna doesn't write through links: nothing was written",
+                    walk.display()
+                ),
+                Ok(_) => {}
+                Err(_) => break,
+            }
+        }
+        let existed = match std::fs::read(&p) {
+            Ok(old) if old == *data => {
+                done.unchanged.push(rel.to_string());
+                continue;
+            }
+            Ok(_) => true,
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                ) =>
+            {
+                false
+            }
+            Err(e) => bail!("reading {}: {e}: nothing was written", p.display()),
+        };
+        todo.push(Pending {
+            rel,
+            path: p,
+            data,
+            existed,
+        });
     }
-    let bak = if path.is_file() {
-        let bak = bak_path(path);
-        std::fs::copy(path, &bak).with_context(|| format!("keeping {}", bak.display()))?;
-        Some(bak)
-    } else {
-        None
-    };
-    crate::lua_write::write_atomic(path, bytes)
-        .with_context(|| format!("writing {}", path.display()))?;
-    Ok(bak)
+    if todo.is_empty() {
+        return Ok(done);
+    }
+    refuse_if_running(game_running(), force)?;
+    for t in todo.iter().filter(|t| t.existed) {
+        let bak = bak_path(&t.path);
+        std::fs::copy(&t.path, &bak)
+            .with_context(|| format!("keeping {} (nothing else was changed)", bak.display()))?;
+        done.backups.push(format!("{}{BAK_SUFFIX}", t.rel));
+    }
+    for (i, t) in todo.iter().enumerate() {
+        let wrote = t
+            .path
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|()| crate::lua_write::write_atomic(&t.path, t.data));
+        if let Err(e) = wrote {
+            let (back, stuck) = roll_back(&todo[..i]);
+            let mut msg = format!("writing {} failed ({e})", t.rel);
+            if back.is_empty() && stuck.is_empty() {
+                msg.push_str(": nothing was changed");
+            }
+            if !back.is_empty() {
+                msg.push_str(&format!("; put back as they were: {}", back.join(", ")));
+            }
+            if !stuck.is_empty() {
+                msg.push_str(&format!(
+                    "; couldn't be put back (each has its .ryna.bak beside it): {}",
+                    stuck.join(", ")
+                ));
+            }
+            bail!(msg);
+        }
+        done.written.push(t.rel.to_string());
+    }
+    Ok(done)
+}
+
+/// Undo `written`: each replaced file from its `.ryna.bak`, each new one removed. Returns what was
+/// put back and what couldn't be.
+fn roll_back(written: &[Pending]) -> (Vec<String>, Vec<String>) {
+    let mut back = Vec::new();
+    let mut stuck = Vec::new();
+    for t in written {
+        let ok = if t.existed {
+            std::fs::read(bak_path(&t.path))
+                .and_then(|old| crate::lua_write::write_atomic(&t.path, &old))
+                .is_ok()
+        } else {
+            std::fs::remove_file(&t.path).is_ok()
+        };
+        if ok {
+            back.push(t.rel.to_string());
+        } else {
+            stuck.push(t.rel.to_string());
+        }
+    }
+    (back, stuck)
 }
 
 #[cfg(test)]
@@ -188,18 +337,137 @@ ElvPrivateDB = {
 mod tests {
     use super::*;
 
+    fn no() -> bool {
+        false
+    }
+
+    fn yes() -> bool {
+        true
+    }
+
     #[test]
-    fn replacing_keeps_one_backup_of_what_was_there() {
+    fn writing_keeps_one_backup_and_leaves_equal_files_alone() {
         let dir = tempfile::tempdir().unwrap();
-        let p = dir.path().join("a/b/ElvUI.lua");
-        assert_eq!(replace_file(&p, b"one").unwrap(), None);
-        assert_eq!(std::fs::read(&p).unwrap(), b"one");
-        let bak = replace_file(&p, b"two").unwrap().unwrap();
-        assert_eq!(bak, dir.path().join("a/b/ElvUI.lua.ryna.bak"));
-        assert_eq!(std::fs::read(&bak).unwrap(), b"one");
-        replace_file(&p, b"three").unwrap();
-        assert_eq!(std::fs::read(&bak).unwrap(), b"two");
+        let root = dir.path();
+        let p = root.join("a/b/ElvUI.lua");
+        let w = write_all(root, &[("a/b/ElvUI.lua", b"one")], &no, false).unwrap();
+        assert_eq!(w.written, ["a/b/ElvUI.lua"]);
+        assert!(w.backups.is_empty());
+        let w = write_all(root, &[("a/b/ElvUI.lua", b"two")], &no, false).unwrap();
+        assert_eq!(w.backups, ["a/b/ElvUI.lua.ryna.bak"]);
+        assert_eq!(std::fs::read(bak_path(&p)).unwrap(), b"one");
+        // The same bytes again: nothing written, and the one backup is still of "one".
+        let w = write_all(root, &[("a/b/ElvUI.lua", b"two")], &no, false).unwrap();
+        assert_eq!(w.unchanged, ["a/b/ElvUI.lua"]);
+        assert!(w.written.is_empty() && w.backups.is_empty());
+        assert_eq!(std::fs::read(bak_path(&p)).unwrap(), b"one");
+        write_all(root, &[("a/b/ElvUI.lua", b"three")], &no, false).unwrap();
+        assert_eq!(std::fs::read(bak_path(&p)).unwrap(), b"two");
         assert_eq!(std::fs::read(&p).unwrap(), b"three");
+    }
+
+    #[test]
+    fn the_game_is_asked_right_before_the_first_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("x.lua"), "same").unwrap();
+        // Nothing to write: not asked, nothing refused.
+        let asked = std::cell::Cell::new(0);
+        let check = || {
+            asked.set(asked.get() + 1);
+            true
+        };
+        assert!(write_all(root, &[("x.lua", b"same")], &check, false).is_ok());
+        assert_eq!(asked.get(), 0);
+        let e = write_all(root, &[("x.lua", b"new")], &check, false).unwrap_err();
+        assert_eq!(asked.get(), 1);
+        assert!(e.to_string().contains("close it first"));
+        assert_eq!(std::fs::read(root.join("x.lua")).unwrap(), b"same");
+        assert!(!bak_path(&root.join("x.lua")).exists());
+        write_all(root, &[("x.lua", b"new")], &yes, true).unwrap();
+        assert_eq!(std::fs::read(root.join("x.lua")).unwrap(), b"new");
+    }
+
+    #[test]
+    fn a_failed_write_puts_back_what_went_before_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("a")).unwrap();
+        std::fs::write(root.join("a/old.lua"), "old").unwrap();
+        // "b" is a file, so b/y.lua can't be made.
+        std::fs::write(root.join("b"), "in the way").unwrap();
+        let e = write_all(
+            root,
+            &[
+                ("a/old.lua", b"new"),
+                ("a/fresh.lua", b"fresh"),
+                ("b/y.lua", b"y"),
+            ],
+            &no,
+            false,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("writing b/y.lua failed"), "{e}");
+        assert!(
+            e.contains("put back as they were: a/old.lua, a/fresh.lua"),
+            "{e}"
+        );
+        assert_eq!(std::fs::read(root.join("a/old.lua")).unwrap(), b"old");
+        assert!(!root.join("a/fresh.lua").exists());
+    }
+
+    #[test]
+    fn odd_paths_and_links_write_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for bad in [
+            "../x.lua",
+            "a//b.lua",
+            "a/./b.lua",
+            "NUL",
+            "a/con.txt",
+            "a/b.",
+            "c:/x",
+        ] {
+            let e = write_all(root, &[("ok.lua", b"1"), (bad, b"2")], &no, false).unwrap_err();
+            assert!(e.to_string().contains("nothing was written"), "{bad}: {e}");
+            assert!(!root.join("ok.lua").exists(), "{bad}");
+        }
+        #[cfg(unix)]
+        {
+            let elsewhere = tempfile::tempdir().unwrap();
+            std::os::unix::fs::symlink(elsewhere.path(), root.join("Realm")).unwrap();
+            let e = write_all(root, &[("Realm/Name/config-cache.wtf", b"x")], &no, false)
+                .unwrap_err()
+                .to_string();
+            assert!(e.contains("link"), "{e}");
+            assert!(std::fs::read_dir(elsewhere.path())
+                .unwrap()
+                .next()
+                .is_none());
+        }
+    }
+
+    #[test]
+    fn plain_components() {
+        for ok in [
+            "ElvUI.lua",
+            "Argent Dawn",
+            "Aerin",
+            "config-cache.wtf",
+            "COM0",
+            "CONSOLE",
+            "nul_x",
+        ] {
+            assert!(plain_component(ok), "{ok}");
+        }
+        for bad in [
+            "", ".", "..", "a/b", "a\\b", "c:", " x", "x ", "x.", "CON", "nul.txt", "Com1",
+            "LPT9.lua", "aux ",
+        ] {
+            assert!(!plain_component(bad), "{bad}");
+        }
     }
 
     #[test]

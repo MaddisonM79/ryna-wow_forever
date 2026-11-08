@@ -71,15 +71,8 @@ pub struct CopyPlan {
     root: PathBuf,
 }
 
-/// What [`apply`] wrote.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Applied {
-    /// Account-relative paths written.
-    pub written: Vec<String>,
-    /// Account-relative paths of the `.ryna.bak` copies made.
-    pub backups: Vec<String>,
-}
+/// What [`apply`] wrote: account-relative paths, and the `.ryna.bak` copies made.
+pub type Applied = super::Written;
 
 fn read(inv: &Inventory, rel: &str) -> Option<Vec<u8>> {
     std::fs::read(inv.abs(rel)).ok()
@@ -219,26 +212,17 @@ pub fn plan(
     Ok(p)
 }
 
-/// Write `plan`: each file it replaces kept as `<file>.ryna.bak`, then the new one. Refuses while
-/// the game runs unless `force`. A failure part way leaves the files before it written (each with
-/// its backup) and says which one failed.
-pub fn apply(plan: &CopyPlan, game_running: bool, force: bool) -> Result<Applied> {
-    super::refuse_if_running(game_running, force)?;
-    let mut done = Applied {
-        written: Vec::new(),
-        backups: Vec::new(),
-    };
-    for w in &plan.writes {
-        let path = w.path.split('/').fold(plan.root.clone(), |p, c| p.join(c));
-        let bak = super::replace_file(&path, &w.data)
-            .with_context(|| format!("copying {} to {}", w.item, plan.to))?;
-        done.written.push(w.path.clone());
-        if bak.is_some() {
-            done.backups
-                .push(format!("{}{}", w.path, super::BAK_SUFFIX));
-        }
-    }
-    Ok(done)
+/// Write `plan` ([`super::write_all`]): each file it replaces kept as `<file>.ryna.bak` first,
+/// `game_running` asked right before the first write (refused unless `force`), and everything
+/// written put back if a write fails.
+pub fn apply(plan: &CopyPlan, game_running: &dyn Fn() -> bool, force: bool) -> Result<Applied> {
+    let files: Vec<(&str, &[u8])> = plan
+        .writes
+        .iter()
+        .map(|w| (w.path.as_str(), w.data.as_slice()))
+        .collect();
+    super::write_all(&plan.root, &files, game_running, force)
+        .with_context(|| format!("copying {}'s settings to {}", plan.from, plan.to))
 }
 
 /// How one addon (or game file) compares between two characters.
@@ -405,16 +389,13 @@ mod tests {
         let p = plan(&inv, &ch("Aerin-Stormcall"), &ch("Cael-Doomhowl"), None).unwrap();
 
         // The game running refuses, and writes nothing.
-        assert!(apply(&p, true, false)
-            .unwrap_err()
-            .to_string()
-            .contains("close it first"));
+        assert!(format!("{:#}", apply(&p, &|| true, false).unwrap_err()).contains("close it first"));
         assert_eq!(
             std::fs::read(root.join("SavedVariables/ElvUI.lua")).unwrap(),
             before
         );
 
-        let done = apply(&p, false, false).unwrap();
+        let done = apply(&p, &|| false, false).unwrap();
         assert_eq!(done.written.len(), 3);
         assert_eq!(names(&done.backups), ["SavedVariables/ElvUI.lua.ryna.bak"]);
         assert_eq!(
@@ -479,7 +460,7 @@ mod tests {
         );
         let skipped: Vec<&str> = p.skipped.iter().map(|s| s.item.as_str()).collect();
         assert_eq!(skipped, ["Gone", "bindings-cache.wtf"]);
-        apply(&p, false, false).unwrap();
+        apply(&p, &|| false, false).unwrap();
         assert!(account_dir(&i)
             .join("Newrealm/Dara/config-cache.wtf")
             .is_file());
@@ -511,7 +492,7 @@ mod tests {
         )
         .unwrap();
         assert!(p.writes[0].replaces);
-        let done = apply(&p, true, true).unwrap();
+        let done = apply(&p, &|| true, true).unwrap();
         assert_eq!(
             names(&done.backups),
             ["Doomhowl/Bryn/config-cache.wtf.ryna.bak"]
