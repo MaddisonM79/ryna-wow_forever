@@ -397,7 +397,7 @@ added to the same addon later, each line its own toggle on the mod's tab.
   (section 7) brings `Data/vendors.lua` back down: "Sold by Innkeeper Gryshka, Orgrimmar, 1g 20s". The
   client's own `ItemSparse` table (id, name, quality, stack, list buy and sell price) is extracted by the
   gamedata scripts too, as the listed price and the sell price for items the client hasn't seen; the
-  observed price wins where they differ, since private servers tune prices. Privacy: merchants are
+  observed price wins where they differ, since Forever tunes prices against the retail tables (it is Blizzard's own game: docs/forever-client-api.md). Privacy: merchants are
   NPCs, items are items; nothing here is about a person, so merchant recording is on under Chronicle
   (Maddison's call to confirm).
 
