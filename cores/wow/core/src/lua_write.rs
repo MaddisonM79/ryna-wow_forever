@@ -94,15 +94,19 @@ fn write_value(out: &mut Vec<u8>, v: &LuaValue, depth: usize) {
         LuaValue::Str(b) => write_string(out, b),
         LuaValue::Table(entries) => {
             out.extend_from_slice(b"{\n");
-            // The array part: 1, 2, 3 … for as long as it runs.
+            // The array part: 1, 2, 3 … for as long as it runs, found through one index of the
+            // integer keys (a Details or TSM file has arrays of tens of thousands).
+            let ints: std::collections::HashMap<i64, &LuaValue> = entries
+                .iter()
+                .filter_map(|(k, v)| match k {
+                    LuaKey::Int(i) => Some((*i, v)),
+                    _ => None,
+                })
+                .collect();
             let mut positional = Vec::new();
             let mut n = 1i64;
-            while let Some(v) = entries
-                .iter()
-                .find(|(k, _)| *k == LuaKey::Int(n))
-                .map(|(_, v)| v)
-            {
-                positional.push(v);
+            while let Some(v) = ints.get(&n) {
+                positional.push(*v);
                 n += 1;
             }
             for (i, v) in positional.iter().enumerate() {
@@ -305,6 +309,26 @@ Text = "tab\there\nnew\0zero\127del é"
         let a = from_json(&v["A"]);
         assert_eq!(a.get(&LuaKey::Int(12)), Some(&LuaValue::str("n")));
         assert_eq!(a.get(&LuaKey::str("012")), Some(&LuaValue::str("s")));
+    }
+
+    #[test]
+    fn a_large_array_writes_in_linear_time() {
+        // 200,000 entries: the old lookup was quadratic (tens of seconds); this is milliseconds.
+        let n = 200_000i64;
+        let t = LuaValue::Table(
+            (1..=n)
+                .map(|i| (LuaKey::Int(i), LuaValue::Int(i)))
+                .collect(),
+        );
+        let started = std::time::Instant::now();
+        let out = write_file(&[("Big".into(), t)]);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
+        let back = parse_bytes(&out).unwrap();
+        assert_eq!(back[0].1.as_table().unwrap().len(), n as usize);
     }
 
     #[test]
