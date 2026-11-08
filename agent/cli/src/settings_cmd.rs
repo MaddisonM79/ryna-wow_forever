@@ -14,9 +14,9 @@ use ryna_agent::http::HttpTransport;
 use ryna_agent::identity;
 use ryna_agent::util::{hostname, iso_utc, now_secs, SystemClock};
 use ryna_wow_core::discovery::{self, Install};
-use ryna_wow_core::game_process::game_running;
+use ryna_wow_core::game_process::game_running_at;
 use ryna_wow_core::push::{Api, PushError};
-use ryna_wow_core::settings::backup::{self, Include, Progress};
+use ryna_wow_core::settings::backup::{self, Include, Progress, RestoreOptions};
 use ryna_wow_core::settings::copy::{self, Difference, WriteKind};
 use ryna_wow_core::settings::inventory::{self, Inventory, Scope};
 
@@ -56,7 +56,9 @@ enum SettingsCommand {
         /// Say what would be written, writing nothing.
         #[arg(long)]
         dry_run: bool,
-        /// Write even though the game seems to be running (it will overwrite these at logout).
+        /// Write even though the game seems to be running, or Ryna can't tell (it will overwrite
+        /// these at logout); and let --to be a character this account doesn't have yet (its folder
+        /// is made).
         #[arg(long)]
         force: bool,
     },
@@ -76,6 +78,8 @@ enum SettingsCommand {
         id: String,
         #[arg(long)]
         dry_run: bool,
+        /// Write even though the game seems to be running, or Ryna can't tell; and with --account,
+        /// restore into an account other than the one the backup was made from.
         #[arg(long)]
         force: bool,
     },
@@ -197,7 +201,12 @@ pub fn run(config: &Config, install: Option<&Path>, args: SettingsArgs) -> Resul
             force,
         } => {
             let inv = inventory::inventory(&inst, &pick_account(&inst, account)?)?;
-            let (from, to) = (inv.character(&from)?, inv.character(&to)?);
+            let from = inv.character(&from)?;
+            let to = if force {
+                inv.new_character(&to)?
+            } else {
+                inv.character(&to)?
+            };
             let items = (!addons.is_empty()).then_some(addons.as_slice());
             let plan = copy::plan(&inv, &from, &to, items)?;
             let verb = if dry_run { "Would write" } else { "Writing" };
@@ -232,7 +241,7 @@ pub fn run(config: &Config, install: Option<&Path>, args: SettingsArgs) -> Resul
                 println!("Dry run: nothing was written.");
                 return Ok(ExitCode::SUCCESS);
             }
-            let done = copy::apply(&plan, game_running(), force)?;
+            let done = copy::apply(&plan, &|| game_running_at(&inst.path), force)?;
             println!(
                 "Copied {from} to {to}: {} file(s) written, {} kept as .ryna.bak.",
                 done.written.len(),
@@ -280,14 +289,18 @@ pub fn run(config: &Config, install: Option<&Path>, args: SettingsArgs) -> Resul
         }
         SettingsCommand::Restore { id, dry_run, force } => {
             let report = with_api(config, |api| {
+                let opts = RestoreOptions {
+                    account,
+                    other_account: force && account.is_some(),
+                    dry_run,
+                    force,
+                };
                 backup::restore(
                     api,
                     &id,
                     &inst,
-                    account,
-                    dry_run,
-                    game_running(),
-                    force,
+                    opts,
+                    &|| game_running_at(&inst.path),
                     &mut progress,
                 )
             })?;

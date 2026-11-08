@@ -192,4 +192,53 @@ fn list_diff_and_copy_on_a_fake_tree() {
     );
     assert!(!bad.status.success());
     assert!(String::from_utf8_lossy(&bad.stderr).contains("Name-Realm"));
+
+    // A typo in --to is refused, not made into a new character; --force makes one on purpose.
+    let typo = ryna(
+        &state,
+        &game,
+        &[
+            "settings",
+            "copy",
+            "--from",
+            "Aerin-Stormcall",
+            "--to",
+            "Brin-Doomhowl",
+            "--force",
+            "--dry-run",
+        ],
+    );
+    let out = ok(&typo);
+    assert!(out.contains("Brin-Doomhowl has no folder yet"), "{out}");
+    let typo = ryna(
+        &state,
+        &game,
+        &[
+            "settings",
+            "copy",
+            "--from",
+            "Aerin-Stormcall",
+            "--to",
+            "Brin-Doomhowl",
+            "--dry-run",
+        ],
+    );
+    assert!(!typo.status.success());
+    assert!(String::from_utf8_lossy(&typo.stderr).contains("isn't a character on SMOKE"));
+    // A path in a name never leaves the account folder, forced or not.
+    let escape = ryna(
+        &state,
+        &game,
+        &[
+            "settings",
+            "copy",
+            "--from",
+            "Aerin-Stormcall",
+            "--to",
+            "x-../../Other/Realm",
+            "--force",
+        ],
+    );
+    assert!(!escape.status.success());
+    assert!(!game.join("_forever_/WTF/Other").exists());
 }

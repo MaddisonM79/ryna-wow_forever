@@ -40,10 +40,13 @@ pub struct Character {
 }
 
 impl Character {
-    /// `Name-Realm` (a name has no `-`, a realm may).
+    /// `Name-Realm` (a name has no `-`, a realm may). Each part must be a plain folder name (no
+    /// slashes, `..` or the like): they become the character's folder.
     pub fn parse(s: &str) -> Result<Character> {
         match s.trim().split_once('-') {
-            Some((name, realm)) if !name.trim().is_empty() && !realm.trim().is_empty() => {
+            Some((name, realm))
+                if super::plain_component(name.trim()) && super::plain_component(realm.trim()) =>
+            {
                 Ok(Character {
                     name: name.trim().to_string(),
                     realm: realm.trim().to_string(),
@@ -61,7 +64,7 @@ impl Character {
     /// From AceDB's `Name - Realm`.
     pub fn from_acedb_key(key: &str) -> Option<Character> {
         let (name, realm) = key.split_once(" - ")?;
-        (!name.is_empty() && !realm.is_empty()).then(|| Character {
+        (super::plain_component(name) && super::plain_component(realm)).then(|| Character {
             name: name.to_string(),
             realm: realm.to_string(),
         })
@@ -163,17 +166,35 @@ impl Inventory {
         path.split('/').fold(self.root.clone(), |p, c| p.join(c))
     }
 
-    /// A character this account has, from `Name-Realm`, matched without regard to case.
+    /// A character this account has (a folder, or an AceDB key), from `Name-Realm`, matched
+    /// without regard to case. One it doesn't have is an error, so a typo never makes a new
+    /// character ([`Inventory::new_character`] does that, on purpose).
     pub fn character(&self, s: &str) -> Result<Character> {
         let c = Character::parse(s)?;
-        Ok(self
-            .characters
+        self.characters
             .iter()
             .find(|k| {
                 k.name.eq_ignore_ascii_case(&c.name) && k.realm.eq_ignore_ascii_case(&c.realm)
             })
             .cloned()
-            .unwrap_or(c))
+            .ok_or_else(|| {
+                let known: Vec<String> = self.characters.iter().map(ToString::to_string).collect();
+                anyhow::anyhow!(
+                    "{c} isn't a character on {} (its characters: {}); check the spelling",
+                    self.account,
+                    if known.is_empty() {
+                        "none yet".into()
+                    } else {
+                        known.join(", ")
+                    }
+                )
+            })
+    }
+
+    /// `Name-Realm` as a character, this account's if it has it, else a new one (its folder is made
+    /// when something is copied to it). Only the command line's `copy --force` asks for this.
+    pub fn new_character(&self, s: &str) -> Result<Character> {
+        self.character(s).or_else(|_| Character::parse(s))
     }
 }
 
@@ -535,6 +556,19 @@ mod tests {
         );
         assert!(Character::parse("Aerin").is_err());
         assert!(Character::parse("-Realm").is_err());
+        // Each part is a folder: nothing that leaves the account folder, nothing Windows refuses.
+        for bad in [
+            "x-../../Other/Realm",
+            "..-Realm",
+            "Aerin-a/b",
+            "Aerin-a\\b",
+            "Aerin-C:",
+            "CON-Realm",
+            "Aerin-Realm.",
+        ] {
+            assert!(Character::parse(bad).is_err(), "{bad}");
+        }
+        assert_eq!(Character::from_acedb_key("x - ../y"), None);
         let a = ch("Aerin", "Argent Dawn");
         assert_eq!(a.to_string(), "Aerin-Argent Dawn");
         assert_eq!(a.acedb_key(), "Aerin - Argent Dawn");
@@ -631,6 +665,25 @@ mod tests {
             ]
         );
         assert_eq!(inv.characters.len(), 3);
+        // Looked up without regard to case; a typo is an error, not a new character.
+        assert_eq!(
+            inv.character("aerin-stormcall").unwrap(),
+            ch("Aerin", "Stormcall")
+        );
+        let e = inv.character("Aerni-Stormcall").unwrap_err().to_string();
+        assert!(
+            e.contains("isn't a character on ACCOUNT1") && e.contains("Aerin-Stormcall"),
+            "{e}"
+        );
+        assert_eq!(
+            inv.new_character("Dara-Newrealm").unwrap(),
+            ch("Dara", "Newrealm")
+        );
+        assert_eq!(
+            inv.new_character("bryn-doomhowl").unwrap(),
+            ch("Bryn", "Doomhowl")
+        );
+        assert!(inv.new_character("x-../y").is_err());
         let game: Vec<&str> = inv.game_files.iter().map(|f| f.path.as_str()).collect();
         assert_eq!(
             game,
