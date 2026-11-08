@@ -304,9 +304,9 @@ with the key on a new machine, which is the case backups exist for.
 it; "Copy from <character>" on a character, "Back up now", "Restore", a history. Each copy and
 restore writes a `.bak` of what it replaced beside the file, kept until the next one.
 
-**Open (Maddison's calls):** one mod or two (backup, copy); copies between accounts in v1 or only
-between characters; cross-machine sync automatic ("restore here" on a new machine, or on every
-sync) or manual only.
+Settled 2026-11-08, Maddison: **backup and copy are one mod.** Still open: copies between accounts in
+v1 or only between characters; cross-machine sync automatic ("restore here" on a new machine, or on
+every sync) or manual only; and how the backups are encrypted (the options are with her).
 
 ## 8. Identity
 
