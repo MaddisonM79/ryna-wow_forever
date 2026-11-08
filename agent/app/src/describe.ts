@@ -237,6 +237,19 @@ export function modRow(m: ModView, install: string): { text: string; chip: "push
   return { text, chip };
 }
 
+/**
+ * The button a mod's row offers for one install, or null: "Update to <bundled>" when the mod is on
+ * and an older copy is installed, "Install the addon" when it's on and not there yet. Both run the
+ * same install as the Game tab's button (the core addon and every mod that's on, into that install).
+ */
+export function modAction(m: ModView, install: string): { label: string } | null {
+  if (!m.on) return null;
+  const here = m.installs.find((i) => i.install === install);
+  if (!here?.installed) return { label: "Install the addon" };
+  if (here.version && compareVersions(here.version, m.bundled) < 0) return { label: `Update to ${m.bundled}` };
+  return null;
+}
+
 /** Dotted integers, as the core compares them: "0.10.0" is after "0.9.1". */
 export function compareVersions(a: string, b: string): number {
   const parts = (v: string) => v.replace(/^[vV]/, "").split(".").map((p) => parseInt(p, 10) || 0);

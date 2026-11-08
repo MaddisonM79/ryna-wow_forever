@@ -1,6 +1,6 @@
 import { describe as group, expect, it } from "vitest";
 import type { ModView } from "./api";
-import { ACTS_IN_GAME, compareVersions, installedLines, modChangeLines, modRow, modToggledLines } from "./describe";
+import { ACTS_IN_GAME, compareVersions, installedLines, modAction, modChangeLines, modRow, modToggledLines } from "./describe";
 
 const AT = "/wow/_forever_";
 
@@ -99,5 +99,20 @@ group("what a toggle and an install say", () => {
       `Installed addon 0.3.0 into ${AT}/Interface/AddOns/Ryna`,
       `Installed the Chronicle mod 0.3.0 into ${AT}/Interface/AddOns/Ryna_Chronicle`,
     ]);
+  });
+});
+
+group("modAction", () => {
+  it("offers the update when an older copy is installed", () => {
+    expect(modAction(mod(true, true, "0.2.6"), AT)).toEqual({ label: "Update to 0.3.0" });
+  });
+  it("offers the install when the mod is on but not there yet", () => {
+    expect(modAction(mod(true, false, null), AT)).toEqual({ label: "Install the addon" });
+    expect(modAction(mod(true, true, "0.3.0"), "/elsewhere")).toEqual({ label: "Install the addon" });
+  });
+  it("offers nothing when current, off, or the version is unknown", () => {
+    expect(modAction(mod(true, true, "0.3.0"), AT)).toBeNull();
+    expect(modAction(mod(false, true, "0.2.6"), AT)).toBeNull();
+    expect(modAction(mod(true, true, null), AT)).toBeNull();
   });
 });
