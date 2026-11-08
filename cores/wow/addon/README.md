@@ -77,7 +77,10 @@ times (45), mostly from Kobold Vermin (22)". Only this character's numbers, neve
 
 A **journal** of events, kept for 30 days and at most 100,000 events (when it goes past that, the
 oldest are dropped). The cap is high on purpose: the addon may be installed days before the companion
-app first uploads, and the journal has to hold several days of heavy play until then. It records
+app first uploads, and the journal has to hold several days of heavy play until then. Bulky event
+types (`J.SHORT_LIVED` in `Journal.lua`: the Prices mod's `auction` snapshots, megabytes each) are
+dropped at login once the companion app has uploaded the save that held them (by `AgentStatus.lua`'s
+per-account `savedAt` and `pushedAt`), and after 3 days in any case. It records
 logins and logouts, zone changes, quests accepted and turned in, level-ups, deaths, gold changes of a
 gold or more, group changes, the merchants you open (`merchant`: what they sell and for how much;
 mods/wow/README.md has the shape), and **sightings** of other players (see the census settings below).

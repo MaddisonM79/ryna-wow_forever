@@ -506,12 +506,17 @@ Nothing is printed unasked. Tests: `mods/wow/prices/test/auction_test.lua`. Owed
 minute after asking, which is a guess at when they are ready), the frame cost on 192k rows, that
 `minPrice` is per unit for stackable goods, that a search fires `AUCTION_HOUSE_BROWSE_RESULTS_UPDATED`,
 and whether a second `ReplicateItems()` inside 15 minutes is refused (the throttle is ours either way).
-Two things for Maddison: the store is one table per account, so a Horde and an Alliance character
-(separate houses on a Classic ruleset) overwrite each other's numbers, newest wins; and the journal
-keeps 30 days of events, and an `auction` item is about 140 bytes as the client writes
-SavedVariables (2 MB a snapshot if the house has 15,000 distinct items; the store is about as big
-again), so a daily auction-house visitor carries tens of MB of events in `RynaDB` until the core trims them (the core could keep `auction`
-events for a few days only, or drop them once the agent has uploaded them).
+One thing for Maddison: the store is one table per account, so a Horde and an Alliance character
+(separate houses on a Classic ruleset) overwrite each other's numbers, newest wins. The journal's
+size, settled with the API's pool (its notes: a snapshot is pooled once, from the first upload that
+carries it, every part in that upload; it keeps every event and takes at most 16 MB an upload; it
+checks `n <= q` too): an `auction` item is about 140 bytes as the client writes SavedVariables (2 MB
+a snapshot if the house has 15,000 distinct items), so the core no longer carries them 30 days.
+`Journal.Prune` at login drops `auction` events once the companion app has uploaded the save that
+held them (every account in `AgentStatus.lua` has `pushedAt >= savedAt`, and the newest `savedAt`
+is no older than the journal's newest event), and after 3 days whatever happens (`J.SHORT_LIVED`;
+tested in `mods/wow/prices/test/journal_prune_test.lua`). All of a snapshot's parts are added in one
+frame, so they are always in the same save.
 
 Chronicle's `merchant` event, as built (`Merchants.lua`, setting `merchants`, on, on the Recording
 tab):

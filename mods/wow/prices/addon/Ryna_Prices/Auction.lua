@@ -30,7 +30,9 @@
 -- sent anywhere.
 --
 -- The `auction` event (docs/wow.md 17): { at, rows, part, parts, items = { { id, n, q, min, q25, med } } },
--- every value an integer, at most 2,000 items an event, split into parts with the same `at`.
+-- every value an integer, at most 2,000 items an event, split into parts with the same `at`, all
+-- added in one frame so they are in the same save. The core keeps them only until the companion app
+-- has uploaded them, three days at most (Journal.lua's SHORT_LIVED), not the journal's 30.
 -- An item outside the API's limits (an id, count or price it would refuse) is left out of the
 -- event, so the event is never refused whole; it stays in the local store. Past 20 parts (40,000
 -- items) the most listed items are sent. There is no field for a seller, and no seller is read.
@@ -289,9 +291,12 @@ local function sendable(r)
   local function within(v, max) return type(v) == "number" and v >= 1 and v <= max and v == floor(v) end
   return within(r.id, MAX_ID) and within(r.n, MAX_N) and within(r.q, MAX_Q) and within(r.min, MAX_PRICE)
     and within(r.q25, MAX_PRICE) and within(r.med, MAX_PRICE) and r.min <= r.q25 and r.q25 <= r.med
+    and r.n <= r.q
 end
 
--- The snapshot as `auction` journal events. Returns how many were added. The items are the walk's
+-- The snapshot as `auction` journal events, every part in the same frame so they land in the same
+-- save (the API pools a snapshot once, from the first upload that carries it, and skips parts that
+-- come later). Returns how many were added. The items are the walk's
 -- own summaries ({ id, n, q, min, q25, med }, nothing else), not copies.
 function A.Send(w)
   local items = {}

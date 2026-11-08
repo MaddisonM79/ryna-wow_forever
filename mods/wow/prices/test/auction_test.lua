@@ -413,13 +413,13 @@ for _, it in ipairs(e.items) do
   for k in pairs(it) do ks[#ks + 1] = k end
   table.sort(ks)
   if table.concat(ks, ",") ~= "id,med,min,n,q,q25" then okShape = false end
-  if not (it.min <= it.q25 and it.q25 <= it.med) then okShape = false end
+  if not (it.min <= it.q25 and it.q25 <= it.med) or it.n > it.q then okShape = false end
   local w = want[it.id]
   if not w or w.med ~= it.med or w.q ~= it.q then okShape = false end
   if it.id <= prev then sorted = false end
   prev = it.id
 end
-check(okShape, "each item is { id, n, q, min, q25, med }, the right numbers, min <= q25 <= med")
+check(okShape, "each item is { id, n, q, min, q25, med }, the right numbers, min <= q25 <= med, n <= q")
 check(sorted, "items in id order")
 local nonInteger = {}
 walk(e, function(v, path)

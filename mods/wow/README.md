@@ -83,7 +83,10 @@ is the whole of it).
   for the account, replaced per item by each snapshot; entries older than 14 days are dropped at
   login, and past 20,000 items the most recently seen are kept), and up as `auction` journal events
   (`{ at, rows, part, parts, items = { { id, n, q, min, q25, med } } }`, integers only, at most 2,000
-  items an event; an item outside the API's limits is kept here and left out of the event). A
+  items an event, every part added in the same frame so they share a save; an item outside the API's
+  limits is kept here and left out of the event). The core keeps `auction` events only until the
+  companion app has uploaded them, three days at most, not the journal's 30 (`Journal.lua`,
+  `J.SHORT_LIVED`). A
   search on the browse tab folds its results in as `{ min = minPrice, q = totalQuantity, at }` (no
   median), unless the item has a snapshot from the last 15 minutes; searches are never sent.
   **What is not stored or sent: anything about a seller or a bidder.** Forever's rows have no owner

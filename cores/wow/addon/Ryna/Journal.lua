@@ -18,18 +18,57 @@ local function keepNewest(list, n)
   return out
 end
 
--- On login: drop events older than 30 days (and anything malformed), then apply the cap.
+-- Bulky event types, kept only until the companion app has uploaded them, and never longer than
+-- this many seconds. The Prices mod's `auction` snapshots run to megabytes each, and the API's ingest
+-- takes at most 16 MB and keeps every event it stores, so carrying them for 30 days would fill it.
+J.SHORT_LIVED = { auction = 3 * 86400 }
+
+-- Whether the companion app has uploaded everything this journal held at the last save: every
+-- account it reports was pushed after it was last saved (pushedAt >= savedAt), and the newest of
+-- those saves is no older than the journal's newest event (`newest`), so that save carried them.
+-- AgentStatus.lua (RynaAgentStatus) is the app's, rewritten after each sync and read at login.
+function J.Uploaded(newest)
+  local a = _G.RynaAgentStatus
+  local accounts = type(a) == "table" and a.accounts
+  if type(accounts) ~= "table" or type(newest) ~= "number" then return false end
+  local latest
+  for _, acct in ipairs(accounts) do
+    if type(acct) == "table" and type(acct.savedAt) == "number" then
+      if type(acct.pushedAt) ~= "number" or acct.pushedAt < acct.savedAt then return false end
+      if not latest or acct.savedAt > latest then latest = acct.savedAt end
+    end
+  end
+  return latest ~= nil and latest >= newest
+end
+
+-- On login: drop events older than 30 days (and anything malformed), the short-lived types once
+-- uploaded or past their own limit, then apply the cap.
 function J.Prune()
-  local cutoff = ns.Now() - KEEP_SECONDS
-  local out = {}
+  local now = ns.Now()
+  local cutoff = now - KEEP_SECONDS
   local old = ns.db.journal
+  local newest
   for i = 1, #old do
     local e = old[i]
-    if type(e) == "table" and type(e.at) == "number" and e.at >= cutoff then out[#out + 1] = e end
+    if type(e) == "table" and type(e.at) == "number" and (not newest or e.at > newest) then newest = e.at end
+  end
+  local uploaded = J.Uploaded(newest)
+  local out, short = {}, 0
+  for i = 1, #old do
+    local e = old[i]
+    if type(e) == "table" and type(e.at) == "number" and e.at >= cutoff then
+      local limit = J.SHORT_LIVED[e.type]
+      if limit and (uploaded or e.at < now - limit) then
+        short = short + 1
+      else
+        out[#out + 1] = e
+      end
+    end
   end
   ns.db.journal = keepNewest(out, CAP)
-  ns.Debug("journal: %d events kept from earlier sessions, %d older than 30 days dropped",
-    #ns.db.journal, #old - #ns.db.journal)
+  ns.Debug("journal: %d events kept from earlier sessions, %d older than 30 days dropped, %d bulky ones "
+    .. "dropped (%s)", #ns.db.journal, #old - #ns.db.journal - short, short,
+    uploaded and "uploaded" or "past their limit")
 end
 
 function J.StartSession(guid)
