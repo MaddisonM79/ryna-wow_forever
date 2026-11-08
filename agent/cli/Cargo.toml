@@ -18,3 +18,6 @@ ryna-agent = { path = "../host" }
 ryna-wow-core = { path = "../../cores/wow/core" }
 serde_json.workspace = true
 
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -4,7 +4,7 @@
 //!
 //! - [`wow_core`]: the core behind the agent's interface, and its manifest (`cores/wow/core.json`).
 //! - [`discovery`]: the game's install folders and each account's `Ryna.lua`.
-//! - [`lua`]: a reader for the Lua the game writes to SavedVariables.
+//! - [`lua`]: a reader for the Lua the game writes to SavedVariables, and [`lua_write`] a writer.
 //! - [`snapshot`]: the JSON snapshot the API takes (docs/wow.md section 2), built from `RynaDB`.
 //! - [`push`]: posting snapshots and heartbeats (and census uploads), signed by the device key.
 //! - [`census`]: the census without an account: an account's `seen` events as signed uploads.
@@ -13,6 +13,8 @@
 //! - [`agent_status`]: `AgentStatus.lua`, what the agent tells the addon after every run.
 //! - [`addon_install`]: copying the addon into the game, and reading the installed one's version.
 //! - [`mods`]: the bundled mods (Chronicle first): what's on, installing and removing their folders.
+//! - [`game_process`]: whether the game is running (a best guess from the process list).
+//! - [`settings`]: the Settings mod: addon settings backed up (encrypted) and copied between characters.
 //! - [`status`]: what a front end shows (installs, accounts, the sign-in, the last run).
 //! - [`combat`]: the combat log: parsing, encounters, digests, the tailer and its upload queue.
 //!
@@ -25,10 +27,13 @@ pub mod agent_status;
 pub mod census;
 pub mod combat;
 pub mod discovery;
+pub mod game_process;
 pub mod lua;
+pub mod lua_write;
 pub mod mods;
 pub mod push;
 pub mod runner;
+pub mod settings;
 pub mod snapshot;
 pub mod state;
 pub mod status;

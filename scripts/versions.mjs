@@ -35,8 +35,8 @@ export function readVersions(root) {
     // A core's manifest version is what its heartbeat reports; bundled cores take the agent's.
     "cores/wow/core.json": JSON.parse(read("cores/wow/core.json")).version ?? null,
   };
-  // Each bundled mod (mods/wow/<id>/mod.json) versions with the agent, and so does each addon
-  // folder it installs (its TOC).
+  // Each bundled mod (mods/wow/<id>/mod.json, `kind: "addon"` or `kind: "agent"`) versions with the
+  // agent, and so does each addon folder it installs (its TOC; an agent mod has none).
   for (const [where, version] of modVersions(root)) found[where] = version;
   // tauri.conf.json falls back to the crate's version; if it ever names one, it must agree.
   const tauri = JSON.parse(read("agent/app/src-tauri/tauri.conf.json"));

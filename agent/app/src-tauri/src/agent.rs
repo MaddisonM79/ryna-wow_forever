@@ -439,6 +439,25 @@ pub fn logout(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether the mod `id` is on (the person's choice, else its manifest's default).
+pub fn mod_on(app: &AppHandle, id: &str) -> bool {
+    let chosen = app.state::<Agent>().live().settings.mods.clone();
+    core_mods::bundled()
+        .iter()
+        .find(|m| m.id == id)
+        .is_some_and(|m| core_mods::is_on(m, &chosen))
+}
+
+/// The installs the Settings mod works in: the ones the addon goes into (Forever installs, or every
+/// install in a chosen folder).
+pub fn settings_installs(app: &AppHandle) -> Vec<Install> {
+    let chosen = install_override(app);
+    let found = discovery::discover(chosen.as_deref());
+    targets(&found.installs, chosen.is_some(), None)
+        .map(|v| v.into_iter().cloned().collect())
+        .unwrap_or_default()
+}
+
 pub fn install_override(app: &AppHandle) -> Option<PathBuf> {
     app.state::<Agent>()
         .live()
@@ -784,6 +803,17 @@ pub fn set_mod_enabled(app: &AppHandle, id: &str, on: bool) -> Result<ModToggleR
         settings
             .save(dir)
             .map_err(|e| format!("Couldn't save the setting: {e}"))?;
+    }
+    // An agent mod (Settings) has nothing in the game: the toggle is the whole of it.
+    if core_mods::is_agent_mod(m) {
+        return Ok(ModToggleResult {
+            id: m.id.clone(),
+            name: m.name.clone(),
+            on,
+            changes: Vec::new(),
+            waiting_for_addon: Vec::new(),
+            game_running: false,
+        });
     }
     let found = discovery::discover(settings.install_override.as_deref());
     let picked =

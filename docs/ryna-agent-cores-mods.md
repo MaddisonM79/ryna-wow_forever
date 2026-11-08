@@ -148,7 +148,7 @@ A mod is a folder with a manifest, installed and toggled by the agent, belonging
   "name": "Vendor prices on tooltips",
   "version": "0.1.0",
   "summary": "What a vendor pays for an item and its stack, on the tooltip.",
-  "kind": "addon",                                   // wow: an addon folder; other cores: their kinds
+  "kind": "addon",                                   // wow: "addon" (an addon folder) or "agent" (no folder: the agent's own work, the Settings mod); other cores: their kinds
   "actsInGame": false,                               // true for anything that does something for the player
   "source": { "kind": "bundled" },                   // or { "kind": "git", "repo": "https://github.com/…", "tag": "v0.1.0", "sha256": "…" }
   "requires": { "core": ">=0.3.0" },
@@ -326,6 +326,44 @@ restore writes a `.bak` of what it replaced beside the file, kept until the next
 Settled 2026-11-08, Maddison: **backup and copy are one mod**, encrypted as above. Still open: copies
 between accounts in v1 or only between characters; cross-machine sync automatic ("restore here" on a
 new machine, or on every sync) or manual only.
+
+**Built (2026-11-08, agent side, branch `claude/settings-mod-b9bec9`).** v1 defaults: copies between
+characters on one game account only, restore on a click, never automatic.
+
+- The mod: `mods/wow/settings/mod.json`, `kind: "agent"` (no addon folder; install and remove do
+  nothing; the toggle shows the app's *Addon settings* tab and allows backups), off by default.
+  `core.json`'s `data.reads`/`writes` list the SavedVariables and the game's files it touches.
+- `cores/wow/core/src/settings/`: `inventory` (TOC scan with suffixed TOCs, account and
+  realm/character walk, sizes and times, the characters each addon has settings for, the game's
+  six per-character files as their own group, `Ryna.lua` never), `acedb` (the layout, copying one
+  character's `profileKeys`/`char`/own profile and namespaces to another; ElvUI's `ElvPrivateDB` by
+  the same code; `realm`/`faction`/`class` sections left alone), `copy` (plan = dry run, apply with a
+  `.ryna.bak` per replaced file, the diff by content), `backup` (zip with `manifest.json`,
+  AES-256-GCM under the API's data key with the id as AAD, parts of `partBytes.max`, signed PUTs,
+  complete; restore checks size, sha256, decryption, every file's sha256 and every path before it
+  writes anything). `lua.rs` gained a lossless tree (`parse_bytes`) and `lua_write.rs` the writer.
+  `game_process.rs` (moved from the app) is the closed-game check; the CLI's `--force` is the only
+  way past it.
+- One deviation from docs/wow.md 15, told to the API side: manifest paths are WTF-relative with the
+  account folder as its key (`Account/<16 hex>/…`), not its name, so the name never leaves the
+  computer (the same rule as the snapshot's `account.key`).
+- `ryna settings list|diff|copy|backup|backups|restore|delete`; the app's *Addon settings* tab.
+- After review (same day): the game check fails closed (can't tell counts as running) and is asked
+  again right before the first write; every write goes through one path (`settings::write_all`:
+  plain path components only, no links, equal files left alone, every `.ryna.bak` first, rolled back
+  on a failed write); a restore goes only into the backup's own account (the CLI's `--account …
+  --force` is the one way past); `Name-Realm` parts are plain folder names and a copy's target must
+  be a character the account has; AceDB copies touch only databases that hold the source, and make
+  the target's entries what the source's are (removed where the source has none); a lost
+  `complete` answer is checked with `GET /backups/:id`, and an abandoned upload is deleted; the data
+  key is zeroized after use. Process names confirmed: macOS only (`_forever_/World of Warcraft.app`);
+  the Windows executable names and the Wine command-line match are unconfirmed for Forever, and
+  Windows also asks the install's own `.exe` files whether they're in use.
+- Tested against fakes only: a fake game tree in a temp folder, a stateful fake of the section-15
+  API (as a `Transport`, and behind a local HTTP server through the real transport). Left for the
+  main session: the end-to-end run against the deployed API (create, parts, complete, list, open,
+  content, delete), a real ElvUI copy in game, and the in-game check above on whether Forever's
+  server keeps bindings and macros (which decides whether copying those files does anything).
 
 ## 8. Identity
 

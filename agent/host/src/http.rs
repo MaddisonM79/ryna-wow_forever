@@ -1,5 +1,6 @@
-//! The HTTP calls the agent makes (a POST, or a PUT for a fight's digest and raw lines), behind a
-//! trait so sign-in and pushing can be tested without a network.
+//! The HTTP calls the agent makes (a POST; a PUT for a fight's digest and raw lines and a backup's
+//! parts; a GET and a DELETE for the Settings mod's backups), behind a trait so sign-in and pushing
+//! can be tested without a network.
 
 use std::time::Duration;
 
@@ -8,6 +9,8 @@ pub enum Method {
     #[default]
     Post,
     Put,
+    Get,
+    Delete,
 }
 
 #[derive(Debug, Clone)]
@@ -47,7 +50,7 @@ impl Response {
     }
 }
 
-/// Send (a POST, or a PUT when `req.method` says) and return whatever came back. `Err` means no
+/// Send (a POST, or the method `req.method` says) and return whatever came back. `Err` means no
 /// answer (connection, TLS, timeout).
 pub trait Transport {
     fn post(&self, req: &Request) -> Result<Response, String>;
@@ -73,12 +76,18 @@ impl Transport for HttpTransport {
         let builder = match req.method {
             Method::Post => self.client.post(&req.url),
             Method::Put => self.client.put(&req.url),
+            Method::Get => self.client.get(&req.url),
+            Method::Delete => self.client.delete(&req.url),
         };
         let mut r = builder
-            .header("Content-Type", req.content_type)
             .header("Accept", "application/json")
-            .timeout(req.timeout)
-            .body(req.body.clone());
+            .timeout(req.timeout);
+        // A GET has no body to describe.
+        if req.method != Method::Get {
+            r = r
+                .header("Content-Type", req.content_type)
+                .body(req.body.clone());
+        }
         if let Some(token) = &req.bearer {
             r = r.bearer_auth(token);
         }

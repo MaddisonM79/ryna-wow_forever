@@ -4,6 +4,8 @@
 //! Finds the game's install(s), reads each account's `Ryna.lua` (the addon's SavedVariables),
 //! and pushes a snapshot of it to the API as the person who signed in with `ryna login`.
 
+mod settings_cmd;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -119,6 +121,9 @@ enum Command {
         #[command(subcommand)]
         command: CensusCommand,
     },
+    /// The Settings mod: your addons' settings listed, compared and copied between characters
+    /// (local, the game closed), and backed up to ryna.io encrypted (signed in).
+    Settings(settings_cmd::SettingsArgs),
     /// Print the snapshot JSON for one SavedVariables file, without sending anything.
     Parse {
         file: PathBuf,
@@ -186,6 +191,7 @@ fn dispatch(cli: Cli) -> Result<ExitCode> {
                 census_push(&config, cli.install.as_deref(), dry_run)
             }
         },
+        Command::Settings(args) => settings_cmd::run(&config, cli.install.as_deref(), args),
         Command::Parse { file, raw, account } => parse(&file, raw, account.as_deref()),
         Command::Combat {
             file,
@@ -207,7 +213,7 @@ fn hint(fix: Fix) -> Option<&'static str> {
 }
 
 /// `message`, with the command that fixes it when there is one.
-fn with_hint(message: &str, fix: Fix) -> String {
+pub(crate) fn with_hint(message: &str, fix: Fix) -> String {
     match hint(fix) {
         Some(h) => format!("{message}: {h}"),
         None => message.to_string(),

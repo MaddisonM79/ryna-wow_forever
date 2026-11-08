@@ -35,11 +35,27 @@
       "Interface/AddOns/Ryna/Ryna.toc",
       "Interface/AddOns/Ryna_*/Ryna_*.toc",
       "WTF/Account/*/AddOns.txt",
-      "WTF/Account/*/*/*/AddOns.txt"
+      "WTF/Account/*/*/*/AddOns.txt",
+      "Interface/AddOns/*/*.toc",
+      "WTF/Account/*/SavedVariables/*.lua",
+      "WTF/Account/*/*/*/SavedVariables/*.lua",
+      "WTF/Account/*/*/*/config-cache.wtf",
+      "WTF/Account/*/*/*/bindings-cache.wtf",
+      "WTF/Account/*/*/*/macros-cache.txt",
+      "WTF/Account/*/*/*/chat-cache.txt",
+      "WTF/Account/*/*/*/layout-local.txt"
     ],
     "writes": [
       "Interface/AddOns/Ryna/",
-      "Interface/AddOns/Ryna_*/"
+      "Interface/AddOns/Ryna_*/",
+      "WTF/Account/*/SavedVariables/*.lua",
+      "WTF/Account/*/*/*/SavedVariables/*.lua",
+      "WTF/Account/*/*/*/config-cache.wtf",
+      "WTF/Account/*/*/*/bindings-cache.wtf",
+      "WTF/Account/*/*/*/macros-cache.txt",
+      "WTF/Account/*/*/*/chat-cache.txt",
+      "WTF/Account/*/*/*/layout-local.txt",
+      "WTF/Account/*/*/*/AddOns.txt"
     ]
   },
   "mods": "mods/wow"

@@ -96,6 +96,8 @@ export interface ModView {
   id: string;
   name: string;
   summary: string;
+  /** `addon` (folders in the game) or `agent` (the app's own work: nothing to install). */
+  kind: "addon" | "agent" | string;
   /** It does something in the game for the player: said under its toggle, every time. */
   actsInGame: boolean;
   defaultOn: boolean;
@@ -268,6 +270,122 @@ export interface UpdateProgress {
   total: number | null;
 }
 
+/** The Settings mod's types (the core's `settings::inventory`, `copy`, `backup`). */
+export interface CharacterRef {
+  name: string;
+  realm: string;
+}
+
+export type SettingsScope = "account" | "character" | "both";
+
+export interface SettingsFileView {
+  /** Relative to the account's folder: `SavedVariables/ElvUI.lua`, `Stormcall/Aerin/config-cache.wtf`. */
+  path: string;
+  character: CharacterRef | null;
+  bytes: number;
+  /** Unix seconds. */
+  modified: number | null;
+}
+
+export interface AddonSettingsView {
+  addon: string;
+  title: string | null;
+  installed: boolean;
+  accountVariables: string[];
+  characterVariables: string[];
+  scope: SettingsScope;
+  files: SettingsFileView[];
+  characters: CharacterRef[];
+  /** Its account file is AceDB: a copy edits it for the target character. */
+  acedb: boolean;
+  bytes: number;
+  modified: number | null;
+}
+
+export interface InventoryView {
+  install: string;
+  flavor: string | null;
+  account: string;
+  accountKey: string;
+  characters: CharacterRef[];
+  characterFolders: CharacterRef[];
+  addons: AddonSettingsView[];
+  gameFiles: SettingsFileView[];
+}
+
+/** Whether the game is running; `unknown` (why it can't be told) counts as running. */
+export interface GameState {
+  running: boolean;
+  unknown: string | null;
+}
+
+export interface SettingsView {
+  on: boolean;
+  inventories: InventoryView[];
+  game: GameState;
+  problems: string[];
+}
+
+export interface DiffRow {
+  item: string;
+  gameFile: boolean;
+  difference: "same" | "differ" | "onlyA" | "onlyB";
+}
+
+export type PlannedWrite = {
+  item: string;
+  path: string;
+  replaces: boolean;
+  bytes: number;
+} & ({ how: "file"; from: string } | { how: "aceDb"; variables: string[] });
+
+export interface CopyPlan {
+  from: CharacterRef;
+  to: CharacterRef;
+  writes: PlannedWrite[];
+  skipped: { item: string; reason: string }[];
+  newFolder: boolean;
+}
+
+export interface CopyResult {
+  plan: CopyPlan;
+  /** Null for a preview. */
+  applied: { written: string[]; backups: string[] } | null;
+  gameRunning: boolean;
+}
+
+export interface BackupDone {
+  id: string;
+  createdAt: number | string | null;
+  bytes: number;
+  files: number;
+  parts: number;
+}
+
+export interface BackupSummary {
+  id: string;
+  createdAt: number | string | null;
+  bytes: number;
+  machine: string | null;
+  flavor: string | null;
+  account: string | null;
+  files: number;
+}
+
+export interface RestoreReport {
+  id: string;
+  account: string;
+  files: { path: string; bytes: number; replaces: boolean }[];
+  written: boolean;
+  backups: string[];
+}
+
+export interface SettingsProgress {
+  stage: "building" | "uploading" | "completing" | "downloading" | "checking" | "writing" | string;
+  done: number;
+  total: number;
+}
+
 export const api = {
   status: () => invoke<Status>("get_status"),
   /** This computer's submission ID, grouped (`a1b2-c3d4-…`); rejects with the keychain's words. */
@@ -293,7 +411,25 @@ export const api = {
   checkForUpdate: () => invoke<UpdateCheck>("check_for_update"),
   /** Resolves only if it failed to install: on success the app restarts into the new version. */
   installUpdate: () => invoke<void>("install_update"),
+  settingsView: () => invoke<SettingsView>("settings_view"),
+  settingsGameRunning: () => invoke<GameState>("settings_game_running"),
+  settingsDiff: (install: string, account: string, a: string, b: string) =>
+    invoke<DiffRow[]>("settings_diff", { install, account, a, b }),
+  /** A preview when `preview`, else written (refused while the game runs). */
+  settingsCopy: (install: string, account: string, from: string, to: string, items: string[], preview: boolean) =>
+    invoke<CopyResult>("settings_copy", { install, account, from, to, items, preview }),
+  settingsBackup: (install: string, account: string, addons: boolean, game: boolean) =>
+    invoke<BackupDone>("settings_backup", { install, account, addons, game }),
+  settingsBackups: () => invoke<BackupSummary[]>("settings_backups"),
+  /** Only into `account`, and only when the backup was made from it. */
+  settingsRestore: (install: string, id: string, account: string, preview: boolean) =>
+    invoke<RestoreReport>("settings_restore", { install, id, account, preview }),
+  settingsDelete: (id: string) => invoke<void>("settings_delete", { id }),
 };
+
+export function onSettingsProgress(f: (p: SettingsProgress) => void): Promise<UnlistenFn> {
+  return listen<SettingsProgress>("settings-progress", (e) => f(e.payload));
+}
 
 export function onAgentEvent(f: (e: AgentEvent) => void): Promise<UnlistenFn> {
   return listen<AgentEvent>("agent-event", (e) => f(e.payload));

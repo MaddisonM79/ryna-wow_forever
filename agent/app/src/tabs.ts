@@ -58,10 +58,18 @@ export const CORE_TABS = [
   { id: "accounts", label: "Accounts" },
   { id: "combat", label: "Combat" },
   { id: "mods", label: "Mods" },
+  // The Settings mod's own tab: shown only while that mod is on (coreTabs).
+  { id: "addonSettings", label: "Addon settings" },
   { id: "settings", label: "Settings" },
 ] as const;
 
 export type CoreTabId = (typeof CORE_TABS)[number]["id"];
+export type CoreTab = (typeof CORE_TABS)[number];
+
+/** The tabs a core's page shows: all of them, less "Addon settings" while the Settings mod is off. */
+export function coreTabs(settingsModOn: boolean): CoreTab[] {
+  return CORE_TABS.filter((t) => settingsModOn || t.id !== "addonSettings");
+}
 export const DEFAULT_CORE_TAB: CoreTabId = "game";
 
 /** Where a core's open tab is remembered: one slot per core. */
@@ -166,10 +174,14 @@ export function pageForKey(current: PageId, key: string, cores: readonly CoreRef
   );
 }
 
-/** A core's tab row's keys: Left, Right, Home and End over its tabs. */
-export function coreTabForKey(current: CoreTabId, key: string): CoreTabId | null {
+/** A core's tab row's keys: Left, Right, Home and End over its tabs (the ones it shows). */
+export function coreTabForKey(
+  current: CoreTabId,
+  key: string,
+  tabs: readonly CoreTab[] = CORE_TABS,
+): CoreTabId | null {
   return moveInList(
-    CORE_TABS.map((t) => t.id),
+    tabs.map((t) => t.id),
     current,
     key,
     "horizontal",

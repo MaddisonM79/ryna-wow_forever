@@ -9,6 +9,7 @@ function mod(on: boolean, installed: boolean, version: string | null, offInGame 
     id: "chronicle",
     name: "Chronicle",
     summary: "Records your characters.",
+    kind: "addon",
     actsInGame,
     defaultOn: true,
     on,

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Refuses a release whose versions disagree: the addon's TOC, each bundled mod's mod.json and TOC,
-// the WoW core's manifest, the app's
+// Refuses a release whose versions disagree: the addon's TOC, each bundled mod's mod.json and TOC
+// (the Settings mod has a mod.json and no addon folder), the WoW core's manifest, the app's
 // package.json, the cargo workspace (so every crate), Cargo.lock, and the tag.
 //
 //   node scripts/check-versions.mjs [--tag vX.Y.Z]

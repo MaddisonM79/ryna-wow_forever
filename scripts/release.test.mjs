@@ -35,10 +35,13 @@ test("reads each bundled mod's manifest and its addon folders' TOCs", () => {
   assert.deepEqual(modVersions(join(root, "nowhere")), []);
 });
 
-test("this repository's versions include Chronicle's", () => {
+test("this repository's versions include Chronicle's and the Settings mod's", () => {
   const found = readVersions(join(import.meta.dirname, ".."));
   assert.ok("mods/wow/chronicle/mod.json" in found);
   assert.ok("mods/wow/chronicle/addon/Ryna_Chronicle/Ryna_Chronicle.toc" in found);
+  // An agent mod (no addon folder) has a manifest to agree and no TOC.
+  assert.ok("mods/wow/settings/mod.json" in found);
+  assert.ok(!Object.keys(found).some((k) => k.startsWith("mods/wow/settings/addon")));
 });
 
 test("refuses versions that disagree, or a tag that doesn't match", () => {

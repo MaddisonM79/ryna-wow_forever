@@ -16,6 +16,7 @@ path = "src/main.rs"
 tauri-build = { version = "=2.7.4", features = [] }
 
 [dependencies]
+anyhow.workspace = true
 ryna-agent = { path = "../../host" }
 ryna-wow-core = { path = "../../../cores/wow/core" }
 serde.workspace = true

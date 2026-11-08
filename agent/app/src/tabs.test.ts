@@ -3,6 +3,7 @@ import {
   coreOf,
   corePage,
   coreTabForKey,
+  coreTabs,
   coreTabKey,
   DEFAULT_CORE_TAB,
   DEFAULT_PAGE,
@@ -137,5 +138,10 @@ describe("a core's tab keys", () => {
     expect(coreTabForKey("combat", "Home")).toBe("game");
     expect(coreTabForKey("combat", "End")).toBe("settings");
     expect(coreTabForKey("combat", "ArrowDown")).toBeNull();
+    // "Addon settings" is among the keys' stops only while it shows.
+    expect(coreTabForKey("mods", "ArrowRight")).toBe("addonSettings");
+    expect(coreTabForKey("mods", "ArrowRight", coreTabs(false))).toBe("settings");
+    expect(coreTabs(false).map((t) => t.id)).not.toContain("addonSettings");
+    expect(coreTabs(true).map((t) => t.id)).toContain("addonSettings");
   });
 });

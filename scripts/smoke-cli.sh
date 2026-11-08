@@ -6,7 +6,8 @@
 # --version; parse cores/wow/fixtures/Ryna.lua (stdout must be JSON); combat
 # cores/wow/fixtures/combat-world.txt (must find a fight); and discovery: a temporary
 # `Program Files (x86)/World of Warcraft/_forever_` tree with a .flavor.info and one account's
-# Ryna.lua, which `status --install <that>` must list. CI runs it on every OS (Windows is the
+# Ryna.lua, which `status --install <that>` must list, and `settings list` must see (and not list
+# Ryna.lua). CI runs it on every OS (Windows is the
 # case it's for). The sign-in provider and the API are made-up ones, so the keychain lookups (the
 # sign-in, the device key) find nothing and never touch a real one; the state folder is
 # temporary too.
@@ -57,5 +58,12 @@ grep -q '_forever_  flavor wowf' "$tmp/status.txt" || fail "status didn't list t
 grep -q '^Accounts:' "$tmp/status.txt" || fail "status didn't list the account"
 grep -q 'SavedVariables.Ryna\.lua' "$tmp/status.txt" || fail "status didn't list the account's Ryna.lua"
 grep -q '^Submission ID: ' "$tmp/status.txt" || fail "status didn't say the submission ID"
+
+step "settings"
+# The Settings mod's inventory of the same tree (local: no keychain, no network). Ryna.lua is
+# the core's own and never listed.
+"$bin" settings list --install "$(native "$game")" | tee "$tmp/settings.txt"
+grep -q '^SMOKE in ' "$tmp/settings.txt" || fail "settings list didn't name the account"
+grep -q 'Ryna' "$tmp/settings.txt" && fail "settings list listed Ryna's own settings"
 
 printf '\nsmoke: ok\n'

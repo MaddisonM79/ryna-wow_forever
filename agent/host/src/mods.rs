@@ -2,8 +2,8 @@
 //! with (`mods/<core>/<id>/mod.json`, [`ModManifest`]) and the version requirement it names for its
 //! core ([`VersionReq`]).
 //!
-//! What a mod *is* depends on its core (`kind`: WoW's is `addon`, an addon folder installed beside
-//! the core's own), so this module only reads and checks the manifest; the core decides which kinds
+//! What a mod *is* depends on its core (`kind`: WoW's are `addon`, an addon folder installed beside
+//! the core's own, and `agent`, work the agent does itself with nothing to install), so this module only reads and checks the manifest; the core decides which kinds
 //! it takes and how one is installed. Stage 2 has one source, `bundled` (the mod ships inside the
 //! agent and versions with it); `git` is modelled, checked and refused by every core until stage 6.
 
@@ -25,7 +25,7 @@ pub struct ModManifest {
     pub version: String,
     /// One sentence: what it does.
     pub summary: String,
-    /// What it is, in its core's terms (WoW: `addon`).
+    /// What it is, in its core's terms (WoW: `addon` or `agent`).
     pub kind: String,
     /// It does something in the game for the player (presses a button, automates): said every time.
     #[serde(default)]
