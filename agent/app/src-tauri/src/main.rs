@@ -4,6 +4,7 @@
 // No console window behind the app on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod addon_settings;
 mod agent;
 mod commands;
 mod frame;
@@ -153,6 +154,14 @@ fn main() {
             commands::open_link,
             commands::check_for_update,
             commands::install_update,
+            commands::settings_view,
+            commands::settings_game_running,
+            commands::settings_diff,
+            commands::settings_copy,
+            commands::settings_backup,
+            commands::settings_backups,
+            commands::settings_restore,
+            commands::settings_delete,
         ])
         .build(tauri::generate_context!())
         .expect("the app failed to start");

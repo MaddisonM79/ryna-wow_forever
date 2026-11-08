@@ -7,8 +7,11 @@ use tauri::{AppHandle, Manager as _};
 use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_opener::OpenerExt as _;
 
+use crate::addon_settings::{self, CopyResult, SettingsView};
 use crate::agent::{self, InstallResult, LoginCode, ModToggleResult, Status};
 use crate::updates;
+use ryna_wow_core::settings::backup::{BackupDone, BackupSummary, RestoreReport};
+use ryna_wow_core::settings::copy::DiffRow;
 
 /// The portal's page for this app.
 pub const PORTAL_URL: &str = "https://ryna.io/wow";
@@ -191,4 +194,85 @@ pub async fn check_for_update(app: AppHandle) -> Result<updates::UpdateCheck, St
 #[tauri::command]
 pub async fn install_update(app: AppHandle) -> Result<(), String> {
     updates::install(&app).await
+}
+
+/// The Settings mod: every account's addon settings in the installs Ryna works in, and whether
+/// the game is running (which greys out every write).
+#[tauri::command]
+pub async fn settings_view(app: AppHandle) -> Result<SettingsView, String> {
+    blocking(move || Ok(addon_settings::view(&app))).await
+}
+
+/// Whether the game is running, for the Settings section's banner.
+#[tauri::command]
+pub async fn settings_game_running() -> Result<bool, String> {
+    blocking(|| Ok(crate::game::game_running())).await
+}
+
+/// Which addons differ between two characters (`Name-Realm`).
+#[tauri::command]
+pub async fn settings_diff(
+    app: AppHandle,
+    install: String,
+    account: String,
+    a: String,
+    b: String,
+) -> Result<Vec<DiffRow>, String> {
+    blocking(move || addon_settings::diff(&app, &install, &account, &a, &b)).await
+}
+
+/// Copy `items` (addons, or the game's files by name) from one character to another: a preview
+/// when `preview`, else written (refused while the game runs).
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn settings_copy(
+    app: AppHandle,
+    install: String,
+    account: String,
+    from: String,
+    to: String,
+    items: Vec<String>,
+    preview: bool,
+) -> Result<CopyResult, String> {
+    blocking(move || {
+        addon_settings::copy_settings(&app, &install, &account, &from, &to, items, preview)
+    })
+    .await
+}
+
+/// "Back up now": the account's addon settings and/or the game's files, encrypted, to ryna.io.
+/// Progress arrives as `settings-progress`.
+#[tauri::command]
+pub async fn settings_backup(
+    app: AppHandle,
+    install: String,
+    account: String,
+    addons: bool,
+    game: bool,
+) -> Result<BackupDone, String> {
+    blocking(move || addon_settings::backup_now(&app, &install, &account, addons, game)).await
+}
+
+#[tauri::command]
+pub async fn settings_backups(app: AppHandle) -> Result<Vec<BackupSummary>, String> {
+    blocking(move || addon_settings::backups(&app)).await
+}
+
+/// Restore a backup into the install at `install` (a preview when `preview`; refused while the
+/// game runs).
+#[tauri::command]
+pub async fn settings_restore(
+    app: AppHandle,
+    install: String,
+    id: String,
+    account: Option<String>,
+    preview: bool,
+) -> Result<RestoreReport, String> {
+    blocking(move || addon_settings::restore(&app, &install, &id, account.as_deref(), preview))
+        .await
+}
+
+#[tauri::command]
+pub async fn settings_delete(app: AppHandle, id: String) -> Result<(), String> {
+    blocking(move || addon_settings::delete(&app, &id)).await
 }

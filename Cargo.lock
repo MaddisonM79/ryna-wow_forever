@@ -3833,6 +3833,7 @@ dependencies = [
 name = "ryna-wow-app"
 version = "0.3.7"
 dependencies = [
+ "anyhow",
  "ryna-agent",
  "ryna-wow-core",
  "serde",

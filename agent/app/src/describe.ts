@@ -210,6 +210,8 @@ export const ACTS_IN_GAME = "This mod acts in the game for you.";
 
 /** A mod's state in one install (the core's `mods::row_words`). */
 export function modRow(m: ModView, install: string): { text: string; chip: "pushed" | "waiting" | "update" } {
+  // An agent mod (Settings) has nothing in the game: on or off is all there is.
+  if (m.kind === "agent") return m.on ? { text: "On · runs in the app", chip: "pushed" } : { text: "Off", chip: "waiting" };
   const here = m.installs.find((i) => i.install === install);
   const installed = here?.installed ? here : null;
   let text: string;
@@ -243,7 +245,7 @@ export function modRow(m: ModView, install: string): { text: string; chip: "push
  * same install as the Game tab's button (the core addon and every mod that's on, into that install).
  */
 export function modAction(m: ModView, install: string): { label: string } | null {
-  if (!m.on) return null;
+  if (!m.on || m.kind === "agent") return null;
   const here = m.installs.find((i) => i.install === install);
   if (!here?.installed) return { label: "Install the addon" };
   if (here.version && compareVersions(here.version, m.bundled) < 0) return { label: `Update to ${m.bundled}` };

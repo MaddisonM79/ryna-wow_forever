@@ -673,3 +673,17 @@ button.small {
 .credits li + li {
   margin-top: 6px;
 }
+
+/* The Settings mod's previews: one file a line. */
+ul.preview {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+
+ul.preview li {
+  margin: 2px 0;
+}
+
+.tabpanel.addonSettings select {
+  margin-left: 6px;
+}
