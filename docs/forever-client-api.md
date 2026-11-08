@@ -341,8 +341,18 @@ Each entry: what we expected, what Forever does, how we know, what to do.
   `C_Traits.GetGroupDisplayInfoByTreeID(treeID)` for each tree's `groupID` and `displayName`, and
   `C_Traits.GetGroupCurrencyInfo(configID, { groupID })`, whose `currencyInfos` entries carry
   `spent` and `spentInTree` (Docs `SharedTraitsDocumentation.lua`: `TraitConfigInfo`,
-  `TraitGroupDisplayInfo`, `GroupCurrencyInfo`, `TreeCurrencyInfo`). Which of `spent` and
-  `spentInTree` is a tree's points is not yet checked (probe below).
+  `TraitGroupDisplayInfo`, `GroupCurrencyInfo`, `TreeCurrencyInfo`). Blizzard's Forever tree
+  header shows `displayName` and `groupInfo.currencyInfos[1].spent` (Blz
+  `Blizzard_PlayerSpells/Camelot/ClassTalents/Blizzard_ClassTalentsFrame.lua:331-340`), so `spent`
+  is a tree's points.
+- **Not a level effect**: the probe character was level 8, but the probe asked whether the
+  functions exist, not what they return. In all of Blizzard's Forever UI source the only
+  definitions of `GetTalentTabInfo` are deprecation shims in `Blizzard_DeprecatedSpecialization`
+  (files for Vanilla, TBC, Wrath, Cata and Mists, none for Camelot), and that addon declares
+  `AllowLoadGameType: classic, standard`, so it never loads on Forever (Blz, grep of the whole
+  `Interface` tree). Those shims wrap `C_SpecializationInfo.GetSpecializationInfo`, whose
+  `pointsSpent` might be a second route on Forever; not yet checked. A low-level character may
+  simply have no points yet, so expect zeros from either route.
 
 ### Professions
 
@@ -472,7 +482,7 @@ Each entry: what we expected, what Forever does, how we know, what to do.
 All fourteen probes of the first list were answered on 2026-11-08 and folded into the sections
 above. These are the next ones, each one line to paste.
 
-1. Talent points per tree (the replacement for Chronicle's talent scan):
+1. Talent points per tree (the replacement for Chronicle's talent scan; zeros are expected before the first talent point), then `/dump C_SpecializationInfo.GetSpecializationInfo(1)` for the second route:
    `/run local c=C_ClassTalents.GetActiveConfigID() local t=C_Traits.GetConfigInfo(c).treeIDs[1] for _,d in ipairs(C_Traits.GetGroupDisplayInfoByTreeID(t)) do local g=C_Traits.GetGroupCurrencyInfo(c,{d.groupID})[1] local i=g and g.currencyInfos and g.currencyInfos[1] print(d.displayName, i and i.spent, i and i.spentInTree) end`
 2. `/dump issecretvalue(UnitGUID("target")), issecretvalue(UnitName("target"))` (as a macro, in combat with a mob)
 3. `/dump UnitGUID("target")` on the same mob after a `/reload` (does the obfuscated spawn part survive a reload?)
