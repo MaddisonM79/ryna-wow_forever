@@ -1,6 +1,7 @@
 -- Tabs: Chronicle's two tabs in the core's panel (Ryna.Panel.AddTab), Recording and Census, built
 -- with the core's widgets (Ryna.Panel.Widgets). The combat-log controls are the core's (its
--- Advanced tab). Recording also has the session strip's settings and opens the Chronicle window.
+-- Advanced tab). Recording also has the merchants switch (Merchants.lua), the session strip's
+-- settings, and opens the Chronicle window.
 
 local _, ns = ...
 if ns.off then return end
@@ -30,6 +31,10 @@ function build.recording(f)
     L["Adds your own kills and drops to creature and item tooltips: how many you killed, what they dropped "
     .. "for you and how often."])
   toggle(P.tooltips, "tooltips")
+  P.merchants = checkbox(f, L["Record the merchants I visit"],
+    L["When you open a merchant, records what that NPC sells and for how much, once per NPC each time you "
+    .. "log in, for vendor prices on ryna.io. Merchants are NPCs: nothing here is about a player."])
+  toggle(P.merchants, "merchants")
   -- In game: the session strip (Strip.lua) and the Chronicle window (Window.lua).
   P.liveHeader = text(f, "GameFontNormal")
   P.liveHeader:SetText(L["In game"])
@@ -59,6 +64,8 @@ function layout.recording(s, settings)
   P.chronicle.place(s, 4)
   P.tooltips:SetChecked(settings.tooltips)
   P.tooltips.place(s, 4)
+  P.merchants:SetChecked(settings.merchants)
+  P.merchants.place(s, 4)
   s.text(P.liveHeader, 0, 6)
   P.strip:SetChecked(settings.sessionStrip)
   P.strip.place(s, 4)
