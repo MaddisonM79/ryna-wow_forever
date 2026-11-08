@@ -311,9 +311,10 @@ tied to the account:
   uploads ciphertext plus the wrapped key. Restore is the reverse: the signed-in agent asks the API to
   unwrap, downloads the ciphertext and decrypts on the machine. The Worker never holds a plaintext
   backup, and a 50 MB zip never passes through its memory.
-- Honest limit, said in the app's copy: ryna.io holds the master key, so its operator could decrypt a
-  backup; it is "stored encrypted for you on ryna.io", not end to end. A passphrase mode (the person's
-  own key, unrecoverable if lost) can be an opt-in later.
+- Backups are opt-in, and one plain sentence in the app's copy covers the limit ("stored encrypted
+  for you on ryna.io"): ryna.io holds the master key, so it is not end to end. Maddison: "its opt in,
+  im not worried about it." A passphrase mode (the person's own key, unrecoverable if lost) can be a
+  further opt-in later if anyone asks.
 - Not the device key: the Ed25519 identity key is for signing, and is per device, so it couldn't
   restore on a new machine anyway.
 
