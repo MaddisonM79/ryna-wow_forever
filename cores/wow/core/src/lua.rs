@@ -16,8 +16,15 @@
 //! - Strings are bytes in Lua; escapes produce bytes, and the result is read as UTF-8 (invalid
 //!   sequences become U+FFFD).
 //! - On a duplicate key the last one wins.
+//!
+//! [`parse`] gives JSON, which loses what JSON can't say (an integer key and the same digits as a
+//! string key, bytes that aren't UTF-8, an empty table's kind). [`parse_bytes`] gives the file as
+//! it is instead ([`LuaValue`], keys in the order they were written), for anything that writes the
+//! file back ([`crate::lua_write`]); `parse` is that tree converted.
 
+use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 use serde_json::{Map, Number, Value};
 use thiserror::Error;
@@ -39,15 +46,225 @@ const SAFE_INTEGER: f64 = 9_007_199_254_740_992.0;
 
 /// Parse a SavedVariables file into `{ "<Name>": <value>, ... }`.
 pub fn parse(src: &str) -> Result<Value, ParseError> {
+    let vars = parse_bytes(src.as_bytes())?;
+    let mut out = Map::new();
+    for (name, value) in vars {
+        out.insert(name, value.to_json());
+    }
+    Ok(Value::Object(out))
+}
+
+/// A value as the file has it: nothing lost. `nil` never appears (a `nil` entry is no entry).
+#[derive(Debug, Clone, PartialEq)]
+pub enum LuaValue {
+    Bool(bool),
+    /// A number Lua 5.1 would print as an integer (whole, below 2^53), however it was written.
+    Int(i64),
+    /// Any other number (finite: the reader refuses inf and nan).
+    Float(f64),
+    /// Lua strings are bytes.
+    Str(Vec<u8>),
+    /// Entries in the order they were written (a duplicate key keeps its first place and its
+    /// last value). Positional entries have their `Int` keys.
+    Table(Vec<(LuaKey, LuaValue)>),
+}
+
+/// A table key. A float key is never whole (whole numbers are `Int`).
+#[derive(Debug, Clone)]
+pub enum LuaKey {
+    Int(i64),
+    Float(f64),
+    Str(Vec<u8>),
+    Bool(bool),
+}
+
+impl LuaKey {
+    /// A string key.
+    pub fn str(s: &str) -> LuaKey {
+        LuaKey::Str(s.as_bytes().to_vec())
+    }
+
+    fn rank(&self) -> u8 {
+        match self {
+            LuaKey::Int(_) | LuaKey::Float(_) => 0,
+            LuaKey::Str(_) => 1,
+            LuaKey::Bool(_) => 2,
+        }
+    }
+
+    /// The key as JSON writes it: integers and floats as their digits, booleans as words.
+    pub fn to_json_key(&self) -> String {
+        match self {
+            LuaKey::Int(i) => i.to_string(),
+            LuaKey::Float(f) => {
+                Number::from_f64(*f).map_or_else(|| f.to_string(), |n| n.to_string())
+            }
+            LuaKey::Str(b) => bytes_to_string(b.clone()),
+            LuaKey::Bool(b) => b.to_string(),
+        }
+    }
+}
+
+impl PartialEq for LuaKey {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (LuaKey::Int(a), LuaKey::Int(b)) => a == b,
+            (LuaKey::Float(a), LuaKey::Float(b)) => a.to_bits() == b.to_bits(),
+            (LuaKey::Str(a), LuaKey::Str(b)) => a == b,
+            (LuaKey::Bool(a), LuaKey::Bool(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for LuaKey {}
+
+impl Hash for LuaKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            LuaKey::Int(i) => (0u8, *i).hash(state),
+            LuaKey::Float(f) => (1u8, f.to_bits()).hash(state),
+            LuaKey::Str(b) => (2u8, b).hash(state),
+            LuaKey::Bool(b) => (3u8, *b).hash(state),
+        }
+    }
+}
+
+impl Ord for LuaKey {
+    /// Numbers first (by value, an integer before a float of the same value), then strings (by
+    /// bytes), then `false`, `true`: the order the writer puts keyed entries in.
+    fn cmp(&self, other: &Self) -> Ordering {
+        let num = |k: &LuaKey| match k {
+            LuaKey::Int(i) => Some((*i as f64, 0u8)),
+            LuaKey::Float(f) => Some((*f, 1u8)),
+            _ => None,
+        };
+        self.rank()
+            .cmp(&other.rank())
+            .then_with(|| match (self, other) {
+                (LuaKey::Int(a), LuaKey::Int(b)) => a.cmp(b),
+                (LuaKey::Str(a), LuaKey::Str(b)) => a.cmp(b),
+                (LuaKey::Bool(a), LuaKey::Bool(b)) => a.cmp(b),
+                _ => match (num(self), num(other)) {
+                    (Some((a, ta)), Some((b, tb))) => a.total_cmp(&b).then(ta.cmp(&tb)),
+                    _ => Ordering::Equal,
+                },
+            })
+    }
+}
+
+impl PartialOrd for LuaKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl LuaValue {
+    /// A string value.
+    pub fn str(s: &str) -> LuaValue {
+        LuaValue::Str(s.as_bytes().to_vec())
+    }
+
+    pub fn as_table(&self) -> Option<&Vec<(LuaKey, LuaValue)>> {
+        match self {
+            LuaValue::Table(t) => Some(t),
+            _ => None,
+        }
+    }
+
+    pub fn as_table_mut(&mut self) -> Option<&mut Vec<(LuaKey, LuaValue)>> {
+        match self {
+            LuaValue::Table(t) => Some(t),
+            _ => None,
+        }
+    }
+
+    /// The string's bytes read as UTF-8 (lossily), for a string value.
+    pub fn as_text(&self) -> Option<String> {
+        match self {
+            LuaValue::Str(b) => Some(String::from_utf8_lossy(b).into_owned()),
+            _ => None,
+        }
+    }
+
+    /// The entry under `key` in a table.
+    pub fn get(&self, key: &LuaKey) -> Option<&LuaValue> {
+        self.as_table()?
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v)
+    }
+
+    /// The entry under string key `key` in a table.
+    pub fn field(&self, key: &str) -> Option<&LuaValue> {
+        self.get(&LuaKey::str(key))
+    }
+
+    pub fn field_mut(&mut self, key: &str) -> Option<&mut LuaValue> {
+        let key = LuaKey::str(key);
+        self.as_table_mut()?
+            .iter_mut()
+            .find(|(k, _)| *k == key)
+            .map(|(_, v)| v)
+    }
+
+    /// Put `value` under `key` (in its place if the key is there, else at the end). Does nothing
+    /// to a value that isn't a table.
+    pub fn set(&mut self, key: LuaKey, value: LuaValue) {
+        if let Some(t) = self.as_table_mut() {
+            match t.iter_mut().find(|(k, _)| *k == key) {
+                Some(entry) => entry.1 = value,
+                None => t.push((key, value)),
+            }
+        }
+    }
+
+    /// Take the entry under `key` out of a table.
+    pub fn remove(&mut self, key: &LuaKey) -> Option<LuaValue> {
+        let t = self.as_table_mut()?;
+        let i = t.iter().position(|(k, _)| k == key)?;
+        Some(t.remove(i).1)
+    }
+
+    /// The same value with every table's entries in the writer's order, so two values that differ
+    /// only in the order their entries were written compare equal.
+    pub fn canonical(&self) -> LuaValue {
+        match self {
+            LuaValue::Table(t) => {
+                let mut entries: Vec<(LuaKey, LuaValue)> =
+                    t.iter().map(|(k, v)| (k.clone(), v.canonical())).collect();
+                entries.sort_by(|a, b| a.0.cmp(&b.0));
+                LuaValue::Table(entries)
+            }
+            other => other.clone(),
+        }
+    }
+
+    /// The value as [`parse`] gives it (module docs: the conversion rules).
+    pub fn to_json(&self) -> Value {
+        match self {
+            LuaValue::Bool(b) => Value::Bool(*b),
+            LuaValue::Int(i) => Value::Number(Number::from(*i)),
+            LuaValue::Float(f) => Number::from_f64(*f).map_or(Value::Null, Value::Number),
+            LuaValue::Str(b) => Value::String(bytes_to_string(b.clone())),
+            LuaValue::Table(entries) => table_to_json(entries),
+        }
+    }
+}
+
+/// Parse a SavedVariables file into its top-level names and their values, in the order they were
+/// first assigned, losing nothing ([`LuaValue`]). A later assignment replaces an earlier one in
+/// its place; a `nil` one removes the name.
+pub fn parse_bytes(src: &[u8]) -> Result<Vec<(String, LuaValue)>, ParseError> {
     let mut p = Parser {
-        s: src.as_bytes(),
+        s: src,
         pos: 0,
         depth: 0,
     };
     if p.s.starts_with(b"\xEF\xBB\xBF") {
         p.pos = 3;
     }
-    let mut out = Map::new();
+    let mut out: Vec<(String, LuaValue)> = Vec::new();
     loop {
         p.skip_ws()?;
         if p.peek().is_none() {
@@ -62,35 +279,21 @@ pub fn parse(src: &str) -> Result<Value, ParseError> {
         }
         p.skip_ws()?;
         p.expect(b'=')?;
-        match p.value()? {
-            Some(v) => {
-                out.insert(name, v);
+        let at = out.iter().position(|(n, _)| *n == name);
+        match (p.value()?, at) {
+            (Some(v), Some(i)) => out[i].1 = v,
+            (Some(v), None) => out.push((name, v)),
+            (None, Some(i)) => {
+                out.remove(i);
             }
-            None => {
-                out.remove(&name);
-            }
+            (None, None) => {}
         }
         p.skip_ws()?;
         if p.peek() == Some(b';') {
             p.pos += 1;
         }
     }
-    Ok(Value::Object(out))
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum Key {
-    Int(i64),
-    Str(String),
-}
-
-impl Key {
-    fn into_string(self) -> String {
-        match self {
-            Key::Int(i) => i.to_string(),
-            Key::Str(s) => s,
-        }
-    }
+    Ok(out)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -286,18 +489,18 @@ impl<'a> Parser<'a> {
     }
 
     /// A value, or None for `nil`.
-    fn value(&mut self) -> Result<Option<Value>, ParseError> {
+    fn value(&mut self) -> Result<Option<LuaValue>, ParseError> {
         self.skip_ws()?;
         match self.peek() {
             None => Err(self.err("unexpected end of input: expected a value")),
             Some(b'{') => self.table().map(Some),
-            Some(b'"' | b'\'') => Ok(Some(Value::String(self.quoted()?))),
+            Some(b'"' | b'\'') => Ok(Some(LuaValue::Str(self.quoted()?))),
             Some(b'[') => {
                 let start = self.pos;
                 match self.long_bracket_level() {
                     Some(level) => {
                         let body = self.long_bracket_body(level, start, "string")?;
-                        Ok(Some(Value::String(bytes_to_string(body.to_vec()))))
+                        Ok(Some(LuaValue::Str(body.to_vec())))
                     }
                     None => Err(self.err("unexpected `[`: expected a value")),
                 }
@@ -305,13 +508,13 @@ impl<'a> Parser<'a> {
             Some(b'-' | b'.' | b'0'..=b'9') => {
                 let start = self.pos;
                 let n = self.number()?;
-                Ok(Some(self.num_to_json(n, start)?))
+                Ok(Some(self.num_value(n, start)?))
             }
             Some(c) if is_ident_start(c) => {
                 let start = self.pos;
                 match self.ident().as_str() {
-                    "true" => Ok(Some(Value::Bool(true))),
-                    "false" => Ok(Some(Value::Bool(false))),
+                    "true" => Ok(Some(LuaValue::Bool(true))),
+                    "false" => Ok(Some(LuaValue::Bool(false))),
                     "nil" => Ok(None),
                     other => Err(self.err_at(
                         start,
@@ -323,15 +526,14 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn num_to_json(&self, n: Num, start: usize) -> Result<Value, ParseError> {
+    fn num_value(&self, n: Num, start: usize) -> Result<LuaValue, ParseError> {
         if let Some(i) = n.as_int() {
-            return Ok(Value::Number(Number::from(i)));
+            return Ok(LuaValue::Int(i));
         }
         match n {
-            Num::Float(f) => Number::from_f64(f)
-                .map(Value::Number)
-                .ok_or_else(|| self.err_at(start, "a number JSON can't hold (inf or nan)")),
-            Num::Int(i) => Ok(Value::Number(Number::from(i))),
+            Num::Float(f) if f.is_finite() => Ok(LuaValue::Float(f)),
+            Num::Float(_) => Err(self.err_at(start, "a number JSON can't hold (inf or nan)")),
+            Num::Int(i) => Ok(LuaValue::Int(i)),
         }
     }
 
@@ -421,7 +623,7 @@ impl<'a> Parser<'a> {
     }
 
     /// A string in double or single quotes, with Lua's escapes.
-    fn quoted(&mut self) -> Result<String, ParseError> {
+    fn quoted(&mut self) -> Result<Vec<u8>, ParseError> {
         let start = self.pos;
         let quote = self.s[self.pos];
         self.pos += 1;
@@ -553,18 +755,18 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-        Ok(bytes_to_string(buf))
+        Ok(buf)
     }
 
-    fn table(&mut self) -> Result<Value, ParseError> {
+    fn table(&mut self) -> Result<LuaValue, ParseError> {
         let open = self.pos;
         self.depth += 1;
         if self.depth > MAX_DEPTH {
             return Err(self.err(format!("tables nest deeper than {MAX_DEPTH}")));
         }
         self.pos += 1; // `{`
-        let mut entries: Vec<(Key, Option<Value>)> = Vec::new();
-        let mut index: HashMap<Key, usize> = HashMap::new();
+        let mut entries: Vec<(LuaKey, Option<LuaValue>)> = Vec::new();
+        let mut index: HashMap<LuaKey, usize> = HashMap::new();
         let mut next_positional: i64 = 1;
         loop {
             self.skip_ws()?;
@@ -586,9 +788,9 @@ impl<'a> Parser<'a> {
                     self.expect(b'=')?;
                     (key, self.value()?)
                 } else if let Some(name) = self.name_key()? {
-                    (Key::Str(name), self.value()?)
+                    (LuaKey::Str(name.into_bytes()), self.value()?)
                 } else {
-                    let key = Key::Int(next_positional);
+                    let key = LuaKey::Int(next_positional);
                     next_positional += 1;
                     (key, self.value()?)
                 };
@@ -613,25 +815,31 @@ impl<'a> Parser<'a> {
             }
         }
         self.depth -= 1;
-        Ok(table_to_json(entries))
+        Ok(LuaValue::Table(
+            entries
+                .into_iter()
+                .filter_map(|(k, v)| v.map(|v| (k, v)))
+                .collect(),
+        ))
     }
 
     /// The key inside `[ ]`: a string, a number or a boolean.
-    fn bracket_key(&mut self) -> Result<Key, ParseError> {
+    fn bracket_key(&mut self) -> Result<LuaKey, ParseError> {
         self.skip_ws()?;
         let start = self.pos;
         match self.peek() {
-            Some(b'"' | b'\'') => Ok(Key::Str(self.quoted()?)),
+            Some(b'"' | b'\'') => Ok(LuaKey::Str(self.quoted()?)),
             Some(b'-' | b'.' | b'0'..=b'9') => {
                 let n = self.number()?;
-                Ok(match n.as_int() {
-                    Some(i) => Key::Int(i),
-                    None => Key::Str(self.num_to_json(n, start)?.to_string()),
+                Ok(match self.num_value(n, start)? {
+                    LuaValue::Int(i) => LuaKey::Int(i),
+                    LuaValue::Float(f) => LuaKey::Float(f),
+                    _ => unreachable!("a number is an Int or a Float"),
                 })
             }
             Some(c) if is_ident_start(c) => match self.ident().as_str() {
-                "true" => Ok(Key::Str("true".into())),
-                "false" => Ok(Key::Str("false".into())),
+                "true" => Ok(LuaKey::Bool(true)),
+                "false" => Ok(LuaKey::Bool(false)),
                 "nil" => Err(self.err_at(start, "a table key can't be nil")),
                 other => Err(self.err_at(
                     start,
@@ -671,11 +879,7 @@ fn bytes_to_string(buf: Vec<u8>) -> String {
     }
 }
 
-fn table_to_json(entries: Vec<(Key, Option<Value>)>) -> Value {
-    let live: Vec<(Key, Value)> = entries
-        .into_iter()
-        .filter_map(|(k, v)| v.map(|v| (k, v)))
-        .collect();
+fn table_to_json(live: &[(LuaKey, LuaValue)]) -> Value {
     if live.is_empty() {
         return Value::Array(Vec::new());
     }
@@ -683,18 +887,18 @@ fn table_to_json(entries: Vec<(Key, Option<Value>)>) -> Value {
     // Keys are unique, so n integer keys all within 1..=n are exactly 1..=n.
     if live
         .iter()
-        .all(|(k, _)| matches!(k, Key::Int(i) if *i >= 1 && *i <= n))
+        .all(|(k, _)| matches!(k, LuaKey::Int(i) if *i >= 1 && *i <= n))
     {
-        let mut items = live;
+        let mut items: Vec<&(LuaKey, LuaValue)> = live.iter().collect();
         items.sort_by_key(|(k, _)| match k {
-            Key::Int(i) => *i,
-            Key::Str(_) => 0,
+            LuaKey::Int(i) => *i,
+            _ => 0,
         });
-        return Value::Array(items.into_iter().map(|(_, v)| v).collect());
+        return Value::Array(items.into_iter().map(|(_, v)| v.to_json()).collect());
     }
     let mut map = Map::new();
     for (k, v) in live {
-        map.insert(k.into_string(), v);
+        map.insert(k.to_json_key(), v.to_json());
     }
     Value::Object(map)
 }

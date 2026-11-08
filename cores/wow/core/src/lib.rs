@@ -4,7 +4,7 @@
 //!
 //! - [`wow_core`]: the core behind the agent's interface, and its manifest (`cores/wow/core.json`).
 //! - [`discovery`]: the game's install folders and each account's `Ryna.lua`.
-//! - [`lua`]: a reader for the Lua the game writes to SavedVariables.
+//! - [`lua`]: a reader for the Lua the game writes to SavedVariables, and [`lua_write`] a writer.
 //! - [`snapshot`]: the JSON snapshot the API takes (docs/wow.md section 2), built from `RynaDB`.
 //! - [`push`]: posting snapshots and heartbeats (and census uploads), signed by the device key.
 //! - [`census`]: the census without an account: an account's `seen` events as signed uploads.
@@ -26,6 +26,7 @@ pub mod census;
 pub mod combat;
 pub mod discovery;
 pub mod lua;
+pub mod lua_write;
 pub mod mods;
 pub mod push;
 pub mod runner;
