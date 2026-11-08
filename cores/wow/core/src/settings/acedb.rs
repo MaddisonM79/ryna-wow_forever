@@ -15,7 +15,8 @@
 //! Copying one character's settings to another ([`copy_character`]) makes the target what the source
 //! is: the target uses the source's profile (a shared one like `Default` stays shared; a profile of
 //! the source's own, named for it, is duplicated under the target's name, in every namespace too),
-//! and the source's `char` entries are duplicated for the target. The `realm`, `faction`,
+//! and the source's `char` entries are duplicated for the target. Where the source has no entry,
+//! the target's is removed; a database with nothing of the source's is left alone. The `realm`, `faction`,
 //! `factionrealm`, `class` and `race` sections aren't any one character's and are left alone (an
 //! auction history keyed by faction is not settings). ElvUI's `ElvPrivateDB` is a second database
 //! of the same layout in the same file, and is copied the same way.
@@ -73,10 +74,12 @@ pub fn profile_of(v: &LuaValue, who: &str) -> Option<String> {
     v.field("profileKeys")?.field(who)?.as_text()
 }
 
-/// Copy `from`'s entries in `v` (`profileKeys`, `char`, and the profile when it's `from`'s own) to
-/// `to`, replacing what `to` had there. Returns whether anything changed.
+/// Make `to`'s entries in `v` what `from`'s are (`profileKeys`, `char`, and the profile when it's
+/// `from`'s own, in every namespace too): where `from` has an entry `to` gets a copy, and where
+/// `from` has none (AceDB drops empty tables at logout) `to`'s is removed. A database with nothing
+/// of `from`'s is left exactly as it is. Returns whether anything changed.
 pub fn copy_character(v: &mut LuaValue, from: &str, to: &str) -> bool {
-    if from == to || !is_acedb(v) {
+    if from == to || !is_acedb(v) || settings_of(v, from).is_none() {
         return false;
     }
     let before = v.clone();
@@ -95,23 +98,26 @@ pub fn copy_character(v: &mut LuaValue, from: &str, to: &str) -> bool {
             }
         }
     }
-    let duplicate = |t: Option<&mut LuaValue>| {
+    let mirror = |t: Option<&mut LuaValue>| {
         if let Some(t) = t {
-            if let Some(src) = t.get(&from_key).cloned() {
-                t.set(to_key.clone(), src);
+            match t.get(&from_key).cloned() {
+                Some(src) => t.set(to_key.clone(), src),
+                None => {
+                    t.remove(&to_key);
+                }
             }
         }
     };
     if own_profile {
-        duplicate(v.field_mut("profiles"));
+        mirror(v.field_mut("profiles"));
     }
-    duplicate(v.field_mut("char"));
+    mirror(v.field_mut("char"));
     if let Some(nss) = v.field_mut("namespaces").and_then(LuaValue::as_table_mut) {
         for (_, ns) in nss.iter_mut() {
             if own_profile {
-                duplicate(ns.field_mut("profiles"));
+                mirror(ns.field_mut("profiles"));
             }
-            duplicate(ns.field_mut("char"));
+            mirror(ns.field_mut("char"));
         }
     }
     *v != before
@@ -254,8 +260,8 @@ mod tests {
             ns.field("profiles").unwrap().get(&aerin),
             Some(&db(r#"{ ["m"] = 2 }"#))
         );
-        // Bryn has no char entry, so Aerin's own stays.
-        assert!(v.field("char").unwrap().get(&aerin).is_some());
+        // Bryn has no char entry, so Aerin's goes: the target is made what the source is.
+        assert!(v.field("char").unwrap().get(&aerin).is_none());
         // The source and the "Default" profile others use are as they were.
         assert_eq!(
             v.field("profiles").unwrap().field("Default"),
@@ -268,15 +274,55 @@ mod tests {
     }
 
     #[test]
-    fn a_source_on_the_default_takes_the_targets_choice_away() {
+    fn a_database_with_nothing_of_the_sources_is_left_alone() {
+        // ElvPrivateDB-like: the target chose a profile; the source isn't in it at all.
         let mut v = db(
-            r#"{ ["profileKeys"] = { ["T - R"] = "Other" }, ["char"] = { ["S - R"] = { ["x"] = 1 } } }"#,
+            r#"{ ["profileKeys"] = { ["T - R"] = "Other" }, ["profiles"] = { ["Other"] = { ["x"] = 1 } } }"#,
         );
-        assert!(copy_character(&mut v, "S - R", "T - R"));
-        assert_eq!(profile_of(&v, "T - R"), None);
-        assert!(!copy_character(&mut v, "S - R", "S - R"));
+        let before = v.clone();
+        assert!(!copy_character(&mut v, "S - R", "T - R"));
+        assert_eq!(v, before);
+        assert_eq!(profile_of(&v, "T - R").as_deref(), Some("Other"));
+        assert!(!copy_character(&mut v, "T - R", "T - R"));
         let mut plain = db(r#"{ ["x"] = 1 }"#);
         assert!(!copy_character(&mut plain, "S - R", "T - R"));
+    }
+
+    #[test]
+    fn what_the_source_lacks_the_target_loses() {
+        // The source has char data but no profileKeys entry (the addon's default) and no own
+        // profile; the target had a chosen profile, its own profile, char and namespace data.
+        let mut v = db(r#"{
+            ["profileKeys"] = { ["T - R"] = "T - R" },
+            ["profiles"] = { ["T - R"] = { ["mine"] = 1 } },
+            ["char"] = { ["S - R"] = { ["x"] = 1 }, ["T - R"] = { ["old"] = 1 } },
+            ["namespaces"] = { ["Mod"] = { ["char"] = { ["T - R"] = { ["old"] = 2 } } } },
+        }"#);
+        assert!(copy_character(&mut v, "S - R", "T - R"));
+        assert_eq!(
+            profile_of(&v, "T - R"),
+            None,
+            "the target falls back to the default too"
+        );
+        let t = LuaKey::str("T - R");
+        assert_eq!(
+            v.field("char").unwrap().get(&t),
+            Some(&db(r#"{ ["x"] = 1 }"#))
+        );
+        let ns = v.field("namespaces").unwrap().field("Mod").unwrap();
+        assert_eq!(ns.field("char").unwrap().get(&t), None);
+        // The target's own profile is no one's now; it's left (AceDB keeps unused profiles).
+        assert!(v.field("profiles").unwrap().get(&t).is_some());
+        assert_eq!(settings_of(&v, "T - R"), settings_of(&v, "S - R"));
+
+        // An own profile the source no longer has a table for: the target's goes too.
+        let mut w = db(r#"{
+            ["profileKeys"] = { ["S - R"] = "S - R", ["T - R"] = "T - R" },
+            ["profiles"] = { ["T - R"] = { ["mine"] = 1 } },
+        }"#);
+        assert!(copy_character(&mut w, "S - R", "T - R"));
+        assert_eq!(profile_of(&w, "T - R").as_deref(), Some("T - R"));
+        assert!(w.field("profiles").unwrap().get(&t).is_none());
     }
 
     #[test]
