@@ -3808,6 +3808,7 @@ dependencies = [
  "ryna-agent",
  "ryna-wow-core",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

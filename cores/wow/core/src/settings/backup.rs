@@ -1112,6 +1112,113 @@ mod tests {
         assert!(with_api(&fake, |api| delete(api, &done.id)).is_err());
     }
 
+    /// A local HTTP/1.1 server in front of [`FakeApi`], one request a connection, for as many
+    /// requests as `count`; returns its origin.
+    fn serve(fake: FakeApi, count: usize) -> (String, std::thread::JoinHandle<FakeApi>) {
+        use std::io::{BufRead as _, BufReader};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let handle = std::thread::spawn(move || {
+            for _ in 0..count {
+                let (stream, _) = listener.accept().unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                let mut words = line.split_whitespace();
+                let method = match words.next().unwrap() {
+                    "GET" => Method::Get,
+                    "PUT" => Method::Put,
+                    "DELETE" => Method::Delete,
+                    _ => Method::Post,
+                };
+                let path = words.next().unwrap().to_string();
+                let mut headers = Vec::new();
+                let mut len = 0usize;
+                loop {
+                    let mut h = String::new();
+                    reader.read_line(&mut h).unwrap();
+                    let h = h.trim_end();
+                    if h.is_empty() {
+                        break;
+                    }
+                    let (k, v) = h.split_once(':').unwrap();
+                    let (k, v) = (k.trim().to_string(), v.trim().to_string());
+                    if k.eq_ignore_ascii_case("content-length") {
+                        len = v.parse().unwrap();
+                    }
+                    headers.push((k, v));
+                }
+                let mut body = vec![0u8; len];
+                reader.read_exact(&mut body).unwrap();
+                let get = |name: &str| {
+                    headers
+                        .iter()
+                        .find(|(k, _)| k.eq_ignore_ascii_case(name))
+                        .map(|(_, v)| v.clone())
+                };
+                let content_type = match get("content-type").as_deref() {
+                    Some("application/octet-stream") => "application/octet-stream",
+                    Some("application/json") => "application/json",
+                    _ => "",
+                };
+                let req = Request {
+                    method,
+                    url: format!("https://api.test{path}"),
+                    content_type,
+                    content_encoding: None,
+                    body,
+                    bearer: get("authorization")
+                        .and_then(|a| a.strip_prefix("Bearer ").map(str::to_string)),
+                    headers: headers.clone(),
+                    timeout: Duration::from_secs(5),
+                };
+                let res = fake.post(&req).unwrap();
+                let mut out = stream;
+                write!(
+                    out,
+                    "HTTP/1.1 {} X\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    res.status,
+                    res.content_type,
+                    res.body.len()
+                )
+                .unwrap();
+                out.write_all(&res.body).unwrap();
+            }
+            fake
+        });
+        (origin, handle)
+    }
+
+    #[test]
+    fn the_round_trip_over_real_http() {
+        let dir = tempfile::tempdir().unwrap();
+        let i = elvui_tree(dir.path());
+        let root = account_dir(&i);
+        let inv = inventory(&i, "ACCOUNT1").unwrap();
+        // create, 1 part, complete, list, open, content, delete, list.
+        let (origin, server) = serve(FakeApi::new(PART_MIN, PART_MAX), 8);
+        let http = crate::http::HttpTransport::new().unwrap();
+        let config = test_config();
+        let store = MemoryStore::with_access("tok", NOW + 3600);
+        let clock = FakeClock::at(NOW);
+        let auth = Auth::new(&config, &http, &store, &clock);
+        let key = test_key();
+        let api = Api::new(&origin, &http, &auth, Some(&key), &clock);
+        let done = backup(&api, &inv, Include::Addons, "h", NOW, &mut quiet()).unwrap();
+        assert_eq!(done.parts, 1);
+        assert_eq!(list(&api).unwrap().len(), 1);
+        let elv = root.join("SavedVariables/ElvUI.lua");
+        let original = std::fs::read(&elv).unwrap();
+        std::fs::write(&elv, "x").unwrap();
+        let report = restore(&api, &done.id, &i, None, false, false, false, &mut quiet()).unwrap();
+        assert!(report.written);
+        assert_eq!(std::fs::read(&elv).unwrap(), original);
+        delete(&api, &done.id).unwrap();
+        assert!(list(&api).unwrap().is_empty());
+        let fake = server.join().unwrap();
+        assert!(fake.backups.borrow().is_empty());
+    }
+
     #[test]
     fn a_sha256_mismatch_writes_nothing() {
         let dir = tempfile::tempdir().unwrap();
