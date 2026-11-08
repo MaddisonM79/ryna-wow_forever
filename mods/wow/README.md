@@ -13,6 +13,13 @@ is the whole of it).
   everything recorded about a character (the record, bags and bank, quests, the guild roster, zones
   and deaths, the players seen and the census, kills and loot), the tooltips, and the panel's
   Recording and Census tabs. It writes the same `RynaDB` the single addon wrote before stage 2.
+  Among its journal events is `merchant` (`Merchants.lua`, the `merchants` setting, on, on the
+  Recording tab; docs/ryna-agent-cores-mods.md 7.3): when the player opens a merchant, `{ npc
+  (GUID), name, zone, subzone, items: [ { id, price, stack, limited, currency? } ] }`, where `price`
+  is copper for `stack` of the item, `limited` is `numAvailable >= 0`, and `currency` (`[ { amount,
+  name, itemId | currencyId } ]`) is there only when the item costs something besides copper. Once
+  per NPC per login, at most 200 items; written at `MERCHANT_SHOW`, or at the visit's first
+  `MERCHANT_UPDATE` when links were still loading. `test/chronicle_merchant_test.lua` covers it.
 - `automation/`: **Automation**, off by default (`defaultOn: false`, `actsInGame: true`): chores at
   quest givers (accept, turn in, quest-only gossip, leave low-level quests, optionally take the
   best-selling reward), vendors (sell greys and marked junk, repair, optionally from the guild bank
@@ -25,6 +32,24 @@ is the whole of it).
   Shift held, or combat, pauses all of it. Besides its settings it keeps only the items marked as
   junk (`RynaDB.automation.junk`, `/ryna auto junk` with the item on the cursor).
   `test/automation_test.lua` runs its logic against a fake client (`lua5.1`, in the addon workflow).
+- `prices/`: **Prices**, off by default (`defaultOn: false`, `actsInGame: false`;
+  docs/ryna-agent-cores-mods.md 7.3): prices on item tooltips. Stage 1 is the vendor line, "Sells
+  for 13s 50c (2g 70s for 20)", on every item tooltip (bags, bank, chat links, loot, merchants), from
+  `GetItemInfo`'s sell price (its 11th value), which the client has for every item it has cached,
+  away from vendors. The stack's total is for the stack in that slot where the tooltip says (bag,
+  bank or loot slot, or the slot button's count), else for a full stack of a stackable item; a slot
+  holding one shows the single price. Items vendors won't buy get no line; an item the client
+  hasn't cached gets none until `GET_ITEM_INFO_RECEIVED`, when the tooltip is refreshed if it still
+  shows that item. Its settings, on its own Prices tab: `priceSellLine` (on), `priceStackTotal` (on)
+  and `priceOnlyAwayFromMerchant` (off; on, the line stays away while a merchant window is open,
+  where the game shows its own price). `/ryna prices` lists them, `/ryna prices <name> on|off`
+  (`sellLine`, `stackTotal`, `awayFromMerchant`) changes one; nothing goes to chat otherwise. It
+  writes only its settings. **Owed in game**: `/dump select(11, GetItemInfo(2589))` away from a
+  vendor should print 13 (Linen Cloth's sell price in copper). If Forever's engine answers 0 or nil
+  there, the line never shows (every item reads as selling for nothing; nothing breaks), and the
+  sell price has to come from the served table instead (7.3's stage 2). Later stages add what
+  vendors charge (Chronicle's `merchant` events, pooled by the API) and an auction-house line to the
+  same mod. `test/prices_test.lua` runs it against a fake client.
 - `settings/`: **Settings**, off by default (`kind: "agent"`, `defaultOn: false`, `actsInGame:
   false`; docs/ryna-agent-cores-mods.md 7.2): addon settings copied between characters and backed
   up to ryna.io, encrypted on this machine (the API's docs/wow.md section 15). All of it is the core's
