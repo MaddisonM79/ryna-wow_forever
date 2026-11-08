@@ -74,21 +74,28 @@ is the whole of it).
   15 minutes ago or more (`RynaDB.prices.auctionAt[<player GUID>]`; ATT keeps the same throttle),
   the mod calls `C_AuctionHouse.ReplicateItems()` once; at `REPLICATE_ITEM_LIST_UPDATE` it reads the
   rows (`GetReplicateItemInfo(i)`, `i` from 0) 2,000 a frame, skipping and counting rows with no
-  buyout or with `hasAllInfo` false, then summarises each item a slice a frame: `n` listings, `q`
+  buyout (a row with `hasAllInfo` false, its name not cached yet, is counted and kept: its numbers
+  are there), then summarises each item a slice a frame: `n` listings, `q`
   total quantity, and the unit buyout (`buyoutPrice / count`, rounded to copper) as `min`, `q25` and
   `med`, the 25th and 50th percentiles weighted by quantity. Each listing is held as one number
   until its item is summarised (about 5 MB for the 192,300 rows Stormwind had on 2026-11-08), then
-  dropped. The house closing or a logout while rows are read stops the walk and nothing is kept.
+  dropped. The house closing or a logout while rows are read stops the walk and nothing is kept
+  (the house closing also forgets the throttle time, so the next visit asks again).
   The result goes to `RynaDB.prices.auction[itemId] = { min, q25, med, n, q, at }` (copper, one table
   for the account, replaced per item by each snapshot; entries older than 14 days are dropped at
   login, and past 20,000 items the most recently seen are kept), and up as `auction` journal events
   (`{ at, rows, part, parts, items = { { id, n, q, min, q25, med } } }`, integers only, at most 2,000
   items an event, every part added in the same frame so they share a save; an item outside the API's
-  limits is kept here and left out of the event). The core keeps `auction` events only until the
-  companion app has uploaded them, three days at most, not the journal's 30 (`Journal.lua`,
-  `J.SHORT_LIVED`). A
-  search on the browse tab folds its results in as `{ min = minPrice, q = totalQuantity, at }` (no
-  median), unless the item has a snapshot from the last 15 minutes; searches are never sent.
+  limits is kept here and left out of the event). The journal never holds more than 6,000 auction
+  items, or more than 3 earlier snapshots beside a new one (oldest dropped first; a bigger house
+  sends its 6,000 most listed items), and the core drops `auction` events once the companion app has
+  pushed them for this account (`RynaDB.meta.accountId` matched against `AgentStatus.lua`'s
+  `journalThrough`), three days at most (`Journal.lua`, `J.SHORT_LIVED`). A core without that
+  (`Ryna.Journal.ShortLived`) gets no events at all, and `/ryna prices` says so. A search on the
+  browse tab folds its results in as `{ min = minPrice, q = totalQuantity, at }` (no median) for an
+  item without a snapshot entry; one with a snapshot entry keeps its median and counts and takes only
+  the new lowest price and time (nothing within 15 minutes of the snapshot). Only results that are
+  the item itself count: no random suffix, gear only at its own item level. Searches are never sent.
   **What is not stored or sent: anything about a seller or a bidder.** Forever's rows have no owner
   fields (they come back nil), the mod never reads those positions, and the event has no field for
   one; per-listing rows never leave the client. The tooltip line: "AH: 4g 20s each · 31 listed ·

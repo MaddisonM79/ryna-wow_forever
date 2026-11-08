@@ -83,6 +83,8 @@ L["Prices: %s"] = nil
 -- /ryna prices and the status line: the last snapshot. %s: how long ago; %d: rows read; %d: items.
 L["last auction snapshot %s: %d rows, %d items"] = nil
 L["no auction snapshot yet"] = nil
+-- After the auction piece when the core addon predates trimming auction events from its journal.
+L["nothing sent: the Ryna addon is too old for it"] = nil
 -- /ryna prices. %s: on or off, then a setting's name (sellLine).
 L["%s (but %s is off)"] = nil
 L["/ryna prices <name> on||off changes one."] = nil

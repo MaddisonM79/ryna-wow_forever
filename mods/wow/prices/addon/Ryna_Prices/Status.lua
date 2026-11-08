@@ -15,11 +15,18 @@ local function snapshotLine()
     tonumber(last.rows) or 0, tonumber(last.items) or 0)
 end
 
+-- The auction piece: the settings, a word when this core is too old to send the events, the last
+-- snapshot.
+local function auctionLine()
+  local piece = S.AuctionSummary()
+  if not ns.Auction.CanSend() then piece = piece .. "; " .. L["nothing sent: the Ryna addon is too old for it"] end
+  return string.format(L["Prices: %s"], piece .. "; " .. snapshotLine())
+end
+
 -- "Prices: sell line on (with the stack's total, everywhere)", then "Prices: auction line on,
 -- snapshots on; last auction snapshot 2 hours ago: 192300 rows, 8123 items".
 local function line()
-  return { string.format(L["Prices: %s"], S.Summary()),
-    string.format(L["Prices: %s"], S.AuctionSummary() .. "; " .. snapshotLine()) }
+  return { string.format(L["Prices: %s"], S.Summary()), auctionLine() }
 end
 
 -- After Automation (45), before the companion app (50).

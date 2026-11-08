@@ -73,7 +73,10 @@ end
 local ITEMS = {
   [4306] = { name = "Silk Cloth", price = 1350, stack = 20 },
   [2140] = { name = "Carving Knife", price = 7, stack = 1 },
+  [5000] = { name = "Some Boots", price = 300, stack = 1, level = 20, equip = "INVTYPE_FEET" },
 }
+-- Gear the client hasn't loaded: its slot is known (GetItemInfoInstant), its level isn't.
+local UNLOADED_GEAR = { [5001] = "INVTYPE_HEAD" }
 local function link(id) return "|cnIQ2:|Hitem:" .. id .. "::::::::8:1487::::::|h[x]|h|r" end
 
 local function shownFrame(parent)
@@ -98,9 +101,16 @@ local function installClient()
       local id = type(x) == "number" and x or tonumber(tostring(x):match("Hitem:(%d+)"))
       local it = id and ITEMS[id]
       if not it then return end
-      return it.name, link(id), 1, 5, 1, "Trade Goods", "Cloth", it.stack, "", 132889, it.price
+      return it.name, link(id), 1, it.level or 5, 1, "Trade Goods", "Cloth", it.stack, it.equip or "", 132889,
+        it.price
     end,
     RequestLoadItemDataByID = function() end,
+    -- itemID, itemType, itemSubType, itemEquipLoc, icon, classID, subclassID
+    GetItemInfoInstant = function(id)
+      local it = ITEMS[id]
+      local equip = (it and it.equip) or UNLOADED_GEAR[id] or "INVTYPE_NON_EQUIP_IGNORE"
+      return id, "Armor", "Cloth", equip, 1, 4, 1
+    end,
   }
   _G.C_AuctionHouse = {
     ReplicateItems = function() calls.replicate = calls.replicate + 1 end,
@@ -201,10 +211,25 @@ local function installApi()
     end,
     DB = function() return db end,
     RegisterMod = function(spec) registered = spec return true end,
+    -- The journal as the core keeps it: { type, at, ...fields }, here with the fields kept apart too.
     Journal = {
       Add = function(eventType, fields)
-        journal[#journal + 1] = { type = eventType, fields = fields }
+        journal[#journal + 1] = { type = eventType, fields = fields, at = fields.at, items = fields.items }
         return fields
+      end,
+      ShortLived = true,
+      Events = function(eventType)
+        local out = {}
+        for _, e in ipairs(journal) do if e.type == eventType then out[#out + 1] = e end end
+        return out
+      end,
+      Remove = function(eventType, drop)
+        local out, n = {}, 0
+        for _, e in ipairs(journal) do
+          if e.type == eventType and drop(e) then n = n + 1 else out[#out + 1] = e end
+        end
+        journal = out
+        return n
       end,
     },
     Settings = {
@@ -290,9 +315,9 @@ end
 local function expected(rows)
   local units, n, noBuyout, notReady = {}, {}, 0, 0
   for _, r in ipairs(rows) do
-    if r.hasAllInfo == false then
-      notReady = notReady + 1
-    elseif r.buyout <= 0 then
+    -- hasAllInfo false: counted, and kept (only the name and link are missing).
+    if r.hasAllInfo == false then notReady = notReady + 1 end
+    if r.buyout <= 0 then
       noBuyout = noBuyout + 1
     else
       local unit = math.max(1, math.floor(r.buyout / r.count + 0.5))
@@ -473,6 +498,11 @@ closeHouse()
 frames()
 check(calls.info - readBefore == 2000, "the house closed: no more rows read")
 check(A.walk == nil and #journal == 0, "and the walk stopped: no event")
+check(db.prices.auctionAt[guid] == nil, "and the throttle time is forgotten: the visit got nothing")
+local askedNow = calls.replicate
+openHouse()
+check(calls.replicate == askedNow + 1, "so opening it again asks at once")
+closeHouse()
 local same = true
 for id, x in pairs(store()) do if snapshotStore[id] ~= x then same = false end end
 check(same, "and the store untouched")
@@ -493,9 +523,11 @@ now = now + 20 * 60
 openHouse()
 fire("REPLICATE_ITEM_LIST_UPDATE")
 frame()
+local loggedOutAt = now
 fire("PLAYER_LOGOUT")
 frames()
 check(A.walk == nil and #journal == 0, "logging out stops the walk: no event")
+check(db.prices.auctionAt[guid] == loggedOutAt, "a logout keeps the throttle time")
 closeHouse()
 now = now + 20 * 60
 openHouse()
@@ -550,35 +582,109 @@ check(unit.min == 25 and unit.q == 2 and unit.n == 1, "a stack's unit price is b
 -- The browse fold. ---------------------------------------------------------------------------------------
 journal = {}
 now = now + 3600
-local fresh = 30001 -- from the snapshot an hour ago: older than 15 minutes, so a search replaces it
+local snap = 30001 -- from the snapshot an hour ago: older than 15 minutes
+local function result(id, level, suffix, pet, quantity, price)
+  return { itemKey = { itemID = id, itemLevel = level, itemSuffix = suffix, battlePetSpeciesID = pet },
+    totalQuantity = quantity, minPrice = price, containsOwnerItem = false }
+end
 BROWSE = {
-  { itemKey = { itemID = 1251, itemLevel = 1, itemSuffix = 0, battlePetSpeciesID = 0 }, totalQuantity = 13754,
-    minPrice = 10, containsOwnerItem = false },
-  { itemKey = { itemID = 5000, itemLevel = 20, itemSuffix = 0, battlePetSpeciesID = 0 }, totalQuantity = 2,
-    minPrice = 900, containsOwnerItem = false },
-  { itemKey = { itemID = 5000, itemLevel = 25, itemSuffix = 0, battlePetSpeciesID = 0 }, totalQuantity = 3,
-    minPrice = 700, containsOwnerItem = false },
-  { itemKey = { itemID = 82800, itemLevel = 1, itemSuffix = 0, battlePetSpeciesID = 39 }, totalQuantity = 1,
-    minPrice = 5, containsOwnerItem = false },
-  { itemKey = { itemID = fresh, itemLevel = 1, itemSuffix = 0, battlePetSpeciesID = 0 }, totalQuantity = 9,
-    minPrice = 7, containsOwnerItem = false },
+  result(7251, 1, 0, 0, 13754, 10),
+  -- Boots, item level 20: their own level counts; the level-25 results (another price) don't.
+  result(5000, 20, 0, 0, 2, 900),
+  result(5000, 25, 0, 0, 3, 700),
+  -- A random suffix ("of the Bear"): not the item itself.
+  result(7300, 1, 7, 0, 4, 50),
+  -- Gear not loaded: its level is unknown, so skipped.
+  result(5001, 30, 0, 0, 1, 4000),
+  result(82800, 1, 0, 39, 1, 5),
+  result(snap, 1, 0, 0, 9, 7),
 }
 openHouse() -- an hour after the last: this asks for a snapshot too; it isn't answered here
 fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
-local b = store()[1251]
+local b = store()[7251]
 check(b and b.min == 10 and b.q == 13754 and b.med == nil and b.q25 == nil and b.n == nil and b.at == now,
   "a search: min from minPrice, q from totalQuantity, no median")
-check(store()[5000] and store()[5000].min == 700 and store()[5000].q == 5,
-  "two results for one item (item levels): the lowest price, the quantities added")
+check(store()[5000] and store()[5000].min == 900 and store()[5000].q == 2,
+  "gear: only the results at its own item level: " .. tostring(store()[5000] and store()[5000].min))
+check(store()[7300] == nil and store()[5001] == nil, "a suffixed result, and gear of unknown level: not kept")
+check(A.browsing[7300] and A.browsing[5001], "  though the browse tab still lists them (for hiding the line)")
 check(store()[82800] == nil, "a battle pet's result isn't kept")
-check(store()[fresh].med == nil and store()[fresh].min == 7, "an hour-old snapshot entry is replaced by a search")
+local se = store()[snap]
+check(se.med == 25 and se.q25 == 25 and se.n == 1 and se.q == 2 and se.min == 7 and se.at == now,
+  "an hour-old snapshot entry keeps its median and counts; the search moves only min and at")
 check(#journal == 0, "a search sends nothing")
--- A snapshot entry from the last 15 minutes says more than a search: kept.
-store()[1251] = { min = 8, q25 = 9, med = 11, n = 40, q = 900, at = now - 60 }
+-- A snapshot entry from the last 15 minutes: not touched.
+store()[7251] = { min = 8, q25 = 9, med = 11, n = 40, q = 900, at = now - 60 }
 fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
-check(store()[1251].med == 11 and store()[1251].min == 8, "a fresh snapshot entry is kept over a search")
+check(store()[7251].med == 11 and store()[7251].min == 8 and store()[7251].at == now - 60,
+  "a fresh snapshot entry is kept as it is")
 closeHouse()
 check(next(A.browsing) == nil, "closing the house forgets what the browse tab listed")
+
+-- The journal's bounds: at most 3 earlier snapshots beside a new one, and 6,000 items in all. -------------
+local function itemsRows(base, n)
+  local r = {}
+  for i = 1, n do r[#r + 1] = row(base + i, 1, 100, true) end
+  return r
+end
+local function snapshotKeep(rows)
+  ROWS = rows
+  now = now + 20 * 60
+  openHouse()
+  fire("REPLICATE_ITEM_LIST_UPDATE")
+  frames()
+  closeHouse()
+end
+local function snapshotsInJournal()
+  local ats, n, count = {}, 0, 0
+  for _, ev in ipairs(journal) do
+    if ev.type == "auction" then
+      count = count + #ev.fields.items
+      if not ats[ev.at] then ats[ev.at] = true n = n + 1 end
+    end
+  end
+  return n, count
+end
+journal = {}
+local firstAt
+for k = 1, 4 do
+  snapshotKeep(itemsRows(40000, 1000))
+  if k == 1 then firstAt = now end
+end
+local n, its = snapshotsInJournal()
+check(n == 4 and its == 4000, "four snapshots of 1,000 items: all kept (3 earlier beside the new one): " .. n)
+snapshotKeep(itemsRows(40000, 1000))
+n, its = snapshotsInJournal()
+local firstGone = true
+for _, ev in ipairs(journal) do if ev.at == firstAt then firstGone = false end end
+check(n == 4 and its == 4000 and firstGone, "a fifth: the oldest goes: " .. n)
+snapshotKeep(itemsRows(50000, 5000))
+n, its = snapshotsInJournal()
+check(n == 2 and its == 6000,
+  "a 5,000-item snapshot: one earlier one fits beside it, 6,000 in all: " .. n .. ", " .. its)
+local big = itemsRows(60000, 7000)
+-- The most listed are the ones sent: give the first 100 items three listings each.
+for i = 1, 100 do
+  big[#big + 1] = row(60000 + i, 1, 100, true)
+  big[#big + 1] = row(60000 + i, 1, 100, true)
+end
+snapshotKeep(big)
+n, its = snapshotsInJournal()
+local sentIds = {}
+for _, ev in ipairs(journal) do for _, it in ipairs(ev.fields.items) do sentIds[it.id] = it.n end end
+check(n == 1 and its == 6000, "a 7,000-item house: its 6,000 most listed, nothing older: " .. n .. ", " .. its)
+check(sentIds[60001] == 3 and sentIds[60100] == 3, "  the most listed among them")
+check(store()[67000] ~= nil, "  and every item still in the local store")
+
+-- An older core (no Journal.ShortLived): nothing sent, the store still fills. ------------------------------
+journal = {}
+_G.Ryna.Journal.ShortLived = nil
+snapshotKeep(itemsRows(70000, 50))
+check(#journal == 0 and store()[70050] ~= nil, "an older core: no auction event, the store still filled")
+check(statusPanel[1].fn()[2]:find("nothing sent: the Ryna addon is too old for it", 1, true),
+  "and the status line says so: " .. statusPanel[1].fn()[2])
+_G.Ryna.Journal.ShortLived = true
+check(not statusPanel[1].fn()[2]:find("too old", 1, true), "a current core: no such word")
 
 -- Pruning and the size guard. ---------------------------------------------------------------------------
 local p = db.prices
@@ -666,6 +772,32 @@ settings.priceSellLine = false
 tip:Fill(4306, "GetBagItem", { 0, 20 })
 check(ahLine(tip) ~= nil and #tip.lines == 2, "sell line off: the auction line on its own")
 settings.priceSellLine = nil
+
+-- A refresh by hand (no RefreshData) after the item loaded: the auction line is put over the one
+-- already there, never a second (the count may be clamped now, or the age moved on).
+local named = newTooltip()
+named.name = "NamedAuctionTip"
+function named.NumLines(self) return #self.lines end
+function named.GetName(self) return self.name end
+function named.GetItem() return "Silk Cloth", link(4306), 4306 end
+for i = 1, 10 do
+  _G[named.name .. "TextLeft" .. i] = {
+    GetText = function() return named.lines[i] end,
+    SetText = function(_, t) named.lines[i] = t end,
+  }
+end
+local function ahLines(t)
+  local c = 0
+  for _, l in ipairs(t.lines) do if l:gsub("|c%x%x%x%x%x%x%x%x", ""):match("^AH: ") then c = c + 1 end end
+  return c
+end
+named:Fill(4306, "GetBagItem", { 0, 1 })
+check(ahLines(named) == 1, "one auction line")
+now = now + 3600 -- the age moves on: the text differs now
+run("hook again", ns.Tooltip.OnItem, named, nil, true)
+check(ahLines(named) == 1 and ahLine(named) == "AH: 4g 20s each · 31 listed · 3 hours ago",
+  "after a refresh by hand: still one, with the new text: " .. tostring(ahLine(named)))
+now = now - 3600
 
 -- Where the auction house shows the price itself: hidden.
 local house = _G.AuctionHouseFrame

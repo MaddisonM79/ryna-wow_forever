@@ -283,6 +283,45 @@ local function add(tooltip, line, show)
   return true
 end
 
+-- What our auction lines start with, in this client's language: the text before the first %s of
+-- each form ("AH: ", "AH: from ").
+local function prefixes()
+  local out = {}
+  for _, form in ipairs({ L["AH: %s · %d listed · %s"], L["AH: from %s · %d for sale · %s"] }) do
+    local p = form:match("^(.-)%%s")
+    if p and p ~= "" then out[#out + 1] = COLOR .. p end
+  end
+  return out
+end
+
+-- Puts the auction line on the tooltip: over an auction line of ours already on it (a refresh by
+-- hand after the item loaded: the count may be clamped now, or the age moved on, so the text
+-- differs), else as a new line. Returns whether it added one.
+function T.SetAuctionLine(tooltip, line)
+  if not line then return false end
+  local text = COLOR .. line .. "|r"
+  if type(tooltip.NumLines) == "function" and type(tooltip.GetName) == "function" then
+    local n, name = ns.Try(tooltip.NumLines, tooltip), ns.Try(tooltip.GetName, tooltip)
+    if type(n) == "number" and type(name) == "string" then
+      local starts = prefixes()
+      for i = 1, n do
+        local region = _G[name .. "TextLeft" .. i]
+        local old = type(region) == "table" and type(region.GetText) == "function" and ns.Try(region.GetText, region)
+        if type(old) == "string" and not ns.IsSecret(old) then
+          for _, p in ipairs(starts) do
+            if old:sub(1, #p) == p then
+              if old ~= text and type(region.SetText) == "function" then ns.Try(region.SetText, region, text) end
+              return false
+            end
+          end
+        end
+      end
+    end
+  end
+  tooltip:AddLine(text)
+  return true
+end
+
 -- Adds the lines to `tooltip`; `show` re-shows it (the script hooks, and a refresh by hand).
 function T.OnItem(tooltip, data, show)
   local sell, auction = S.On("priceSellLine"), S.On("priceAuctionLine")
@@ -314,7 +353,7 @@ function T.OnItem(tooltip, data, show)
     end
   end
   if auction and id and not ns.Auction.HouseShows(tooltip, id) then
-    added = add(tooltip, T.AuctionLine(id, slotCount()), show) or added
+    added = T.SetAuctionLine(tooltip, T.AuctionLine(id, slotCount())) or added
   end
   if added and show and type(tooltip.Show) == "function" then tooltip:Show() end
 end

@@ -9,8 +9,10 @@
 -- (GetReplicateItemInfo(i), i from 0 to GetNumReplicateItems() - 1) are read 2,000 a frame, never
 -- in one blocking loop. Each row gives its count, buyout, item id and hasAllInfo (the 3rd, 10th,
 -- 17th and 18th values, Blizzard's AuctionHouseDocumentation.lua); the owner and bidder values
--- (12th to 15th, nil on Forever anyway) are never even put in a variable. A row with no buyout, or
--- with hasAllInfo false, is skipped and counted. The rest are kept per item id as one number per
+-- (12th to 15th, nil on Forever anyway) are never even put in a variable. A row with no buyout is
+-- skipped and counted; one with hasAllInfo false (its name and link not cached yet, its numbers
+-- there) is counted and kept, so a cold item cache doesn't make a partial snapshot. The rest are
+-- kept per item id as one number per
 -- listing, unit buyout * 65536 + count (the unit buyout is buyoutPrice / count rounded to copper),
 -- so 192k listings are about 3 MB of numbers and no tables of their own; sorting those numbers
 -- sorts by unit price. Once every row is read, each item's numbers are summarised, again a slice
@@ -18,24 +20,30 @@
 -- quantity-weighted percentiles (the unit price at which the cheapest 25% and 50% of the quantity
 -- is reached, so min <= q25 <= med always). Then, in one go: the local store, the size guard, and
 -- the `auction` journal events. The house closing or the player logging out while rows are being
--- read stops the walk and nothing is written; once the rows are all read, the house closing no
--- longer matters (the numbers are already in hand) but logging out still stops it.
+-- read stops the walk and nothing is written (closing it also forgets the throttle time, so the next
+-- visit asks again); once the rows are all read, the house closing no longer matters (the numbers
+-- are already in hand) but logging out still stops it.
 --
 -- The local store, RynaDB.prices.auction[itemId] = { min, q25, med, n, q, at } (integers, copper;
 -- one table for the account): replaced per item by each snapshot; entries older than 14 days are
 -- dropped at login, and when it holds more than 20,000 items the 20,000 seen most recently are kept.
--- A search on the browse tab (AUCTION_HOUSE_BROWSE_RESULTS_UPDATED or _ADDED) folds the results in
--- as { min = minPrice, q = totalQuantity, at } (no median: the browse list doesn't have one), unless
--- the item has a snapshot entry from the last 15 minutes, which says more. Browse results are never
--- sent anywhere.
+-- A search on the browse tab (AUCTION_HOUSE_BROWSE_RESULTS_UPDATED or _ADDED) folds the results in:
+-- an item without a snapshot entry gets { min = minPrice, q = totalQuantity, at } (no median: the
+-- browse list doesn't have one); one with a snapshot entry keeps it and takes only the new lowest
+-- price and time (nothing within 15 minutes of the snapshot). Only results that are the item itself
+-- count: no random suffix, and gear only at its own item level (A.BaseItem). Browse results are
+-- never sent anywhere.
 --
 -- The `auction` event (docs/wow.md 17): { at, rows, part, parts, items = { { id, n, q, min, q25, med } } },
 -- every value an integer, at most 2,000 items an event, split into parts with the same `at`, all
 -- added in one frame so they are in the same save. The core keeps them only until the companion app
--- has uploaded them, three days at most (Journal.lua's SHORT_LIVED), not the journal's 30.
--- An item outside the API's limits (an id, count or price it would refuse) is left out of the
--- event, so the event is never refused whole; it stays in the local store. Past 20 parts (40,000
--- items) the most listed items are sent. There is no field for a seller, and no seller is read.
+-- has uploaded them, three days at most (Journal.lua's SHORT_LIVED), not the journal's 30; a core
+-- without that gets none (A.CanSend). And the journal never holds more than 6,000 auction items or
+-- more than 3 earlier snapshots beside a new one, oldest dropped first (A.MakeRoom), so it stays
+-- well inside the agent's 16 MB upload whatever happens between logins: a snapshot of a bigger
+-- house sends its 6,000 most listed items. An item outside the API's limits (an id, count or price
+-- it would refuse, or n > q) is left out of the event, so the event is never refused whole; it stays
+-- in the local store. There is no field for a seller, and no seller is read.
 --
 -- Nothing here prints to chat. The tooltip line that reads the store is Tooltip.lua's.
 
@@ -52,6 +60,8 @@ A.KEEP = 14 * 86400 -- the local store's entries, at login
 A.MAX_ITEMS = 20000 -- the local store's size
 A.PART_ITEMS = 2000 -- items per event (docs/wow.md 17)
 A.MAX_PARTS = 20 -- events per snapshot (docs/wow.md 17)
+A.JOURNAL_ITEMS = 6000 -- auction items the journal may hold in all, across snapshots
+A.JOURNAL_SNAPSHOTS = 3 -- earlier snapshots kept in the journal beside a new one
 A.FALLBACK = 60 -- seconds to wait before reading rows on a client without REPLICATE_ITEM_LIST_UPDATE
 
 -- The API's limits at ingest (docs/wow.md 17): an event breaking one is skipped whole.
@@ -184,6 +194,7 @@ function A.OnShow()
   end
   p.auctionAt[key] = now
   A.requested = now
+  A.requestKey = key
   ns.Debug("prices: auction house: asked for a snapshot")
   if not A.eventOK then
     ns.After(A.FALLBACK, "prices auction fallback", function()
@@ -192,9 +203,15 @@ function A.OnShow()
   end
 end
 
--- Stops the walk; nothing of it is kept.
-function A.Stop(why)
-  if A.walk then ns.Debug("prices: auction snapshot stopped (%s), nothing kept", why) end
+-- Stops the walk; nothing of it is kept. `closed`: the house closed while rows were read, so the
+-- visit got nothing and the next one may ask again at once (a logout keeps the throttle).
+function A.Stop(why, closed)
+  local w = A.walk
+  if w then
+    ns.Debug("prices: auction snapshot stopped (%s), nothing kept", why)
+    local p = closed and A.Store()
+    if p and w.key and p.auctionAt[w.key] == w.askedAt then p.auctionAt[w.key] = nil end
+  end
   A.walk = nil
 end
 
@@ -202,7 +219,7 @@ function A.OnClosed()
   A.open = false
   A.requested = nil
   A.browsing = {}
-  if A.walk and A.walk.phase == "read" then A.Stop("the auction house closed") end
+  if A.walk and A.walk.phase == "read" then A.Stop("the auction house closed", true) end
 end
 
 local schedule
@@ -213,10 +230,9 @@ local function readRow(w, info, i)
   -- name, texture, count, quality, usable, level, levelType, minBid, minIncrement, buyoutPrice,
   -- bidAmount, (12-15: bidder and owner, never read), saleStatus, itemID, hasAllInfo
   local _, _, count, _, _, _, _, _, _, buyout, _, _, _, _, _, _, itemID, hasAllInfo = info(i)
-  if ns.IsSecret(hasAllInfo) or hasAllInfo == false then
-    w.notReady = w.notReady + 1
-    return
-  end
+  -- hasAllInfo false means the item's name and link aren't cached yet; count, buyout and id are
+  -- there all the same, so the row counts (skipping it would make a cold cache a partial snapshot).
+  if ns.IsSecret(hasAllInfo) or hasAllInfo == false then w.notReady = w.notReady + 1 end
   if not isNumber(itemID) or itemID < 1 or itemID ~= floor(itemID) or not isNumber(count) or count < 1 then
     w.bad = w.bad + 1
     return
@@ -238,7 +254,7 @@ end
 local function step(w)
   if A.walk ~= w then return end
   if w.phase == "read" then
-    if not A.open then return A.Stop("the auction house closed") end
+    if not A.open then return A.Stop("the auction house closed", true) end
     local info = ns.Fn("C_AuctionHouse", "GetReplicateItemInfo")
     if not info then return A.Stop("no GetReplicateItemInfo") end
     local last = math.min(w.i + A.ROWS_PER_FRAME, w.total) - 1
@@ -279,9 +295,10 @@ function A.OnReplicated()
   local total = ns.Try(ns.Fn("C_AuctionHouse", "GetNumReplicateItems"))
   -- Nothing yet: wait for the next update.
   if not isNumber(total) or total < 1 then return end
+  local askedAt = A.requested
   A.requested = nil
   A.walk = { phase = "read", at = floor(ns.Now()), total = floor(total), i = 0, lists = {}, ids = {}, out = {},
-    noBuyout = 0, notReady = 0, bad = 0 }
+    noBuyout = 0, notReady = 0, bad = 0, key = A.requestKey, askedAt = askedAt }
   ns.Debug("prices: auction snapshot: reading %d rows", A.walk.total)
   schedule(A.walk)
 end
@@ -294,16 +311,50 @@ local function sendable(r)
     and r.n <= r.q
 end
 
+-- Whether this core can take `auction` events: it drops them once uploaded (Ryna.Journal.ShortLived)
+-- and lets a mod trim them (Events, Remove). On an older core they would sit in the journal for 30
+-- days, so nothing is sent there; the local store and the tooltip line work all the same.
+function A.CanSend()
+  local J = ns.API.Journal
+  return type(J) == "table" and J.ShortLived == true and type(J.Events) == "function"
+    and type(J.Remove) == "function"
+end
+
+-- Makes room for a snapshot of `incoming` items: the journal keeps the newest A.JOURNAL_SNAPSHOTS
+-- earlier snapshots (by `at`) and, with the new one, never more than A.JOURNAL_ITEMS items; the
+-- oldest go first. Upload or not, since a journal past the agent's 16 MB upload limit fails every
+-- push. Returns how many events went.
+function A.MakeRoom(incoming)
+  local J = ns.API.Journal
+  local sizes, ats = {}, {}
+  for _, e in ipairs(J.Events("auction")) do
+    local at = type(e.at) == "number" and e.at or 0
+    if not sizes[at] then
+      sizes[at] = 0
+      ats[#ats + 1] = at
+    end
+    sizes[at] = sizes[at] + (type(e.items) == "table" and #e.items or 0)
+  end
+  table.sort(ats, function(a, b) return a > b end)
+  local keep, budget = {}, A.JOURNAL_ITEMS - incoming
+  for k, at in ipairs(ats) do
+    if k > A.JOURNAL_SNAPSHOTS or sizes[at] > budget then break end
+    keep[at] = true
+    budget = budget - sizes[at]
+  end
+  return J.Remove("auction", function(e) return not keep[type(e.at) == "number" and e.at or 0] end)
+end
+
 -- The snapshot as `auction` journal events, every part in the same frame so they land in the same
 -- save (the API pools a snapshot once, from the first upload that carries it, and skips parts that
--- come later). Returns how many were added. The items are the walk's
--- own summaries ({ id, n, q, min, q25, med }, nothing else), not copies.
+-- come later). At most A.JOURNAL_ITEMS items, the most listed. Returns how many events were added.
 function A.Send(w)
+  if not A.CanSend() then return 0 end
   local items = {}
   for _, r in ipairs(w.out) do
     if sendable(r) then items[#items + 1] = r end
   end
-  local cap = A.PART_ITEMS * A.MAX_PARTS
+  local cap = math.min(A.PART_ITEMS * A.MAX_PARTS, A.JOURNAL_ITEMS)
   if #items > cap then
     table.sort(items, function(a, b)
       if a.n ~= b.n then return a.n > b.n end
@@ -312,6 +363,7 @@ function A.Send(w)
     for k = #items, cap + 1, -1 do items[k] = nil end
   end
   if #items == 0 then return 0 end
+  A.MakeRoom(#items)
   table.sort(items, function(a, b) return a.id < b.id end)
   local parts = math.ceil(#items / A.PART_ITEMS)
   local rows = math.min(w.total, MAX_ROWS)
@@ -340,6 +392,19 @@ function A.Finish(w)
     .. "%d events", w.total, #w.out, w.noBuyout, w.notReady, w.bad, parts)
 end
 
+-- Whether a browse result is the item itself, so its price can stand for the item id: no random
+-- suffix ("of the Bear"), and an item that isn't worn (C_Item.GetItemInfoInstant's equip slot is
+-- empty) or, for gear, the item's own level (a gear item's results come one per item level, and
+-- their prices differ). Gear whose level the client doesn't have loaded is skipped.
+function A.BaseItem(key)
+  local suffix = key.itemSuffix
+  if suffix ~= nil and (not isNumber(suffix) or suffix ~= 0) then return false end
+  local _, _, _, equipLoc = ns.Try(ns.Fn("C_Item", "GetItemInfoInstant"), key.itemID)
+  if not ns.Usable(equipLoc) or equipLoc == "" or equipLoc == "INVTYPE_NON_EQUIP_IGNORE" then return true end
+  local _, _, _, level = ns.Try(ns.Fn("C_Item", "GetItemInfo"), key.itemID)
+  return isNumber(level) and isNumber(key.itemLevel) and key.itemLevel == level
+end
+
 -- A search on the browse tab: its results into the store, and the ids it shows.
 function A.OnBrowse()
   local results = ns.Try(ns.Fn("C_AuctionHouse", "GetBrowseResults"))
@@ -353,7 +418,7 @@ function A.OnBrowse()
     if isNumber(id) and id >= 1 and not (isNumber(pet) and pet > 0) then
       shown[id] = true
       local price, quantity = r.minPrice, r.totalQuantity
-      if isNumber(price) and price >= 1 and isNumber(quantity) and quantity >= 1 then
+      if A.BaseItem(key) and isNumber(price) and price >= 1 and isNumber(quantity) and quantity >= 1 then
         local s = seen[id]
         if not s then
           seen[id] = { min = floor(price), q = floor(quantity) }
@@ -370,8 +435,15 @@ function A.OnBrowse()
   if not p then return end
   for id, s in pairs(seen) do
     local e = p.auction[id]
-    local fresh = type(e) == "table" and e.med and type(e.at) == "number" and now - e.at < A.THROTTLE
-    if not fresh then p.auction[id] = { min = s.min, q = s.q, at = now } end
+    if type(e) == "table" and type(e.med) == "number" then
+      -- A snapshot's entry keeps its median, quantiles and counts: a search moves only its lowest
+      -- price and when it was seen (and not even that within 15 minutes of the snapshot).
+      if not (type(e.at) == "number" and now - e.at < A.THROTTLE) then
+        e.min, e.at = s.min, now
+      end
+    else
+      p.auction[id] = { min = s.min, q = s.q, at = now }
+    end
   end
   A.Guard(p)
 end
