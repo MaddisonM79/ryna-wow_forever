@@ -1,7 +1,7 @@
 {
   "name": "ryna-wow-app",
   "private": true,
-  "version": "0.3.8",
+  "version": "0.3.9",
   "description": "Ryna, the World of Warcraft: Forever companion app (Tauri 2 over agent/host and the WoW core, cores/wow/core).",
   "license": "MIT",
   "type": "module",

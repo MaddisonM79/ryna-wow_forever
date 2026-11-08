@@ -2,11 +2,11 @@
   "id": "settings",
   "core": "wow",
   "name": "Settings",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "summary": "Backs up your addons' settings (ElvUI and the rest) to ryna.io, encrypted, and copies them from one character to another. Works with the game closed; nothing in the game.",
   "kind": "agent",
   "actsInGame": false,
   "source": { "kind": "bundled" },
-  "requires": { "core": ">=0.3.8" },
+  "requires": { "core": ">=0.3.9" },
   "defaultOn": false
 }

@@ -2,12 +2,12 @@
   "id": "prices",
   "core": "wow",
   "name": "Prices",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "summary": "Puts what a vendor pays for an item, and what the auction house asks, on every item tooltip, away from vendors too. Takes one snapshot of the auction house per visit (never anything about a seller). Nothing in chat, nothing done for you.",
   "kind": "addon",
   "actsInGame": false,
   "source": { "kind": "bundled" },
-  "requires": { "core": ">=0.3.8" },
+  "requires": { "core": ">=0.3.9" },
   "defaultOn": false,
   "addons": ["Ryna_Prices"]
 }

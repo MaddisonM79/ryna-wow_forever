@@ -2,12 +2,12 @@
   "id": "automation",
   "core": "wow",
   "name": "Automation",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "summary": "Does the chores you tick: quests, vendors, trainers, mail, loot rolls, invites, resurrections, dialogs and cinematics. Nothing until you turn it on.",
   "kind": "addon",
   "actsInGame": true,
   "source": { "kind": "bundled" },
-  "requires": { "core": ">=0.3.8" },
+  "requires": { "core": ">=0.3.9" },
   "defaultOn": false,
   "addons": ["Ryna_Automation"]
 }
