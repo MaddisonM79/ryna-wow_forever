@@ -6,7 +6,8 @@
 --
 -- This proves the logic (the line's text for one item and a stack, the stack's count from the
 -- tooltip's slot or the item's stack size, nothing for items vendors won't buy, an uncached item
--- refreshed on GET_ITEM_INFO_RECEIVED, the merchant-window setting, the toggles, /ryna prices, and
+-- asked for and refreshed on ITEM_DATA_LOAD_RESULT or GET_ITEM_INFO_RECEIVED, the merchant-window
+-- setting, the toggles, /ryna prices, and
 -- nothing in chat unasked); it can't prove the client's API behaves as assumed. That's the game's.
 -- luacheck: ignore 1
 
@@ -29,7 +30,7 @@ end
 
 -- The client's items: id -> { name, price, stack, cached }.
 local ITEMS
-local requested = {}
+local loads = {} -- the ids C_Item.RequestLoadItemDataByID was asked for
 local function resetItems()
   ITEMS = {
     [2589] = { name = "Linen Cloth", price = 13, stack = 20, cached = true },
@@ -37,23 +38,23 @@ local function resetItems()
     [6948] = { name = "Hearthstone", price = 0, stack = 1, cached = true },
     [2140] = { name = "Carving Knife", price = 7, stack = 1, cached = true },
     [9999] = { name = "Unseen Thing", price = 250, stack = 5, cached = false },
+    [5000] = { name = "No Price Given", price = nil, stack = 1, cached = true },
   }
-  requested = {}
+  loads = {}
 end
-local function link(id) return "|cffffffff|Hitem:" .. id .. "::::::::1:::::::|h[" .. ITEMS[id].name .. "]|h|r" end
+-- Forever's links: `|cnIQ2:` colours, not `|cffxxxxxx`.
+local function link(id) return "|cnIQ2:|Hitem:" .. id .. "::::::::8:1487::::::|h[" .. ITEMS[id].name .. "]|h|r" end
 local function idOf(x)
   if type(x) == "number" then return x end
-  return tonumber(tostring(x):match("item:(%d+)"))
+  return tonumber(tostring(x):match("Hitem:(%d+)"))
 end
 
 local function getItemInfo(x)
   local id = idOf(x)
   local it = id and ITEMS[id]
-  if not it then return nil end
-  if not it.cached then
-    requested[#requested + 1] = id
-    return nil
-  end
+  -- Forever answers nothing at all (no values, not a nil) for an item it hasn't loaded, and asking
+  -- again doesn't load it.
+  if not it or not it.cached then return end
   return it.name, link(id), 1, 5, 1, "Trade Goods", "Cloth", it.stack, "", 132889, it.price
 end
 
@@ -64,8 +65,11 @@ local postCalls = {}
 local function installClient(processor)
   _G.GetLocale = function() return "enUS" end
   _G.DEFAULT_CHAT_FRAME = { AddMessage = function(_, msg) chat[#chat + 1] = msg end }
-  _G.C_Item = { GetItemInfo = getItemInfo }
-  _G.GetItemInfo = getItemInfo
+  _G.C_Item = {
+    GetItemInfo = getItemInfo,
+    RequestLoadItemDataByID = function(id) loads[#loads + 1] = id end,
+  }
+  _G.GetItemInfo = nil -- Forever has none
   _G.C_Container = {
     GetContainerItemInfo = function(bag, slot)
       local n = BAGS[bag] and BAGS[bag][slot]
@@ -299,17 +303,29 @@ check(priceLine(tip) == "Sells for 13c (39c for 3)", "loot: the slot's quantity:
 tip:Fill(6948, "GetBagItem", { 0, 1 })
 check(priceLine(tip) == nil and #tip.lines == 1, "an item that sells for nothing gets no line")
 
--- Uncached: nothing, then the line once the client has the item. --------------------------------
+-- An answer with no price in it: no line.
+tip:Fill(5000, nil, nil)
+check(#tip.lines == 1, "an answer without a sell price adds nothing")
+
+-- Not loaded: nothing, a load request, then the line once the client has the item. ---------------
+check(select("#", _G.C_Item.GetItemInfo(9999)) == 0, "the fake answers an unloaded item with no values")
 tip:Fill(9999, "GetBagItem", { 0, 2 })
-check(#tip.lines == 1, "an uncached item adds nothing")
+check(#tip.lines == 1, "an unloaded item adds nothing")
 check(ns.Tooltip.pending and ns.Tooltip.pending.id == 9999, "and waits for the item")
-fire("GET_ITEM_INFO_RECEIVED", 1234, true)
-check(tip.refreshes == 0, "another item arriving changes nothing")
+check(#loads == 1 and loads[1] == 9999, "and asks the client to load it (RequestLoadItemDataByID)")
+fire("ITEM_DATA_LOAD_RESULT", 1234, true)
+check(tip.refreshes == 0, "another item loading changes nothing")
 ITEMS[9999].cached = true
-fire("GET_ITEM_INFO_RECEIVED", 9999, true)
-check(tip.refreshes == 1, "the item arriving refreshes the tooltip still showing it")
+fire("ITEM_DATA_LOAD_RESULT", 9999, true)
+check(tip.refreshes == 1, "ITEM_DATA_LOAD_RESULT refreshes the tooltip still showing the item")
 check(priceLine(tip) == "Sells for 2s 50c (50s for 20)", "and the line is there: " .. tostring(priceLine(tip)))
 check(ns.Tooltip.pending == nil, "nothing waits any more")
+
+-- The load failed: no refresh, and nothing waits.
+ITEMS[9999].cached = false
+tip:Fill(9999, nil, nil)
+fire("ITEM_DATA_LOAD_RESULT", 9999, false)
+check(tip.refreshes == 1 and ns.Tooltip.pending == nil, "a failed load: no refresh, nothing waits")
 
 -- The tooltip moved on before the item came: no refresh.
 ITEMS[9999].cached = false
@@ -330,9 +346,9 @@ check(tip.refreshes == 1, "a hidden tooltip isn't refreshed")
 local plainTip = filler(newTooltip(false))
 ITEMS[9999].cached = false
 plainTip:Fill(9999, nil, nil)
-check(#plainTip.lines == 1, "uncached again: nothing")
+check(#plainTip.lines == 1, "unloaded again: nothing")
 ITEMS[9999].cached = true
-fire("GET_ITEM_INFO_RECEIVED", 9999, true)
+fire("GET_ITEM_INFO_RECEIVED", 9999, true) -- the older event counts too
 check(priceLine(plainTip) == "Sells for 2s 50c (12s 50c for 5)" and plainTip.shows == 1,
   "no RefreshData: the line is added and the tooltip shown again: " .. tostring(priceLine(plainTip)))
 

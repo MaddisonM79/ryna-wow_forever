@@ -1,17 +1,24 @@
 -- Tooltip: the vendor line on item tooltips, "Sells for 13s 50c (2g 70s for 20)", with the
--- `priceSellLine` setting on. The price is GetItemInfo's 11th value (sellPrice), which the client has
--- for every item it has cached, away from any vendor; the stock tooltip shows it only while a
--- merchant window is open. An item vendors won't buy (0) gets no line.
+-- `priceSellLine` setting on. The price is C_Item.GetItemInfo's 11th value (sellPrice; the documented
+-- 18 returns, itemStackCount the 8th), which the client has for every item it has loaded, away from
+-- any vendor; the stock tooltip shows it only while a merchant window is open. Forever has no global
+-- GetItemInfo (checked in game, 2026-11-08), so C_Item's is the only one asked. An item vendors won't
+-- buy (0) gets no line, nor does one whose answer has no price.
 --
 -- The stack's total (`priceStackTotal`) is for how many the tooltip shows where the client says (a
 -- bag, bank or loot slot: the tooltip's own getter and its arguments, else the slot button's count),
--- else for a full stack (GetItemInfo's 8th value) of a stackable item: a link in chat shows what 20
+-- else for a full stack (itemStackCount) of a stackable item: a link in chat shows what 20
 -- Linen Cloth sell for. A slot holding one of a stackable item shows the single price only.
 --
--- An item the client hasn't cached answers nil and the client asks the server for it: the tooltip
--- gets no line then, and when GET_ITEM_INFO_RECEIVED names that item while the same tooltip still
--- shows it, the tooltip is refreshed (RefreshData where the client has it, else the line is added
--- by hand). With `priceOnlyAwayFromMerchant` on, no line while a merchant window is open.
+-- An item the client hasn't loaded answers nothing at all (no values), and asking again doesn't load
+-- it (checked in game): the tooltip gets no line then, the item is asked for
+-- (C_Item.RequestLoadItemDataByID), and when ITEM_DATA_LOAD_RESULT (or GET_ITEM_INFO_RECEIVED)
+-- names that item while the same tooltip still shows it, the tooltip is refreshed (RefreshData
+-- where the client has it, else the line is added by hand). Items the player can hover are
+-- normally loaded already, so the usual tooltip has no wait. Item ids come from `Hitem:(%d+)`:
+-- Forever's links start `|cnIQ2:`, not `|cffxxxxxx`.
+--
+-- With `priceOnlyAwayFromMerchant` on, no line while a merchant window is open.
 --
 -- Hooked like Chronicle's lines: TooltipDataProcessor where the client has it, GameTooltip's and
 -- ItemRefTooltip's OnTooltipSetItem otherwise. Every client call goes through ns.Try.
@@ -27,11 +34,11 @@ ns.Tooltip = T
 local COLOR = "|cffffffff"
 
 local function itemInfo(item)
-  return ns.Try(ns.Fn("C_Item", "GetItemInfo") or ns.Fn("GetItemInfo"), item)
+  return ns.Try(ns.Fn("C_Item", "GetItemInfo"), item)
 end
 
--- The item's sell price in copper (0: vendors won't buy it) and its stack size, or nil while the
--- client hasn't cached it.
+-- The item's sell price in copper (0: vendors won't buy it, or no price in the answer) and its stack
+-- size, or nil while the client hasn't loaded it (an empty answer).
 function T.Price(item)
   local name, _, _, _, _, _, _, maxStack, _, _, price = itemInfo(item)
   if not ns.Usable(name) then return nil end
@@ -127,7 +134,7 @@ function T.ItemOf(tooltip, data)
     end
     if not id and ns.Usable(data.id) and type(data.id) == "number" then id = data.id end
   end
-  if not id and link then id = tonumber(link:match("item:(%d+)")) end
+  if not id and link then id = tonumber(link:match("Hitem:(%d+)") or link:match("^item:(%d+)")) end
   return link, id
 end
 
@@ -143,7 +150,10 @@ function T.OnItem(tooltip, data, show)
   if not link and not id then return end
   local price, maxStack = T.Price(link or id)
   if price == nil then
-    if id then T.pending = { tooltip = tooltip, id = id } end
+    if id then
+      T.pending = { tooltip = tooltip, id = id }
+      ns.Try(ns.Fn("C_Item", "RequestLoadItemDataByID"), id)
+    end
     return
   end
   if T.pending and T.pending.tooltip == tooltip then T.pending = nil end
@@ -159,11 +169,13 @@ local function shown(tooltip)
   return ok and v and true or false
 end
 
--- The item the client just sent: the tooltip that waited on it, if it still shows that item.
-function T.Received(itemID)
+-- The item the client just loaded (`ok` false: it couldn't): the tooltip that waited on it, if it
+-- still shows that item.
+function T.Received(itemID, ok)
   local p = T.pending
   if not p or tonumber(itemID) ~= p.id then return end
   T.pending = nil
+  if ok == false then return end
   local tooltip = p.tooltip
   if not shown(tooltip) then return end
   local _, id = T.ItemOf(tooltip, nil)
@@ -177,9 +189,13 @@ function T.Received(itemID)
   T.OnItem(tooltip, nil, true)
 end
 
-ns.On("GET_ITEM_INFO_RECEIVED", function(_, itemID)
-  ns.Run("prices item received", T.Received, itemID)
-end)
+-- ITEM_DATA_LOAD_RESULT (itemID, success) answers RequestLoadItemDataByID; GET_ITEM_INFO_RECEIVED
+-- (itemID, success) is the older event for the same.
+for _, event in ipairs({ "ITEM_DATA_LOAD_RESULT", "GET_ITEM_INFO_RECEIVED" }) do
+  ns.On(event, function(_, itemID, ok)
+    ns.Run("prices item loaded", T.Received, itemID, ok)
+  end)
+end
 
 local function onItem(tooltip, data, show)
   ns.Run("prices tooltip", T.OnItem, tooltip, data, show)
