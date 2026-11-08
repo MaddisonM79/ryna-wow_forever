@@ -327,6 +327,33 @@ Settled 2026-11-08, Maddison: **backup and copy are one mod**, encrypted as abov
 between accounts in v1 or only between characters; cross-machine sync automatic ("restore here" on a
 new machine, or on every sync) or manual only.
 
+**Built (2026-11-08, agent side, branch `claude/settings-mod-b9bec9`).** v1 defaults: copies between
+characters on one game account only, restore on a click, never automatic.
+
+- The mod: `mods/wow/settings/mod.json`, `kind: "agent"` (no addon folder; install and remove do
+  nothing; the toggle shows the app's *Addon settings* tab and allows backups), off by default.
+  `core.json`'s `data.reads`/`writes` list the SavedVariables and the game's files it touches.
+- `cores/wow/core/src/settings/`: `inventory` (TOC scan with suffixed TOCs, account and
+  realm/character walk, sizes and times, the characters each addon has settings for, the game's
+  six per-character files as their own group, `Ryna.lua` never), `acedb` (the layout, copying one
+  character's `profileKeys`/`char`/own profile and namespaces to another; ElvUI's `ElvPrivateDB` by
+  the same code; `realm`/`faction`/`class` sections left alone), `copy` (plan = dry run, apply with a
+  `.ryna.bak` per replaced file, the diff by content), `backup` (zip with `manifest.json`,
+  AES-256-GCM under the API's data key with the id as AAD, parts of `partBytes.max`, signed PUTs,
+  complete; restore checks size, sha256, decryption, every file's sha256 and every path before it
+  writes anything). `lua.rs` gained a lossless tree (`parse_bytes`) and `lua_write.rs` the writer.
+  `game_process.rs` (moved from the app) is the closed-game check; the CLI's `--force` is the only
+  way past it.
+- One deviation from docs/wow.md 15, told to the API side: manifest paths are WTF-relative with the
+  account folder as its key (`Account/<16 hex>/…`), not its name, so the name never leaves the
+  computer (the same rule as the snapshot's `account.key`).
+- `ryna settings list|diff|copy|backup|backups|restore|delete`; the app's *Addon settings* tab.
+- Tested against fakes only: a fake game tree in a temp folder, a stateful fake of the section-15
+  API (as a `Transport`, and behind a local HTTP server through the real transport). Left for the
+  main session: the end-to-end run against the deployed API (create, parts, complete, list, open,
+  content, delete), a real ElvUI copy in game, and the in-game check above on whether Forever's
+  server keeps bindings and macros (which decides whether copying those files does anything).
+
 ## 8. Identity
 
 Today: one device client per game (`ryna-wow`, the Palworld agent's), each a public client at

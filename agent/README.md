@@ -179,8 +179,10 @@ entry per core** (today World of Warcraft: Forever), then the agent's **Settings
 (versions, links, credits, licence and the third-party list). A core's page is a row of tabs:
 **Game** (each install and its addon, with the install button), **Accounts**, **Combat** (the log's
 state and file, what it saw last, fights waiting to upload, fights in the last 12 hours and the last
-one), **Mods** (a toggle per mod and its state in each install) and the core's own **Settings**
-(the game folder, fight digests, raw logs). Under 700 px wide the sidebar is icons with tooltips.
+one), **Mods** (a toggle per mod and its state in each install), **Addon settings** while the
+Settings mod is on (each addon's settings, copying them from another character with a preview of
+every file, backups to ryna.io; every write greyed out while the game runs) and the core's own
+**Settings** (the game folder, fight digests, raw logs). Under 700 px wide the sidebar is icons with tooltips.
 The chosen page and each core's tab are remembered in the webview's `localStorage`; the arrow
 keys, Home and End move along the sidebar (up and down) and a core's tabs (left and right). The
 window can open only ryna.io/wow and the sign-in page, so About's other links are text to copy.
@@ -385,7 +387,23 @@ ryna parse path/to/Ryna.lua        # the snapshot JSON for one file, sent nowher
 ryna census id                     # this computer's submission ID
 ryna census push --dry-run         # each account's sightings as census uploads (events, bytes, the ID), sent nowhere;
                                        # without --dry-run, signed and sent to /v1/wow/census with no sign-in
+ryna settings list                 # the Settings mod: each addon's settings files (scope, size, last written, characters)
+ryna settings diff --a Aerin-Stormcall --b Bryn-Doomhowl     # which addons differ between two characters
+ryna settings copy --from Aerin-Stormcall --to Bryn-Doomhowl [--addon ElvUI …] [--dry-run] [--force]
+                                       # copy settings between characters on one account (the game closed;
+                                       # --addon also takes the game's files by name, e.g. config-cache.wtf)
+ryna settings backup [--include addons|game|all] [--machine NAME]   # encrypted, to ryna.io (signed in)
+ryna settings backups              # your backups, newest first
+ryna settings restore <id> [--dry-run] [--force]
+ryna settings delete <id>
 ```
+
+`ryna settings` works on one account folder: the only one, or the one `--account <folder>` names.
+Copies and restores refuse while the game is running (it rewrites SavedVariables at logout, so the
+change would be lost) unless `--force`, and keep each replaced file as `<file>.ryna.bak` (the game's
+own `<file>.bak` is left alone). A backup is a zip of the files, encrypted on this machine with
+AES-256-GCM under a key ryna.io makes for that backup; the files' list goes up with the account
+folder as its hash, never its name.
 
 The game writes `Ryna.lua` when you log out or `/reload`, so that's when there is something new
 to push. `run` exits 0 when everything went, 3 when you need to `login` again, 4 when the agent

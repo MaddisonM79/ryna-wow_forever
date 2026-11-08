@@ -62,7 +62,7 @@ Proton prefixes: Lutris's `~/Games`, Bottles, Steam's `compatdata`, `~/.wine`); 
 elsewhere, *Choose folder…* and pick the `World of Warcraft` folder (on Linux, the one under the
 prefix's `drive_c`). Click **Install addon**.
 It copies the addon that came inside the app into the game's `Interface/AddOns`: Ryna itself and
-the mods that are on. Each mod is listed under the install with a switch; there are two so far:
+the mods that are on. Each mod is listed under the install with a switch; there are three so far:
 
 - **Chronicle**: what Ryna records about your characters. On by default.
 - **Automation**: does the chores you tick in game (`/ryna`, its Automation tab, or `/ryna auto`).
@@ -78,6 +78,12 @@ the mods that are on. Each mod is listed under the install with a switch; there 
   your group sees them). It's off by default, and turning it on in the app still does nothing until
   you tick a chore: every one starts unticked. Hold Shift (at an NPC, or as a cinematic starts) and
   nothing happens by itself; nothing happens in combat either.
+- **Settings**: your addons' settings (ElvUI and every other addon's, found from their own files),
+  copied from one character to another and backed up to ryna.io, stored encrypted for you. It
+  works in the app with the game closed and puts nothing in the game, so there's no addon folder for
+  it. Off by default; turning it on adds an *Addon settings* tab beside Mods. "Copy from another
+  character" shows every file it will write before it writes any, and keeps a `.ryna.bak` of each
+  file it replaces. Backups are yours alone and need you signed in.
 
 If the game is already running, restart it so it sees the new addon.
 
@@ -143,9 +149,10 @@ workspace (`Cargo.toml` at the root) holds the agent and the cores' Rust halves.
   installer); the in-game addon `cores/wow/addon/Ryna`, tagged for Forever, the plumbing its mods
   build on (`cores/wow/addon/README.md`: what is recorded, settings, your own `/who`, translations,
   the mod API); and the scrubbed test fixtures in `cores/wow/fixtures`. Its mods are in `mods/wow`:
-  Chronicle (`mods/wow/chronicle`), everything recorded about a character, and Automation
+  Chronicle (`mods/wow/chronicle`), everything recorded about a character, Automation
   (`mods/wow/automation`), the chores (quests, vendors, trainers, mail, rolls, invites and the like),
-  each off until ticked.
+  each off until ticked, and Settings (`mods/wow/settings`, `kind: "agent"`: no addon folder; the
+  core's `settings` module), addon settings copied between characters and backed up encrypted.
 - `mods/`: each core's mods (`mods/wow`), from stage 2 of the design.
 - `scripts/`: version checks, the release manifest, the CLI smoke test, and `capture.sh`, which
   turns a real `Ryna.lua` into a scrubbed test fixture.
