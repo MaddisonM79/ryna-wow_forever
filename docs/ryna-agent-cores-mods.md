@@ -348,6 +348,17 @@ characters on one game account only, restore on a click, never automatic.
   account folder as its key (`Account/<16 hex>/…`), not its name, so the name never leaves the
   computer (the same rule as the snapshot's `account.key`).
 - `ryna settings list|diff|copy|backup|backups|restore|delete`; the app's *Addon settings* tab.
+- After review (same day): the game check fails closed (can't tell counts as running) and is asked
+  again right before the first write; every write goes through one path (`settings::write_all`:
+  plain path components only, no links, equal files left alone, every `.ryna.bak` first, rolled back
+  on a failed write); a restore goes only into the backup's own account (the CLI's `--account …
+  --force` is the one way past); `Name-Realm` parts are plain folder names and a copy's target must
+  be a character the account has; AceDB copies touch only databases that hold the source, and make
+  the target's entries what the source's are (removed where the source has none); a lost
+  `complete` answer is checked with `GET /backups/:id`, and an abandoned upload is deleted; the data
+  key is zeroized after use. Process names confirmed: macOS only (`_forever_/World of Warcraft.app`);
+  the Windows executable names and the Wine command-line match are unconfirmed for Forever, and
+  Windows also asks the install's own `.exe` files whether they're in use.
 - Tested against fakes only: a fake game tree in a temp folder, a stateful fake of the section-15
   API (as a `Transport`, and behind a local HTTP server through the real transport). Left for the
   main session: the end-to-end run against the deployed API (create, parts, complete, list, open,

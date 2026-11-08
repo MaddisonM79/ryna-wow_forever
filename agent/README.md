@@ -399,9 +399,13 @@ ryna settings delete <id>
 ```
 
 `ryna settings` works on one account folder: the only one, or the one `--account <folder>` names.
-Copies and restores refuse while the game is running (it rewrites SavedVariables at logout, so the
-change would be lost) unless `--force`, and keep each replaced file as `<file>.ryna.bak` (the game's
-own `<file>.bak` is left alone). A backup is a zip of the files, encrypted on this machine with
+Copies and restores refuse while the game is running, or while Ryna can't tell that it isn't (it
+rewrites SavedVariables at logout, so the change would be lost), unless `--force`. They write only
+the files that differ, keep each replaced file as `<file>.ryna.bak` first (the game's own
+`<file>.bak` is left alone), and put everything back if a write fails. `copy --to` must be a
+character the account has (a folder, or a name an addon's AceDB file knows); `--force` makes a new
+one. A restore goes into the account the backup was made from; `--account <other> --force` puts it
+into another (the app never does). A backup is a zip of the files, encrypted on this machine with
 AES-256-GCM under a key ryna.io makes for that backup; the files' list goes up with the account
 folder as its hash, never its name.
 
