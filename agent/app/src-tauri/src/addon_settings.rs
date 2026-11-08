@@ -11,7 +11,7 @@ use ryna_agent::util::{hostname, now_secs, SystemClock};
 use ryna_wow_core::discovery::Install;
 use ryna_wow_core::push::Api;
 use ryna_wow_core::settings::backup::{
-    self, BackupDone, BackupSummary, Include, Progress, RestoreReport,
+    self, BackupDone, BackupSummary, Include, Progress, RestoreOptions, RestoreReport,
 };
 use ryna_wow_core::settings::copy::{self, Applied, CopyPlan, DiffRow};
 use ryna_wow_core::settings::inventory::{self, Inventory};
@@ -19,12 +19,41 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::agent::{self, Agent};
-use crate::game::game_running;
+use ryna_wow_core::game_process;
 
 /// The mod's id (`mods/wow/settings/mod.json`).
 pub const MOD_ID: &str = "settings";
 /// A backup's or restore's `Progress`, while it runs.
 pub const PROGRESS_EVENT: &str = "settings-progress";
+
+/// Whether the game is running, for the window: running, closed, or can't tell (`unknown` says
+/// why, and counts as running: every write stays greyed out).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameState {
+    pub running: bool,
+    pub unknown: Option<String>,
+}
+
+/// The game's state, with the install's own executables asked too where the OS can (Windows).
+pub fn game_state(install: Option<&std::path::Path>) -> GameState {
+    if install.is_some_and(game_process::exe_in_use) {
+        return GameState {
+            running: true,
+            unknown: None,
+        };
+    }
+    match game_process::game_state() {
+        Ok(running) => GameState {
+            running,
+            unknown: None,
+        },
+        Err(why) => GameState {
+            running: true,
+            unknown: Some(why),
+        },
+    }
+}
 
 /// Every account's inventory in every install the mod works in.
 #[derive(Debug, Clone, Serialize)]
@@ -32,7 +61,7 @@ pub const PROGRESS_EVENT: &str = "settings-progress";
 pub struct SettingsView {
     pub on: bool,
     pub inventories: Vec<Inventory>,
-    pub game_running: bool,
+    pub game: GameState,
     /// Problems reading an account (each its own words), shown beside the rest.
     pub problems: Vec<String>,
 }
@@ -61,10 +90,11 @@ pub fn view(app: &AppHandle) -> SettingsView {
     let on = agent::mod_on(app, MOD_ID);
     let mut inventories = Vec::new();
     let mut problems = Vec::new();
+    let installs = agent::settings_installs(app);
     if on {
-        for i in agent::settings_installs(app) {
-            for account in inventory::accounts(&i) {
-                match inventory::inventory(&i, &account) {
+        for i in &installs {
+            for account in inventory::accounts(i) {
+                match inventory::inventory(i, &account) {
                     Ok(inv) => inventories.push(inv),
                     Err(e) => problems.push(format!("{account}: {e:#}")),
                 }
@@ -74,7 +104,7 @@ pub fn view(app: &AppHandle) -> SettingsView {
     SettingsView {
         on,
         inventories,
-        game_running: game_running(),
+        game: game_state(installs.first().map(|i| i.path.as_path())),
         problems,
     }
 }
@@ -126,16 +156,17 @@ pub fn copy_settings(
         return Err("Choose at least one addon to copy.".into());
     }
     let plan = copy::plan(&inv, &from, &to, Some(&items)).map_err(|e| format!("{e:#}"))?;
-    let running = game_running();
+    let path = std::path::PathBuf::from(&inv.install);
+    let running = || game_state(Some(&path)).running;
     let applied = if preview {
         None
     } else {
-        Some(copy::apply(&plan, running, false).map_err(|e| sentence(&format!("{e:#}")))?)
+        Some(copy::apply(&plan, &running, false).map_err(|e| sentence(&format!("{e:#}")))?)
     };
     Ok(CopyResult {
         plan,
         applied,
-        game_running: running,
+        game_running: running(),
     })
 }
 
@@ -199,27 +230,28 @@ pub fn backups(app: &AppHandle) -> Result<Vec<BackupSummary>, String> {
     with_api(app, backup::list)
 }
 
+/// Restore a backup into the account chosen in the window, and only if it's the account the
+/// backup was made from: the window has no way to restore into another (the command line's
+/// `--account … --force` does), nor past a running game.
 pub fn restore(
     app: &AppHandle,
     install: &str,
     id: &str,
-    account: Option<&str>,
+    account: &str,
     preview: bool,
 ) -> Result<RestoreReport, String> {
     require_on(app)?;
     let i = install_at(app, install)?;
     let mut progress = emit(app);
+    let opts = RestoreOptions {
+        account: Some(account),
+        other_account: false,
+        dry_run: preview,
+        force: false,
+    };
+    let running = || game_state(Some(&i.path)).running;
     with_api(app, |api| {
-        backup::restore(
-            api,
-            id,
-            &i,
-            account,
-            preview,
-            game_running(),
-            false,
-            &mut progress,
-        )
+        backup::restore(api, id, &i, opts, &running, &mut progress)
     })
 }
 

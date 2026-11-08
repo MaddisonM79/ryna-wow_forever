@@ -5,6 +5,7 @@ import type {
   CharacterRef,
   CopyPlan,
   DiffRow,
+  GameState,
   InventoryView,
   ModView,
   PlannedWrite,
@@ -23,6 +24,14 @@ export const STORED_ENCRYPTED = "Stored encrypted for you on ryna.io.";
 /** What's said while the game runs, and every write is greyed out. */
 export const GAME_RUNNING =
   "The game is running. Close it to copy or restore settings: it rewrites these files when you log out, so a change made now would be lost.";
+
+/** The banner while writes are greyed out: the game running, or Ryna unable to tell. */
+export function gameBanner(game: GameState | null | undefined): string | null {
+  if (!game?.running) return null;
+  return game.unknown
+    ? `Ryna can't tell whether the game is running (${game.unknown}), so copies and restores are off until it can.`
+    : GAME_RUNNING;
+}
 
 /** The game's own per-character files, as the core names them, and what each is. */
 export const GAME_FILES: { name: string; label: string }[] = [

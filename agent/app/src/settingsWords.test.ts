@@ -10,6 +10,8 @@ import {
   copyDoneLine,
   copyPreviewLines,
   diffText,
+  gameBanner,
+  GAME_RUNNING,
   progressText,
   restoreDoneLine,
   restorePreviewLines,
@@ -87,6 +89,15 @@ group("the Settings mod", () => {
     expect(settingsModOn({ mods: [settingsMod(true)] } as unknown as Status)).toBe(true);
     expect(settingsModOn({ mods: [settingsMod(false)] } as unknown as Status)).toBe(false);
     expect(settingsModOn(null)).toBe(false);
+  });
+
+  it("greys writes out while the game runs, or while it can't be told", () => {
+    expect(gameBanner({ running: false, unknown: null })).toBeNull();
+    expect(gameBanner(null)).toBeNull();
+    expect(gameBanner({ running: true, unknown: null })).toBe(GAME_RUNNING);
+    expect(gameBanner({ running: true, unknown: "pgrep failed" })).toBe(
+      "Ryna can't tell whether the game is running (pgrep failed), so copies and restores are off until it can.",
+    );
   });
 
   it("words sizes, scopes and characters", () => {

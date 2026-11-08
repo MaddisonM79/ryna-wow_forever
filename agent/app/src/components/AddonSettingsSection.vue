@@ -11,6 +11,7 @@ import {
   type BackupSummary,
   type CopyResult,
   type DiffRow,
+  type GameState,
   type InventoryView,
   type RestoreReport,
   type SettingsView,
@@ -26,7 +27,7 @@ import {
   copyPreviewLines,
   diffText,
   GAME_FILES,
-  GAME_RUNNING,
+  gameBanner,
   inventoryLabel,
   progressText,
   restoreDoneLine,
@@ -43,7 +44,10 @@ const view = ref<SettingsView | null>(null);
 const loadError = ref<string | null>(null);
 const picked = ref(0);
 const inv = computed<InventoryView | null>(() => view.value?.inventories[picked.value] ?? null);
-const gameRunning = ref(false);
+const game = ref<GameState | null>(null);
+/** Running, or can't be told: every write is greyed out. */
+const gameRunning = computed(() => game.value?.running ?? true);
+const banner = computed(() => gameBanner(game.value));
 /** Something is writing or sending: one thing at a time. */
 const busy = ref<"copy" | "backup" | "restore" | "delete" | null>(null);
 const progress = ref<string | null>(null);
@@ -51,7 +55,7 @@ const progress = ref<string | null>(null);
 async function load(): Promise<void> {
   try {
     view.value = await api.settingsView();
-    gameRunning.value = view.value.gameRunning;
+    game.value = view.value.game;
     loadError.value = null;
     if (picked.value >= view.value.inventories.length) picked.value = 0;
   } catch (e) {
@@ -65,7 +69,7 @@ function startPoll(): void {
   stopPoll();
   poll = setInterval(async () => {
     try {
-      gameRunning.value = await api.settingsGameRunning();
+      game.value = await api.settingsGameRunning();
     } catch {
       // Keep the last answer.
     }
@@ -284,7 +288,7 @@ const gameFilesByChar = computed(() => {
 <template>
   <section>
     <h2>Addon settings</h2>
-    <p v-if="gameRunning" class="banner" role="status">{{ GAME_RUNNING }}</p>
+    <p v-if="banner" class="banner" role="status">{{ banner }}</p>
     <p v-if="loadError" class="banner error">{{ loadError }}</p>
     <p v-for="(p, n) in view?.problems ?? []" :key="n" class="banner error">{{ p }}</p>
     <p v-if="view && !view.inventories.length" class="muted">

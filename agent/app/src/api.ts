@@ -313,10 +313,16 @@ export interface InventoryView {
   gameFiles: SettingsFileView[];
 }
 
+/** Whether the game is running; `unknown` (why it can't be told) counts as running. */
+export interface GameState {
+  running: boolean;
+  unknown: string | null;
+}
+
 export interface SettingsView {
   on: boolean;
   inventories: InventoryView[];
-  gameRunning: boolean;
+  game: GameState;
   problems: string[];
 }
 
@@ -406,7 +412,7 @@ export const api = {
   /** Resolves only if it failed to install: on success the app restarts into the new version. */
   installUpdate: () => invoke<void>("install_update"),
   settingsView: () => invoke<SettingsView>("settings_view"),
-  settingsGameRunning: () => invoke<boolean>("settings_game_running"),
+  settingsGameRunning: () => invoke<GameState>("settings_game_running"),
   settingsDiff: (install: string, account: string, a: string, b: string) =>
     invoke<DiffRow[]>("settings_diff", { install, account, a, b }),
   /** A preview when `preview`, else written (refused while the game runs). */
@@ -415,7 +421,8 @@ export const api = {
   settingsBackup: (install: string, account: string, addons: boolean, game: boolean) =>
     invoke<BackupDone>("settings_backup", { install, account, addons, game }),
   settingsBackups: () => invoke<BackupSummary[]>("settings_backups"),
-  settingsRestore: (install: string, id: string, account: string | null, preview: boolean) =>
+  /** Only into `account`, and only when the backup was made from it. */
+  settingsRestore: (install: string, id: string, account: string, preview: boolean) =>
     invoke<RestoreReport>("settings_restore", { install, id, account, preview }),
   settingsDelete: (id: string) => invoke<void>("settings_delete", { id }),
 };

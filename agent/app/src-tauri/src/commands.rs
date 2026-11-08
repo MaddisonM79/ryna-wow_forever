@@ -7,7 +7,7 @@ use tauri::{AppHandle, Manager as _};
 use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_opener::OpenerExt as _;
 
-use crate::addon_settings::{self, CopyResult, SettingsView};
+use crate::addon_settings::{self, CopyResult, GameState, SettingsView};
 use crate::agent::{self, InstallResult, LoginCode, ModToggleResult, Status};
 use crate::updates;
 use ryna_wow_core::settings::backup::{BackupDone, BackupSummary, RestoreReport};
@@ -203,10 +203,16 @@ pub async fn settings_view(app: AppHandle) -> Result<SettingsView, String> {
     blocking(move || Ok(addon_settings::view(&app))).await
 }
 
-/// Whether the game is running, for the Settings section's banner.
+/// Whether the game is running (or can't be told), for the Settings section's banner.
 #[tauri::command]
-pub async fn settings_game_running() -> Result<bool, String> {
-    blocking(|| Ok(crate::game::game_running())).await
+pub async fn settings_game_running(app: AppHandle) -> Result<GameState, String> {
+    blocking(move || {
+        let first = crate::agent::settings_installs(&app).into_iter().next();
+        Ok(addon_settings::game_state(
+            first.as_ref().map(|i| i.path.as_path()),
+        ))
+    })
+    .await
 }
 
 /// Which addons differ between two characters (`Name-Realm`).
@@ -258,18 +264,17 @@ pub async fn settings_backups(app: AppHandle) -> Result<Vec<BackupSummary>, Stri
     blocking(move || addon_settings::backups(&app)).await
 }
 
-/// Restore a backup into the install at `install` (a preview when `preview`; refused while the
-/// game runs).
+/// Restore a backup into account `account` of the install at `install` (a preview when
+/// `preview`), only when it's the account the backup came from; refused while the game runs.
 #[tauri::command]
 pub async fn settings_restore(
     app: AppHandle,
     install: String,
     id: String,
-    account: Option<String>,
+    account: String,
     preview: bool,
 ) -> Result<RestoreReport, String> {
-    blocking(move || addon_settings::restore(&app, &install, &id, account.as_deref(), preview))
-        .await
+    blocking(move || addon_settings::restore(&app, &install, &id, &account, preview)).await
 }
 
 #[tauri::command]
