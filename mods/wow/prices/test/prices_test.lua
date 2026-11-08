@@ -5,7 +5,9 @@
 --   lua5.1 mods/wow/prices/test/prices_test.lua
 --
 -- This proves the logic (the line's text for one item and a stack, the stack's count from the
--- tooltip's slot or the item's stack size, nothing for items vendors won't buy, an uncached item
+-- tooltip's slot (bag, bank, loot, the owner button, clamped to a stack; never for a link) or the
+-- item's stack size, the post call's data before GetItem, no line twice, nothing for items vendors
+-- won't buy, an uncached item
 -- asked for and refreshed on ITEM_DATA_LOAD_RESULT or GET_ITEM_INFO_RECEIVED, the merchant-window
 -- setting, the toggles, /ryna prices, and
 -- nothing in chat unasked); it can't prove the client's API behaves as assumed. That's the game's.
@@ -58,8 +60,8 @@ local function getItemInfo(x)
   return it.name, link(id), 1, 5, 1, "Trade Goods", "Cloth", it.stack, "", 132889, it.price
 end
 
--- Bags (C_Container) and loot.
-local BAGS, LOOT = {}, {}
+-- Bags (C_Container), loot, and inventory slots (the bank's main slots among them).
+local BAGS, LOOT, INVENTORY = {}, {}, {}
 
 local postCalls = {}
 local function installClient(processor)
@@ -77,7 +79,7 @@ local function installClient(processor)
     end,
   }
   _G.GetLootSlotInfo = function(slot) if LOOT[slot] then return "icon", "Item", LOOT[slot], nil, 1 end end
-  _G.GetInventoryItemCount = function() return 1 end
+  _G.GetInventoryItemCount = function(_, slot) return INVENTORY[slot] end
   _G.MerchantFrame = { shown = false, IsShown = function(self) return self.shown end }
   postCalls = {}
   if processor then
@@ -90,9 +92,15 @@ local function installClient(processor)
   end
 end
 
--- A tooltip: what the client puts on it, and the getter it was filled by.
+-- A tooltip: what the client puts on it, and the getter it was filled by. Named, with its
+-- <name>TextLeft<i> regions, as the game's tooltips are.
+local tooltips = 0
 local function newTooltip(refresh)
-  local t = { lines = {}, shown = false, shows = 0, scripts = {}, refreshes = 0 }
+  tooltips = tooltips + 1
+  local t = { lines = {}, shown = false, shows = 0, scripts = {}, refreshes = 0, name = "FakeTooltip" .. tooltips }
+  function t.GetName(self) return self.name end
+  function t.NumLines(self) return #self.lines end
+  for i = 1, 40 do _G[t.name .. "TextLeft" .. i] = { GetText = function() return t.lines[i] end } end
   function t.AddLine(self, s) self.lines[#self.lines + 1] = s end
   function t.Show(self) self.shown = true; self.shows = self.shows + 1 end
   function t.IsShown(self) return self.shown end
@@ -230,7 +238,7 @@ local function filler(tip)
     if T_MODE == "processor" then
       self.processingInfo = getter and { getterName = getter, getterArgs = args } or nil
       for _, pc in ipairs(postCalls) do
-        if pc.kind == 0 then pc.fn(self, { id = itemId, type = 0 }) end
+        if pc.kind == 0 then pc.fn(self, self.data or { id = itemId, type = 0 }) end
       end
       self.processingInfo = nil
       self.info = getter and { getterName = getter, getterArgs = args } or nil
@@ -318,7 +326,9 @@ check(tip.refreshes == 0, "another item loading changes nothing")
 ITEMS[9999].cached = true
 fire("ITEM_DATA_LOAD_RESULT", 9999, true)
 check(tip.refreshes == 1, "ITEM_DATA_LOAD_RESULT refreshes the tooltip still showing the item")
-check(priceLine(tip) == "Sells for 2s 50c (50s for 20)", "and the line is there: " .. tostring(priceLine(tip)))
+-- The slot says 20 of an item that stacks to 5: clamped to the stack.
+check(priceLine(tip) == "Sells for 2s 50c (12s 50c for 5)", "and the line is there, the count clamped to a stack of 5: "
+  .. tostring(priceLine(tip)))
 check(ns.Tooltip.pending == nil, "nothing waits any more")
 
 -- The load failed: no refresh, and nothing waits.
@@ -351,6 +361,46 @@ ITEMS[9999].cached = true
 fire("GET_ITEM_INFO_RECEIVED", 9999, true) -- the older event counts too
 check(priceLine(plainTip) == "Sells for 2s 50c (12s 50c for 5)" and plainTip.shows == 1,
   "no RefreshData: the line is added and the tooltip shown again: " .. tostring(priceLine(plainTip)))
+
+-- The by-hand path never adds the line twice (the client running the hook again, a second load event).
+ITEMS[9999].cached = false
+plainTip:Fill(9999, nil, nil)
+ITEMS[9999].cached = true
+fire("ITEM_DATA_LOAD_RESULT", 9999, true)
+check(priceLines(plainTip) == 1, "loaded: one line")
+run("hook again", ns.Tooltip.OnItem, plainTip, nil, true)
+check(priceLines(plainTip) == 1 and plainTip.shows == 2, "the hook running again by hand doesn't add a second line")
+
+-- The bank's main slots: GetInventoryItem and its count. ------------------------------------------
+INVENTORY[40] = 12
+tip:Fill(4306, "GetInventoryItem", { "player", 40 })
+check(priceLine(tip) == "Sells for 13s 50c (1g 62s for 12)", "a bank slot (GetInventoryItem): its count: "
+  .. tostring(priceLine(tip)))
+
+-- The stack clamp, and links ignore the owner's count. ----------------------------------------------
+tip:Fill(4306, nil, nil, { count = 99 })
+check(priceLine(tip) == "Sells for 13s 50c (2g 70s for 20)", "an owner count above the stack is clamped to 20: "
+  .. tostring(priceLine(tip)))
+tip:Fill(2140, nil, nil, { count = 4 })
+check(priceLine(tip) == "Sells for 7c (28c for 4)", "an item whose stack size is 1 isn't clamped: "
+  .. tostring(priceLine(tip)))
+local ref = filler(newTooltip(true))
+ref:Fill(4306, "GetHyperlink", { link(4306) }, { count = 3 })
+check(priceLine(ref) == "Sells for 13s 50c (2g 70s for 20)",
+  "ItemRefTooltip in processor mode, a link: a full stack, not the owner's count: " .. tostring(priceLine(ref)))
+
+-- Append mode: the data's item, not GetItem's (the primary one). -------------------------------------
+tip.data = { id = 2589, type = 0 }
+tip:Fill(4306, nil, nil)
+tip.data = nil
+check(priceLine(tip) == "Sells for 13c (2s 60c for 20)",
+  "appended data (Linen Cloth) under a Silk tooltip: the data's item: "
+  .. tostring(priceLine(tip)))
+tip.data = { hyperlink = link(2589), type = 0 }
+tip:Fill(4306, nil, nil)
+tip.data = nil
+check(priceLine(tip) == "Sells for 13c (2s 60c for 20)", "appended data with only a hyperlink: its item: "
+  .. tostring(priceLine(tip)))
 
 -- Only away from merchants. ----------------------------------------------------------------------
 _G.MerchantFrame.shown = true

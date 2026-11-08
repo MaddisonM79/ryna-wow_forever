@@ -6,9 +6,10 @@
 -- buy (0) gets no line, nor does one whose answer has no price.
 --
 -- The stack's total (`priceStackTotal`) is for how many the tooltip shows where the client says (a
--- bag, bank or loot slot: the tooltip's own getter and its arguments, else the slot button's count),
--- else for a full stack (itemStackCount) of a stackable item: a link in chat shows what 20
--- Linen Cloth sell for. A slot holding one of a stackable item shows the single price only.
+-- bag, bank or loot slot: the tooltip's own getter and its arguments, else the slot button's count,
+-- never more than a stack holds; a link has no slot), else for a full stack (itemStackCount) of a
+-- stackable item: a link in chat shows what 20 Linen Cloth sell for. A slot holding one of a
+-- stackable item shows the single price only.
 --
 -- An item the client hasn't loaded answers nothing at all (no values), and asking again doesn't load
 -- it (checked in game): the tooltip gets no line then, the item is asked for
@@ -113,6 +114,9 @@ function T.SlotCount(tooltip, processing)
   elseif getter == "GetLootItem" then
     local _, _, n = ns.Try(ns.Fn("GetLootSlotInfo"), args[1])
     if count(n) then return n end
+  elseif getter == "GetHyperlink" then
+    -- A link (chat, ItemRefTooltip): no slot, and the owner's count would be some other button's.
+    return nil
   end
   -- The button the tooltip belongs to: item buttons keep their count (SetItemButtonCount).
   local owner = type(tooltip.GetOwner) == "function" and ns.Try(tooltip.GetOwner, tooltip) or nil
@@ -120,22 +124,46 @@ function T.SlotCount(tooltip, processing)
   return nil
 end
 
--- The tooltip's item: its link and id, from the tooltip, else the tooltip data.
+local function linkItemId(link)
+  return tonumber(link:match("Hitem:(%d+)") or link:match("^item:(%d+)"))
+end
+
+-- The tooltip's item: its link and id. In the processor's post call the tooltip data (`data`) comes
+-- first: when a tooltip appends a second item's data, GetItem still answers the primary one. The
+-- tooltip's own GetItem fills in what the data lacks, and its link is used only when it is the same
+-- item.
 function T.ItemOf(tooltip, data)
   local link, id
-  if type(tooltip.GetItem) == "function" then
-    local _, l, i = ns.Try(tooltip.GetItem, tooltip)
-    if ns.Usable(l) and type(l) == "string" and l ~= "" then link = l end
-    if ns.Usable(i) and type(i) == "number" then id = i end
-  end
   if type(data) == "table" then
-    if not link and ns.Usable(data.hyperlink) and type(data.hyperlink) == "string" and data.hyperlink ~= "" then
+    if ns.Usable(data.hyperlink) and type(data.hyperlink) == "string" and data.hyperlink ~= "" then
       link = data.hyperlink
     end
-    if not id and ns.Usable(data.id) and type(data.id) == "number" then id = data.id end
+    if ns.Usable(data.id) and type(data.id) == "number" then id = data.id end
+    if not id and link then id = linkItemId(link) end
   end
-  if not id and link then id = tonumber(link:match("Hitem:(%d+)") or link:match("^item:(%d+)")) end
+  if type(tooltip.GetItem) == "function" then
+    local _, l, i = ns.Try(tooltip.GetItem, tooltip)
+    if not ns.Usable(l) or type(l) ~= "string" or l == "" then l = nil end
+    if not ns.Usable(i) or type(i) ~= "number" then i = l and linkItemId(l) or nil end
+    if not id then id = i end
+    if not link and l and i == id then link = l end
+  end
+  if not id and link then id = linkItemId(link) end
   return link, id
+end
+
+-- Whether the tooltip already has `line` (a refresh by hand, or a client running the hook twice).
+function T.HasLine(tooltip, line)
+  if type(tooltip.NumLines) ~= "function" or type(tooltip.GetName) ~= "function" then return false end
+  local n, name = ns.Try(tooltip.NumLines, tooltip), ns.Try(tooltip.GetName, tooltip)
+  if type(n) ~= "number" or type(name) ~= "string" then return false end
+  local want = COLOR .. line .. "|r"
+  for i = 1, n do
+    local region = _G[name .. "TextLeft" .. i]
+    local text = type(region) == "table" and type(region.GetText) == "function" and ns.Try(region.GetText, region)
+    if text == want or text == line then return true end
+  end
+  return false
 end
 
 -- The tooltip waiting on GET_ITEM_INFO_RECEIVED: { tooltip, id }.
@@ -157,8 +185,12 @@ function T.OnItem(tooltip, data, show)
     return
   end
   if T.pending and T.pending.tooltip == tooltip then T.pending = nil end
-  local line = T.Line(price, T.SlotCount(tooltip, type(data) == "table") or maxStack)
+  local n = T.SlotCount(tooltip, type(data) == "table") or maxStack
+  -- A frame's count can't be more than a stack holds: clamp it where the stack size is known.
+  if maxStack > 1 and n > maxStack then n = maxStack end
+  local line = T.Line(price, n)
   if not line then return end
+  if show and T.HasLine(tooltip, line) then return end
   tooltip:AddLine(COLOR .. line .. "|r")
   if show and type(tooltip.Show) == "function" then tooltip:Show() end
 end
