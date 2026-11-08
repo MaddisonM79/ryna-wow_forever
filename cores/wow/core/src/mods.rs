@@ -31,6 +31,7 @@ use crate::discovery::Install;
 pub const BUNDLED_MOD_JSON: &[&str] = &[
     include_str!("../../../../mods/wow/chronicle/mod.json"),
     include_str!("../../../../mods/wow/automation/mod.json"),
+    include_str!("../../../../mods/wow/prices/mod.json"),
     include_str!("../../../../mods/wow/settings/mod.json"),
 ];
 
@@ -383,6 +384,10 @@ mod tests {
         let automation = bundled().iter().find(|m| m.id == "automation").unwrap();
         assert!(!automation.default_on && automation.acts_in_game);
         assert_eq!(automation.addons, ["Ryna_Automation"]);
+        // Prices only reads the game's item data: off by default like every new mod, and acts on nothing.
+        let prices = bundled().iter().find(|m| m.id == "prices").unwrap();
+        assert!(!prices.default_on && !prices.acts_in_game);
+        assert_eq!(prices.addons, ["Ryna_Prices"]);
         // Settings runs in the agent: no folder, nothing in the game, off until turned on.
         let settings = bundled().iter().find(|m| m.id == "settings").unwrap();
         assert!(is_agent_mod(settings) && settings.addons.is_empty());
@@ -391,7 +396,7 @@ mod tests {
 
     /// A release layout: `<dir>/Ryna` and each bundled mod's folder beside it, each with its toc.
     fn release(dir: &Path, version: &str) -> PathBuf {
-        for name in ["Ryna", "Ryna_Chronicle", "Ryna_Automation"] {
+        for name in ["Ryna", "Ryna_Chronicle", "Ryna_Automation", "Ryna_Prices"] {
             let a = dir.join("release").join(name);
             std::fs::create_dir_all(&a).unwrap();
             std::fs::write(
@@ -475,7 +480,7 @@ mod tests {
             "{changes:?}"
         );
         let s = statuses(std::slice::from_ref(&inst), Some(&source), &none);
-        assert_eq!(s.len(), 3);
+        assert_eq!(s.len(), 4);
         let automation = of(&s, "automation");
         assert!(!automation.on && !automation.default_on && automation.acts_in_game);
         assert!(!automation.at(&here).unwrap().installed);

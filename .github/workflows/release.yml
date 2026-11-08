@@ -248,7 +248,7 @@ jobs:
           path: dist
           merge-multiple: true
       # One zip with every folder at its top level, Ryna (the core's) and each bundled mod's
-      # (Ryna_Chronicle, on by default; Ryna_Automation, off until turned on), as the app carries them
+      # (Ryna_Chronicle, on by default; Ryna_Automation and Ryna_Prices, off until turned on), as the app carries them
       # in addon/: unzipped into Interface/AddOns it is a working install, and `ryna install-addon
       # --from` finds the mods beside Ryna. One zip per addon would let someone install the core
       # alone, which records nothing. A folder that's there is still only loaded if the game's AddOns
