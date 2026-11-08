@@ -1,0 +1,13 @@
+{
+  "id": "prices",
+  "core": "wow",
+  "name": "Prices",
+  "version": "0.3.8",
+  "summary": "Puts what a vendor pays for an item, and for its stack, on every item tooltip, away from vendors too. Nothing in chat, nothing done for you.",
+  "kind": "addon",
+  "actsInGame": false,
+  "source": { "kind": "bundled" },
+  "requires": { "core": ">=0.3.8" },
+  "defaultOn": false,
+  "addons": ["Ryna_Prices"]
+}
