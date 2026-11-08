@@ -30,7 +30,8 @@ end
 -- The merchant the fake client shows: { guid, name, items = { { id, price, stack, available, cost } } }.
 local SHOP
 local unloaded = {} -- slot -> true: the link hasn't loaded yet
-local function itemLink(id) return "|cffffffff|Hitem:" .. id .. "::::::::1:::::::|h[Item " .. id .. "]|h|r" end
+-- Forever's links: `|cnIQ2:` colours, not `|cffxxxxxx`.
+local function itemLink(id) return "|cnIQ2:|Hitem:" .. id .. "::::::::8:1487::::::|h[Item " .. id .. "]|h|r" end
 
 _G.GetLocale = function() return "enUS" end
 _G.DEFAULT_CHAT_FRAME = { AddMessage = function(_, msg) chat[#chat + 1] = msg end }
