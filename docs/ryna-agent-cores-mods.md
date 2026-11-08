@@ -368,10 +368,12 @@ characters on one game account only, restore on a click, never automatic.
 ### 7.3 Prices: vendor and auction house (asked 2026-11-08)
 
 Maddison's ask: "a vendor prices mod on item hover? where would we get that data?", then "second
-step is AH pricing too". Two mods, in that order, because the data comes from three different places.
+step is AH pricing too", and "i'd like them as one addon honestly". So **one mod, Prices**
+(`mods/wow/prices`, addon `Ryna_Prices`; `actsInGame: false`, off by default like every mod), built in
+steps because the data comes from three different places: the vendor line first, the auction line
+added to the same addon later, each line its own toggle on the mod's tab.
 
-**Step 1: the Vendor Prices mod** (`mods/wow/vendor-prices`, addon `Ryna_VendorPrices`, the example
-manifest in section 6 made real; `actsInGame: false`, off by default like every mod). Two halves:
+**Step 1: the vendor line.** Two halves:
 
 - *What a vendor pays you* is already on the machine: `GetItemInfo(link)` returns `sellPrice` (its
   11th value) from the item tables shipped with the client, away from any vendor; the stock tooltip
@@ -395,7 +397,7 @@ manifest in section 6 made real; `actsInGame: false`, off by default like every 
   NPCs, items are items; nothing here is about a person, so merchant recording is on under Chronicle
   (Maddison's call to confirm).
 
-**Step 2: the Auction House mod** (`mods/wow/auction-prices`). The same pooling shape with a price
+**Step 2: the auction line**, in the same mod. The same pooling shape with a price
 model on top: what each player's own AH browsing shows (`C_AuctionHouse` / the classic `QueryAuctionItems`
 results on this client, to be checked in game) goes up as `auction` journal events, per item: unit
 price, quantity, time left bucket, and nothing else; the API keeps per-item daily aggregates (min,
@@ -408,9 +410,9 @@ every other read. A full scan (the "Scan" button of the classic addons) is the p
 never automatic, with the same hardware-event rule the client enforces for `/who`. TSM and Undermine do
 this for retail; nobody does it for Forever, which is why it's worth the pooling.
 
-Stages: (1) the Vendor Prices mod's sell line, Lua only, one release; (2) Chronicle's `merchant`
-event, the API pool and `Data/vendors.lua`; (3) the auction mod, after the in-game check of what the
-AH API gives. Open: the two defaults above; whether the AH line shows on every tooltip or only in
+Stages: (1) the Prices mod with the sell line, Lua only, plus Chronicle's `merchant` event (the API
+stores an unknown event type as sent, so recording starts at once), one release; (2) the API pool and
+`Data/vendors.lua`; (3) the auction line, after the in-game check of what the AH API gives. Open: the two defaults above; whether the AH line shows on every tooltip or only in
 bags and at the AH.
 
 ## 8. Identity
@@ -467,8 +469,7 @@ Maddison's; the agent can carry both old and new clients for a release or two.
    confirmations, cinematics, quest tracking, release in battlegrounds, auto-loot and loot rolls
    (never Need); off by default, every chore its own toggle that starts off, Shift pauses it.
    Then the Settings mod (7.2): backup of addon settings and copies between characters, agent side.
-   Then prices (7.3): the Vendor Prices mod's sell line first, merchant pooling second, the auction
-   house mod third.
+   Then the Prices mod (7.3): the sell line first, merchant pooling second, the auction line third.
 3. **Data layer v1.** Parse the three caches, upload them, pool them, write `Data/names.lua` and
    `Data/quests.lua` back down; the kills table gains names for creatures never targeted; the
    Chronicle window (0.2.x plan) reads community numbers from the same files.
