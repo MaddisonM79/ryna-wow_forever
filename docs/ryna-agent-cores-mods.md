@@ -365,6 +365,54 @@ characters on one game account only, restore on a click, never automatic.
   content, delete), a real ElvUI copy in game, and the in-game check above on whether Forever's
   server keeps bindings and macros (which decides whether copying those files does anything).
 
+### 7.3 Prices: vendor and auction house (asked 2026-11-08)
+
+Maddison's ask: "a vendor prices mod on item hover? where would we get that data?", then "second
+step is AH pricing too". Two mods, in that order, because the data comes from three different places.
+
+**Step 1: the Vendor Prices mod** (`mods/wow/vendor-prices`, addon `Ryna_VendorPrices`, the example
+manifest in section 6 made real; `actsInGame: false`, off by default like every mod). Two halves:
+
+- *What a vendor pays you* is already on the machine: `GetItemInfo(link)` returns `sellPrice` (its
+  11th value) from the item tables shipped with the client, away from any vendor; the stock tooltip
+  only shows it while a merchant window is open. The mod adds one line to every item tooltip through
+  the core's tooltip hook (the `TooltipDataProcessor` path Chronicle's lines use): "Sells for 13s 50c"
+  and, for a stack, "(2g 70s for 20)". Nothing to fetch. An item the client hasn't cached answers nil
+  once and fires `GET_ITEM_INFO_RECEIVED`; the line appears on the next hover. Settings: the line on
+  every tooltip or only outside merchant windows (default: every tooltip), the stack total (default
+  on). One probe owed in game before anything else: `/dump select(11, GetItemInfo(2589))` should
+  print 13 (Linen Cloth) away from a vendor; if Forever's Modern engine answers 0 or nil there, the
+  served table below is the source instead.
+- *What vendors charge, and which vendor* is not in `GetItemInfo`. Chronicle records the merchant
+  when the player opens one: a `merchant` journal event (`npc` GUID and name, `zone`, `subzone`, and
+  `items: [ { id, price, currency?, stack, limited } ]`, from `GetMerchantNumItems` /
+  `GetMerchantItemInfo` / `GetMerchantItemLink`). The API pools it per item (`wow_merchant_offers`,
+  newest price per NPC and item; a contract section in docs/wow.md to come) and the data layer
+  (section 7) brings `Data/vendors.lua` back down: "Sold by Innkeeper Gryshka, Orgrimmar, 1g 20s". The
+  client's own `ItemSparse` table (id, name, quality, stack, list buy and sell price) is extracted by the
+  gamedata scripts too, as the listed price and the sell price for items the client hasn't seen; the
+  observed price wins where they differ, since private servers tune prices. Privacy: merchants are
+  NPCs, items are items; nothing here is about a person, so merchant recording is on under Chronicle
+  (Maddison's call to confirm).
+
+**Step 2: the Auction House mod** (`mods/wow/auction-prices`). The same pooling shape with a price
+model on top: what each player's own AH browsing shows (`C_AuctionHouse` / the classic `QueryAuctionItems`
+results on this client, to be checked in game) goes up as `auction` journal events, per item: unit
+price, quantity, time left bucket, and nothing else; the API keeps per-item daily aggregates (min,
+median, market value as the weighted mean of the cheapest 30%, number of listings and sellers) and the
+data layer brings `Data/auctions.lua` down for the tooltip: "AH: 4g 20s each (median this week), 31
+listed". Rules, since this is the one place item data touches people: **never record a seller's name**
+(the event has no field for it; counts of distinct sellers are computed in the addon and sent as a
+number), no per-character history of who posted what, and reading market data needs the app grant like
+every other read. A full scan (the "Scan" button of the classic addons) is the player's own click,
+never automatic, with the same hardware-event rule the client enforces for `/who`. TSM and Undermine do
+this for retail; nobody does it for Forever, which is why it's worth the pooling.
+
+Stages: (1) the Vendor Prices mod's sell line, Lua only, one release; (2) Chronicle's `merchant`
+event, the API pool and `Data/vendors.lua`; (3) the auction mod, after the in-game check of what the
+AH API gives. Open: the two defaults above; whether the AH line shows on every tooltip or only in
+bags and at the AH.
+
 ## 8. Identity
 
 Today: one device client per game (`ryna-wow`, the Palworld agent's), each a public client at
@@ -419,6 +467,8 @@ Maddison's; the agent can carry both old and new clients for a release or two.
    confirmations, cinematics, quest tracking, release in battlegrounds, auto-loot and loot rolls
    (never Need); off by default, every chore its own toggle that starts off, Shift pauses it.
    Then the Settings mod (7.2): backup of addon settings and copies between characters, agent side.
+   Then prices (7.3): the Vendor Prices mod's sell line first, merchant pooling second, the auction
+   house mod third.
 3. **Data layer v1.** Parse the three caches, upload them, pool them, write `Data/names.lua` and
    `Data/quests.lua` back down; the kills table gains names for creatures never targeted; the
    Chronicle window (0.2.x plan) reads community numbers from the same files.
