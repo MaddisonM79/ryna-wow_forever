@@ -6,9 +6,27 @@ if ns.off then return end
 local L = ns.L
 local S = ns.Settings
 
--- "Prices: sell line on (with the stack's total, everywhere)".
+-- The last snapshot: "last auction snapshot 2 hours ago: 192300 rows, 8123 items", or none yet.
+local function snapshotLine()
+  local p = ns.Auction.Store()
+  local last = p and p.auctionLast
+  if type(last) ~= "table" or type(last.at) ~= "number" then return L["no auction snapshot yet"] end
+  return string.format(L["last auction snapshot %s: %d rows, %d items"], ns.Ago(last.at) or "?",
+    tonumber(last.rows) or 0, tonumber(last.items) or 0)
+end
+
+-- The auction piece: the settings, a word when this core is too old to send the events, the last
+-- snapshot.
+local function auctionLine()
+  local piece = S.AuctionSummary()
+  if not ns.Auction.CanSend() then piece = piece .. "; " .. L["nothing sent: the Ryna addon is too old for it"] end
+  return string.format(L["Prices: %s"], piece .. "; " .. snapshotLine())
+end
+
+-- "Prices: sell line on (with the stack's total, everywhere)", then "Prices: auction line on,
+-- snapshots on; last auction snapshot 2 hours ago: 192300 rows, 8123 items".
 local function line()
-  return { string.format(L["Prices: %s"], S.Summary()) }
+  return { string.format(L["Prices: %s"], S.Summary()), auctionLine() }
 end
 
 -- After Automation (45), before the companion app (50).
@@ -20,7 +38,7 @@ local function onOff(v)
 end
 
 local function list()
-  ns.Print(line()[1])
+  for _, l in ipairs(line()) do ns.Print(l) end
   for _, f in ipairs(S.FEATURES) do
     local state = onOff(ns.Setting(f.key))
     if f.under and ns.Setting(f.key) and not ns.Setting(f.under) then

@@ -255,6 +255,8 @@ fn push_account(
             entry.pushed_at = Some(clock.now());
             entry.characters = Some(characters);
             entry.snapshot_id = data.get("snapshotId").cloned();
+            entry.account_id = built.account_id.clone();
+            entry.journal_through = built.journal_through;
             entry.last_error = None;
             (Outcome::Pushed { characters, data }, built.warnings, None)
         }
@@ -469,6 +471,55 @@ mod tests {
             .unwrap()
             .last_error
             .is_none());
+    }
+
+    #[test]
+    fn a_push_keeps_the_account_id_and_journal_reach_and_status_has_them() {
+        let with_id = FIXTURE.replacen(
+            "RynaDB = {",
+            "RynaDB = {\n\tmeta = { accountId = \"a1b2c3d4e5f60718\" },",
+            1,
+        );
+        let e = env(&[("FAKEACCOUNT1", &with_id), ("FAKEACCOUNT2", FIXTURE)]);
+        let http = ScriptedTransport::new();
+        http.json(200, ingested())
+            .json(200, ingested())
+            .json(200, ok());
+        assert!(run(&e, &http, false).ok());
+        // The id is never sent.
+        let body = String::from_utf8(http.requests.borrow()[0].body.clone()).unwrap();
+        assert!(!body.contains("a1b2c3d4e5f60718"));
+        let st = State::load(&e.state);
+        let by_folder = |folder: &str| {
+            st.accounts
+                .iter()
+                .find(|(path, _)| path.contains(folder))
+                .map(|(_, a)| a.clone())
+                .unwrap()
+        };
+        let one = by_folder("FAKEACCOUNT1");
+        let newest = snapshot::build(
+            &crate::lua::parse(&with_id).unwrap(),
+            &snapshot::Source {
+                account_folder: "FAKEACCOUNT1",
+                label: None,
+                saved_at: 0,
+                install_flavor: Some("wowf"),
+            },
+        )
+        .unwrap()
+        .snapshot
+        .journal
+        .iter()
+        .map(|j| j.at)
+        .max();
+        assert_eq!(one.account_id.as_deref(), Some("a1b2c3d4e5f60718"));
+        assert_eq!(one.journal_through, newest);
+        assert!(newest.is_some());
+        // A core without the id: none, so the addon drops nothing early.
+        let two = by_folder("FAKEACCOUNT2");
+        assert_eq!(two.account_id, None);
+        assert_eq!(two.journal_through, newest);
     }
 
     #[test]

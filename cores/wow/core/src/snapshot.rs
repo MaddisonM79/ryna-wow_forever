@@ -486,11 +486,28 @@ pub struct Source<'a> {
     pub install_flavor: Option<&'a str>,
 }
 
-/// A snapshot and what was dropped on the way (malformed journal events).
+/// A snapshot and what was dropped on the way (malformed journal events), with what the agent keeps
+/// for itself about the file and never sends: the addon's account id and how far its journal goes.
 #[derive(Debug, Clone)]
 pub struct Built {
     pub snapshot: Snapshot,
     pub warnings: Vec<String>,
+    /// `RynaDB.meta.accountId`: 16 hex digits the core mints once per RynaDB. It means nothing
+    /// beyond matching this file to its entry in `AgentStatus.lua` (the core drops bulky journal
+    /// events once that entry's `journal_through` reaches them). None from a core without it.
+    pub account_id: Option<String>,
+    /// The newest journal event's `at` in this file: what a push of it has carried.
+    pub journal_through: Option<i64>,
+}
+
+/// `RynaDB.meta.accountId`, when it is the 16 hex digits the core writes.
+fn meta_account_id(db: &Map<String, Value>) -> Option<String> {
+    match db.get("meta").and_then(|m| m.get("accountId")) {
+        Some(Value::String(id)) if id.len() == 16 && id.chars().all(|c| c.is_ascii_hexdigit()) => {
+            Some(id.to_ascii_lowercase())
+        }
+        _ => None,
+    }
 }
 
 /// `account.key`: the first 16 hex digits of sha256(folder name). The API never sees the name.
@@ -663,7 +680,10 @@ pub fn build(parsed: &Value, source: &Source<'_>) -> Result<Built, SnapshotError
         ));
     }
 
+    let journal_through = journal.iter().map(|e| e.at).max();
     Ok(Built {
+        account_id: meta_account_id(db),
+        journal_through,
         snapshot: Snapshot {
             schema: SCHEMA_MAJOR,
             addon,
@@ -1276,6 +1296,37 @@ mod tests {
             e.to_string().starts_with("character Player-1-00000009:"),
             "{e}"
         );
+    }
+
+    #[test]
+    fn the_account_id_and_journal_reach_are_kept_and_never_sent() {
+        let v = db(r#"meta = { accountId = "0123456789ABCDEF" }, journal = {
+            { session = "s", seq = 1, at = 100, char = "c", type = "zone" },
+            { session = "s", seq = 2, at = 300, char = "c", type = "auction" },
+            { session = "s", seq = 3, at = 200, char = "c", type = "gold" },
+        }"#);
+        let b = build(&v, &source("FAKEACCOUNT1")).unwrap();
+        assert_eq!(b.account_id.as_deref(), Some("0123456789abcdef"));
+        assert_eq!(b.journal_through, Some(300));
+        let sent = serde_json::to_string(&b.snapshot).unwrap();
+        assert!(
+            !sent.contains("0123456789") && !sent.contains("accountId") && !sent.contains("meta")
+        );
+
+        // A core without the id (or a malformed one), and an empty journal.
+        for meta in [
+            "",
+            r#"meta = { accountId = "short" },"#,
+            r#"meta = { accountId = 7 },"#,
+        ] {
+            let b = build(
+                &db(&format!("{meta} journal = {{}}")),
+                &source("FAKEACCOUNT1"),
+            )
+            .unwrap();
+            assert_eq!(b.account_id, None, "{meta}");
+            assert_eq!(b.journal_through, None);
+        }
     }
 
     #[test]

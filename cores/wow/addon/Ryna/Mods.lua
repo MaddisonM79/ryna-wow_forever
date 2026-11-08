@@ -16,7 +16,9 @@
 --                                     under its own key (RynaDB[<mod id>]) or in the character
 --                                     record it keeps; Chronicle, the first mod, keeps the keys
 --                                     the companion app reads (characters, guilds, client)
---   Ryna.Journal.Add(type, fields, quiet), .Session(), .Seq(), .Count()
+--   Ryna.Journal.Add(type, fields, quiet), .Session(), .Seq(), .Count(), .Events(type) (that type's
+--                                     events, read only), .Remove(type, drop) (drops those drop(e)
+--                                     is true for), .ShortLived (bulky types leave once uploaded)
 --   Ryna.Settings.Get(key), .Set(key, value), .All(), .AddDefaults(defaults), .COMBAT_LOG_MODES
 --   Ryna.Panel.AddTab{ key, label, order, build(frame), layout(stack, settings) }
 --   Ryna.Panel.AddStatusLines(order, fn)   fn() -> lines for the Status tab, at `order`
@@ -99,6 +101,11 @@ R.Journal = {
   Session = function() return ns.Journal.session end,
   Seq = function() return ns.Journal.seq or 0 end,
   Count = function() return ns.Journal.Count() end,
+  -- Whether this core drops bulky event types once uploaded (Journal.lua, J.SHORT_LIVED); a mod that
+  -- writes them sends nothing on a core without it.
+  ShortLived = ns.Journal.SHORT_LIVED ~= nil,
+  Events = function(eventType) return ns.Journal.Events(eventType) end,
+  Remove = function(eventType, drop) return ns.Journal.Remove(eventType, drop) end,
 }
 
 -- Settings --------------------------------------------------------------------------------------

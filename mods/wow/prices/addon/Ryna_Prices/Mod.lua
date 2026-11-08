@@ -1,9 +1,13 @@
 -- Mod: Prices' namespace, built from the core's mod API (the `Ryna` table, the core addon's Mods.lua).
 -- Prices puts prices on item tooltips (docs/ryna-agent-cores-mods.md section 7.3). Stage 1 is the
 -- vendor line: what a vendor pays for the item and for its stack, from GetItemInfo's sell price,
--- which the client holds for every item it has seen, away from any vendor (Tooltip.lua). Its
--- settings are toggles on its own Prices tab (Settings.lua, Tab.lua); /ryna prices says how they
--- stand (Status.lua). It writes nothing but its settings, and it never prints to chat unasked.
+-- which the client holds for every item it has seen, away from any vendor (Tooltip.lua). Step 2 is
+-- the auction line: one snapshot of the auction house per visit (at most one per 15 minutes),
+-- summarised per item into RynaDB.prices and sent up as `auction` journal events, never anything
+-- about a seller (Auction.lua), and "AH: 4g 20s each · 31 listed · 2 hours ago" on the tooltip
+-- (Tooltip.lua). Its settings are toggles on its own Prices tab (Settings.lua, Tab.lua); /ryna
+-- prices says how they stand (Status.lua). It writes its settings and RynaDB.prices only, and it
+-- never prints to chat unasked.
 --
 -- Every file starts with `if ns.off then return end`: without the mod API (a core addon from before
 -- it), Prices loads nothing at all, and says nothing either (the app installs it with a core that
@@ -24,8 +28,8 @@ ns.API = R
 local metadata = (_G.C_AddOns and _G.C_AddOns.GetAddOnMetadata) or _G.GetAddOnMetadata
 ns.VERSION = R.Try(metadata, addonName, "Version")
 
-for _, name in ipairs({ "Try", "Fn", "IsSecret", "NonEmpty", "Locale", "Print", "Debug", "Run", "ReportError",
-  "MoneyText", "On" }) do
+for _, name in ipairs({ "Try", "Fn", "IsSecret", "NonEmpty", "Now", "Locale", "Print", "Debug", "Run", "After",
+  "ReportError", "MoneyText", "Ago", "On" }) do
   ns[name] = R[name]
 end
 

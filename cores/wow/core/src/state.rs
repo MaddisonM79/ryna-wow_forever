@@ -46,6 +46,12 @@ pub struct AccountState {
     pub snapshot_id: Option<serde_json::Value>,
     #[serde(default)]
     pub last_error: Option<String>,
+    /// The addon's `RynaDB.meta.accountId` in the last pushed file (none from an older core).
+    #[serde(default)]
+    pub account_id: Option<String>,
+    /// The newest journal event `at` in the last pushed file.
+    #[serde(default)]
+    pub journal_through: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

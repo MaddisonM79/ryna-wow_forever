@@ -32,6 +32,11 @@ pub struct StatusAccount {
     pub saved_at: Option<i64>,
     pub pushed_at: Option<i64>,
     pub characters: Option<usize>,
+    /// The addon's `RynaDB.meta.accountId` from the last pushed file, and the newest journal event
+    /// `at` that push carried: the core drops its bulky events (`auction`) up to there, for this
+    /// account only. Both None for a core without the id, and then nothing is dropped early.
+    pub account_id: Option<String>,
+    pub journal_through: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,12 +132,16 @@ impl AgentStatus {
         for a in &self.accounts {
             let _ = writeln!(
                 s,
-                "\t\t{{ key = {}, label = {}, savedAt = {}, pushedAt = {}, characters = {} }},",
+                "\t\t{{ key = {}, label = {}, savedAt = {}, pushedAt = {}, characters = {}, accountId = {}, journalThrough = {} }},",
                 lua_string(&a.key),
                 lua_string(&a.label),
                 opt_int(a.saved_at),
                 opt_int(a.pushed_at),
                 opt_int(a.characters.map(|n| n as i64)),
+                a.account_id
+                    .as_deref()
+                    .map_or_else(|| "nil".to_string(), lua_string),
+                opt_int(a.journal_through),
             );
         }
         s.push_str("\t},\n");
@@ -196,6 +205,8 @@ pub fn for_install(
                 saved_at: s.and_then(|s| s.saved_at),
                 pushed_at: s.and_then(|s| s.pushed_at),
                 characters: s.and_then(|s| s.characters),
+                account_id: s.and_then(|s| s.account_id.clone()),
+                journal_through: s.and_then(|s| s.journal_through),
             }
         })
         .collect();
@@ -286,6 +297,8 @@ mod tests {
                     saved_at: Some(1_762_464_000),
                     pushed_at: Some(1_762_464_060),
                     characters: Some(2),
+                    account_id: Some("0123456789abcdef".into()),
+                    journal_through: Some(1_762_463_990),
                 },
                 StatusAccount {
                     key: "0123456789abcdef".into(),
@@ -293,6 +306,8 @@ mod tests {
                     saved_at: Some(5),
                     pushed_at: None,
                     characters: None,
+                    account_id: None,
+                    journal_through: None,
                 },
             ],
             messages: vec![Message {
@@ -317,7 +332,8 @@ mod tests {
             json!({ "RynaAgentStatus": {
                 "agent": "0.1.0", "signedIn": true, "as": "aerin \"the\" \\ é\n", "lastPush": 1_762_464_060,
                 "accounts": [
-                    { "key": "ba7816bf8f01cfea", "label": "UNT1", "savedAt": 1_762_464_000, "pushedAt": 1_762_464_060, "characters": 2 },
+                    { "key": "ba7816bf8f01cfea", "label": "UNT1", "savedAt": 1_762_464_000, "pushedAt": 1_762_464_060, "characters": 2,
+                      "accountId": "0123456789abcdef", "journalThrough": 1_762_463_990 },
                     { "key": "0123456789abcdef", "label": "Alt's", "savedAt": 5 },
                 ],
                 "latest": [],
@@ -388,6 +404,8 @@ mod tests {
                 saved_at: Some(10),
                 pushed_at: Some(20),
                 characters: Some(2),
+                account_id: Some("00ff00ff00ff00ff".into()),
+                journal_through: Some(15),
                 ..Default::default()
             },
         );
@@ -409,7 +427,8 @@ mod tests {
         let s = &v["RynaAgentStatus"];
         assert_eq!(
             s["accounts"],
-            json!([{ "key": "k1", "label": "Main", "savedAt": 10, "pushedAt": 20, "characters": 2 }])
+            json!([{ "key": "k1", "label": "Main", "savedAt": 10, "pushedAt": 20, "characters": 2,
+                     "accountId": "00ff00ff00ff00ff", "journalThrough": 15 }])
         );
         assert_eq!(s["lastPush"], json!(20));
         assert_eq!(s["messages"][0]["text"], json!("Couldn't reach the API"));

@@ -147,7 +147,7 @@ A mod is a folder with a manifest, installed and toggled by the agent, belonging
   "core": "wow",
   "name": "Prices",
   "version": "0.3.8",
-  "summary": "Puts what a vendor pays for an item, and for its stack, on every item tooltip, away from vendors too. Nothing in chat, nothing done for you.",
+  "summary": "Puts what a vendor pays for an item, and what the auction house asks, on every item tooltip, away from vendors too. Takes one snapshot of the auction house per visit (never anything about a seller). Nothing in chat, nothing done for you.",
   "kind": "addon",                                   // wow: "addon" (an addon folder) or "agent" (no folder: the agent's own work, the Settings mod); other cores: their kinds
   "actsInGame": false,                               // true for anything that does something for the player
   "source": { "kind": "bundled" },                   // or { "kind": "git", "repo": "https://github.com/…", "tag": "v0.1.0", "sha256": "…" }
@@ -466,6 +466,69 @@ Comparison tooltips keep the line. The load events are registered only while a t
 frame of Prices' own. Still owed in game: that Forever's merchant tooltip draws its price as a money
 line (else the two prices stay), the getter names above (a missing one falls back to the button's count
 or one item's price), and whether a recipe tooltip gets two lines (the recipe's and the product's).
+
+**Step 2 as built (2026-11-08, not yet run in game).** `mods/wow/prices/addon/Ryna_Prices/Auction.lua`,
+in the same addon, against the API's contract (docs/wow.md section 17, built in parallel and not yet
+deployed; the agent forwards the unknown `auction` type as sent). The snapshot (`priceAuctionSnapshot`,
+on): at `AUCTION_HOUSE_SHOW`, when this character's last request is 15 minutes old or more
+(`RynaDB.prices.auctionAt[<player GUID>]`, so two characters on one account each have their own),
+one `C_AuctionHouse.ReplicateItems()`; at `REPLICATE_ITEM_LIST_UPDATE`, `GetReplicateItemInfo(i)` for
+`i` from 0 (the probe's index) to `GetNumReplicateItems() - 1`, 2,000 rows a frame through the core's
+`After(0)`. Only the 3rd, 10th, 17th and 18th values are read (count, buyoutPrice, itemID,
+hasAllInfo, by Blizzard's `AuctionHouseDocumentation.lua` on the `forever` branch); the bidder and
+owner values (12th to 15th) are never put in a variable. Rows with no buyout are skipped and
+counted; rows with `hasAllInfo` false (the item's name and link not cached yet) are counted and kept,
+since their numbers are there and a cold cache would otherwise make a partial snapshot that the API
+pools as the real one (review, 2026-11-08). Each listing is one number, `unit * 65536 + count` (the unit price is
+`buyoutPrice / count` rounded to copper, at least 1), so sorting an item's numbers sorts by price and
+192k listings are about 5 MB live in Lua 5.1 (measured with a fake house of 192,300 rows over 15,000
+items: 193 frames, under half a second of Lua in all under an emulated 5.1, the heaviest frame the
+last one, which writes the store and the events). Once all rows are read, the items are summarised
+a slice a frame and each item's list dropped: `n`, `q`, `min`, and `q25` and `med` as the unit price
+at which a quarter and a half of the quantity is reached (so `min <= q25 <= med`). The house
+closing while rows are read, or a logout at any point, stops the walk and keeps nothing; the house
+closing also forgets the throttle time, so the next visit asks again (a logout keeps it). Closing it
+once the rows are all read doesn't stop it (the numbers are in hand). Then, in one frame: the store
+(`RynaDB.prices.auction[itemId] = { min, q25, med, n, q, at }`, replaced per item; pruned to 14 days
+at login, at most 20,000 items, the most recently seen kept), `RynaDB.prices.auctionLast` (`at`,
+`rows`, `items` and the skipped counts, for `/ryna prices`), and the `auction` events: `{ at, rows,
+part, parts, items }` with items `{ id, n, q, min, q25, med }` in id order, 2,000 an event; an item
+outside the API's limits (an id, count or price it would refuse) stays in the store and is left out
+of the event, so a snapshot is never refused whole; past 20 parts the most listed items are sent. A
+browse search (`AUCTION_HOUSE_BROWSE_RESULTS_UPDATED`, and `_ADDED`) folds `minPrice` and
+`totalQuantity` in per item id for results that are the item itself (no random suffix; gear only at
+its own item level, by `C_Item.GetItemInfoInstant`'s equip slot and `GetItemInfo`'s level; battle
+pets skipped): a new entry `{ min, q, at }`, or, over a snapshot entry, only the new `min` and `at`
+(its median and counts stay; nothing within 15 minutes of the snapshot). It is never sent. The
+tooltip line (`priceAuctionLine`, on; `priceAuctionStackTotal`, on) is in Tooltip.lua's hook beside
+the sell line, with the same guards and the same count: "AH: 4g 20s each (84g for 20) · 31 listed ·
+2 hours ago" (the core's `Ago`), "AH: from 10c each · 13754 for sale · just now" for a browse-only
+entry, nothing without an entry, and nothing while `AuctionHouseFrame` is shown and either the
+tooltip belongs to one of its own lists or its browse tab (`BrowseResultsFrame`) lists the item.
+`/ryna prices` adds a line: the auction setting summary and the last snapshot's age, rows and items.
+Nothing is printed unasked. Tests: `mods/wow/prices/test/auction_test.lua`. Owed in game: that
+`REPLICATE_ITEM_LIST_UPDATE` fires (on a client that refuses the registration the rows are read a
+minute after asking, which is a guess at when they are ready), the frame cost on 192k rows, that
+`minPrice` is per unit for stackable goods, that a search fires `AUCTION_HOUSE_BROWSE_RESULTS_UPDATED`,
+and whether a second `ReplicateItems()` inside 15 minutes is refused (the throttle is ours either way).
+One thing for Maddison: the store is one table per account, so a Horde and an Alliance character
+(separate houses on a Classic ruleset) overwrite each other's numbers, newest wins. The journal's
+size, settled with the API's pool (a snapshot is pooled once, from the first upload that carries it,
+every part in that upload; the API keeps every event and takes at most 16 MB an upload; it checks
+`n <= q` too) and a review the same day: an `auction` item is about 140 bytes as the client writes
+SavedVariables, so before adding a snapshot `A.MakeRoom` keeps at most 3 earlier snapshots and 6,000
+auction items in all, oldest dropped first (a bigger house sends its 6,000 most listed items), so the
+journal stays well inside the upload limit however many alts visit between logins. At login
+`Journal.Prune` drops `auction` events once the companion app has pushed them for this account, and
+after 3 days in any case (`J.SHORT_LIVED`). "This account" is `RynaDB.meta.accountId`, 16 random hex
+digits the core mints once per RynaDB; the agent reads it from the file it pushes (never sending it),
+keeps it with `journalThrough` (the newest event `at` that push carried) in its state, and writes both
+into `AgentStatus.lua`'s account entries, so one account's push never drops another's unpushed
+events; an agent or core without the id drops nothing early. A core without the trimming
+(`Ryna.Journal.ShortLived` absent) gets no `auction` events at all, and `/ryna prices` says so. All of
+a snapshot's parts are added in one frame, so they are always in the same save. Tests:
+`mods/wow/prices/test/auction_test.lua`, `journal_prune_test.lua`, and the agent's
+`snapshot`/`runner`/`agent_status` tests.
 
 Chronicle's `merchant` event, as built (`Merchants.lua`, setting `merchants`, on, on the Recording
 tab):

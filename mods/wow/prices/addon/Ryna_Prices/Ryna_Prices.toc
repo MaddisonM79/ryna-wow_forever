@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: Ryna Prices
-## Notes: Puts what a vendor pays for an item, and for its stack, on every item tooltip. A mod of Ryna; /ryna for settings.
+## Notes: Puts what a vendor pays for an item, and what the auction house asks, on every item tooltip. A mod of Ryna; /ryna for settings.
 ## Author: Ryna contributors
 ## Version: 0.3.8
 ## Dependencies: Ryna
@@ -19,6 +19,7 @@ Locales\koKR.lua
 Locales\zhCN.lua
 Locales\zhTW.lua
 Settings.lua
+Auction.lua
 Tooltip.lua
 Tab.lua
 Status.lua

@@ -77,7 +77,15 @@ times (45), mostly from Kobold Vermin (22)". Only this character's numbers, neve
 
 A **journal** of events, kept for 30 days and at most 100,000 events (when it goes past that, the
 oldest are dropped). The cap is high on purpose: the addon may be installed days before the companion
-app first uploads, and the journal has to hold several days of heavy play until then. It records
+app first uploads, and the journal has to hold several days of heavy play until then. Bulky event
+types (`J.SHORT_LIVED` in `Journal.lua`: the Prices mod's `auction` snapshots, megabytes each) are
+dropped at login once the companion app has pushed them for this account, and after 3 days in any
+case. "This account" is `RynaDB.meta.accountId`, 16 random hex digits minted once per RynaDB that
+mean nothing else and are never sent to the API; the app reads it from the file it pushes and writes
+it back into `AgentStatus.lua` with `journalThrough`, the newest event `at` that push carried. An app
+without the id, or a core without it, drops nothing early. Mods see the journal through
+`Ryna.Journal.Events(type)` and `.Remove(type, drop)`, and `Ryna.Journal.ShortLived` says whether
+this core trims bulky types at all. It records
 logins and logouts, zone changes, quests accepted and turned in, level-ups, deaths, gold changes of a
 gold or more, group changes, the merchants you open (`merchant`: what they sell and for how much;
 mods/wow/README.md has the shape), and **sightings** of other players (see the census settings below).
