@@ -3,6 +3,7 @@
 import { computed, ref } from "vue";
 import { api, errorText, type InstallView, type ModView } from "../api";
 import { ACTS_IN_GAME, installedLines, modAction, modRow, modToggledLines } from "../describe";
+import { watchGameClosing } from "../gameWatch";
 import { log, refresh, status } from "../store";
 
 /** The installs a mod goes into: the ones the addon goes into (Forever, or a chosen folder). */
@@ -15,6 +16,8 @@ const modInstalls = computed(() => status.value?.installs.filter(canInstall) ?? 
 const toggling = ref<string | null>(null);
 /** What the last toggle said, by mod id. */
 const modResults = ref<Record<string, { ok: boolean; lines: string[] }>>({});
+// "The game is running: /reload ..." goes once the game has closed.
+watchGameClosing(modResults);
 
 function modResultOf(id: string): { ok: boolean; lines: string[] }[] {
   const r = modResults.value[id];

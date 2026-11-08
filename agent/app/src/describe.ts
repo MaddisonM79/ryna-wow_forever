@@ -273,16 +273,30 @@ export function modChangeLines(changes: ModChange[]): string[] {
   );
 }
 
+/** The line a result carries while the game runs, after a mod's toggle and after an install. */
+export const RUNNING_CHANGE = "The game is running: /reload or log out and in to load the change.";
+export const RUNNING_INSTALL = "The game is running: /reload or log out and in to load it.";
+const CLOSED_CHANGE = "The game picks it up at the next login or /reload.";
+
+/** Whether a result's lines still tell the player about the running game. */
+export function waitsOnGame(lines: string[]): boolean {
+  return lines.some((l) => l === RUNNING_CHANGE || l === RUNNING_INSTALL);
+}
+
+/**
+ * The lines once the game has closed: a toggle's "game is running" line becomes how the game picks
+ * the change up; an install's goes (its first line already says the game loads it at the next login).
+ */
+export function gameClosedLines(lines: string[]): string[] {
+  return lines.flatMap((l) => (l === RUNNING_CHANGE ? [CLOSED_CHANGE] : l === RUNNING_INSTALL ? [] : [l]));
+}
+
 /** What a mod's toggle did, for the activity log. */
 export function modToggledLines(r: ModToggleResult): string[] {
   const lines = [`${r.name}: ${r.on ? "on" : "off"}.`, ...modChangeLines(r.changes)];
   for (const path of r.waitingForAddon) lines.push(`${r.name} goes into ${path} with the addon: install the addon there.`);
   if (r.changes.length) {
-    lines.push(
-      r.gameRunning
-        ? "The game is running: /reload or log out and in to load the change."
-        : "The game picks it up at the next login or /reload.",
-    );
+    lines.push(r.gameRunning ? RUNNING_CHANGE : CLOSED_CHANGE);
   }
   return lines;
 }
@@ -292,7 +306,7 @@ export function installedMessage(r: InstallResult): string[] {
   const lines = [
     `Installed ${r.version ?? "the addon"}. The game loads it at the next login or /reload.`,
   ];
-  if (r.gameRunning) lines.push("The game is running: /reload or log out and in to load it.");
+  if (r.gameRunning) lines.push(RUNNING_INSTALL);
   return lines;
 }
 

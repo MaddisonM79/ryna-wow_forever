@@ -3,12 +3,15 @@
 import { ref } from "vue";
 import { api, errorText, type InstallView } from "../api";
 import { addonRow, flavorName, installedLines, installedMessage } from "../describe";
+import { watchGameClosing } from "../gameWatch";
 import { chooseGameFolder, log, refresh, status } from "../store";
 
 /** The install whose addon is being copied, if any (one at a time). */
 const installing = ref<string | null>(null);
 /** What the last install said, by install path. */
 const results = ref<Record<string, { ok: boolean; lines: string[] }>>({});
+// "The game is running: /reload ..." goes once the game has closed.
+watchGameClosing(results);
 
 /** The addon goes into Forever installs, or anything in a folder that was chosen. */
 function canInstall(i: InstallView): boolean {
