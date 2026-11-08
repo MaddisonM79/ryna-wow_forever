@@ -294,12 +294,28 @@ Each entry: what we expected, what Forever does, how we know, what to do.
   a minute later by `GetNumReplicateItems()` gave **192,300** rows: the whole house in one pull.
   `GetReplicateItemInfo(0)` returned the classic-shaped list `name "Simple Branch of Power", texture
   135139, count 1, qualityID 2, usable false, level 10, levelType "REQ_LEVEL_ABBR", minBid 0,
-  minIncrement 0, buyoutPrice 700, bidAmount 0, [13..16] nil, saleStatus 0, itemID 15933, hasAllInfo true`:
-  the owner fields (13 to 16: highBidder, bidderFullName, owner, ownerFullName) came back **nil**, so the
-  client does not hand addons seller names here. Prices are per listing; divide by `count` for a unit price.
+  minIncrement 0, buyoutPrice 700, bidAmount 0, [owner fields] nil, saleStatus 0, itemID 15933, hasAllInfo true`:
+  the owner fields came back **nil**, so the client does not hand addons seller names here. Prices are
+  per listing; divide by `count` for a unit price. The index starts at 0.
+- **Positions, by Blizzard's Forever docs** (Docs `AuctionHouseDocumentation.lua`, `GetReplicateItemInfo`,
+  read 2026-11-08): 18 returns, `name, texture, count, qualityID, usable, level, levelType, minBid,
+  minIncrement, buyoutPrice, bidAmount, highBidder, bidderFullName, owner, ownerFullName, saleStatus,
+  itemID, hasAllInfo`. So the owner and bidder fields are the **12th to 15th** (this page said 13 to 16
+  before; the probe's list had the 12th nil too), `itemID` is the 17th and `hasAllInfo` (nilable) the
+  18th. The Prices mod reads only the 3rd, 10th, 17th and 18th. The docs also name the events
+  `REPLICATE_ITEM_LIST_UPDATE`, `AUCTION_HOUSE_BROWSE_RESULTS_UPDATED` (no payload) and
+  `AUCTION_HOUSE_BROWSE_RESULTS_ADDED` (`addedBrowseResults`), and `BrowseResultInfo` as `itemKey,
+  appearanceLink, totalQuantity, minPrice, containsOwnerItem`. Blizzard's Forever window is
+  `AuctionHouseFrame`, with `BrowseResultsFrame`, `ItemBuyFrame` and `CommoditiesBuyFrame` as children
+  (Blz `Blizzard_AuctionHouseUI/Shared/Blizzard_AuctionHouseFrame.xml:4,82,99,107`); a browse row's
+  tooltip is GameTooltip owned by that row (Blz `Blizzard_AuctionHouseTableBuilder.lua:79-82`).
 - **Still unknown**: the replicate throttle (ATT allows itself one every 15 minutes), whether a replicate
-  row's `hasAllInfo` is ever false on Forever, and whether commodities (stackable goods) differ from
-  items in `GetBrowseResults`' shape beyond `totalQuantity`.
+  row's `hasAllInfo` is ever false on Forever, whether commodities (stackable goods) differ from
+  items in `GetBrowseResults`' shape beyond `totalQuantity`, and so whether `minPrice` is per unit for a
+  stackable item (Linen Bandage's 10c reads like a unit price), whether `REPLICATE_ITEM_LIST_UPDATE`
+  fires on Forever after `ReplicateItems()`, and whether a search fires
+  `AUCTION_HOUSE_BROWSE_RESULTS_UPDATED`. The Prices mod's auction line assumes the documented
+  behaviour for each and says so (`mods/wow/README.md`).
 
 ### Mail
 
@@ -433,7 +449,7 @@ Each entry: what we expected, what Forever does, how we know, what to do.
 | Links use `\|cnIQ2:` | verified in game | Team | 2026-11-08 |
 | `C_AuctionHouse` present; `QueryAuctionItems`, `GetAuctionItemInfo` nil; copper values and favourites supported | verified in game | Team | 2026-11-08 |
 | `GetBrowseResults()` entries: `itemKey`, `totalQuantity`, `minPrice` (copper), `containsOwnerItem` | verified in game | Team | 2026-11-08 |
-| `ReplicateItems()` returns the whole house (192,300 rows); `GetReplicateItemInfo(i)` has no owner fields (13..16 nil) | verified in game | Team | 2026-11-08 |
+| `ReplicateItems()` returns the whole house (192,300 rows); `GetReplicateItemInfo(i)` has no owner fields (12th to 15th, nil) | verified in game; positions per Blizzard's docs | Team; Docs | 2026-11-08 |
 | `C_Container.*` works | verified in game; seen in BVP | Team; BVP | 2026-11-08 |
 | `TooltipDataProcessor` and `C_TooltipInfo` work | seen in Forever addons | BVP, Questie, ATT | 2026-11-08 |
 | Merchant frame reads `C_MerchantFrame.GetItemInfo` | Blizzard source | Blz `MerchantFrame.lua:290` | 2026-11-08 |
@@ -491,6 +507,8 @@ above. These are the next ones, each one line to paste.
 5. `/run C_AuctionHouse.ReplicateItems()` again within 15 minutes of the last one, then `/dump C_AuctionHouse.GetNumReplicateItems()` (is there a throttle?)
 6. `/dump GetGuildRosterInfo(1)` (needs a character in a guild)
 7. `/dump C_MerchantFrame.GetItemInfo(1).isPurchasable` at a vendor with enough money for item 1 (does it mean "can afford"?)
+8. Open the auction house with Prices on and `/ryna debug on`: a "prices: auction snapshot: N rows, M items, ..." line should follow within a minute or so (`REPLICATE_ITEM_LIST_UPDATE` fired and the walk ran); note any stutter while it reads
+9. `/run local f=CreateFrame("Frame") f:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED") f:SetScript("OnEvent",function(_,e) local r=C_AuctionHouse.GetBrowseResults() print(e,#r,r[1] and r[1].minPrice,r[1] and r[1].totalQuantity) end)`, then search for a stackable item whose cheapest listing you can see (is `minPrice` per unit?)
 
 ## Links
 

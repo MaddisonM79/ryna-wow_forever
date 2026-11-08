@@ -62,13 +62,45 @@ is the whole of it).
   one exception every Ryna addon shares: an error inside its tooltip hook is caught, and the core's
   `ReportError` prints one "an error in … was caught (reported once)" line for it, once per kind
   of error per session. A slot's count is clamped to the item's stack size, and a link never takes
-  a button's count. It writes only its settings. **Owed in game**: `/dump select(11, C_Item.GetItemInfo(2589))` away
+  a button's count. The vendor line writes only its settings. **Owed in game**: `/dump select(11, C_Item.GetItemInfo(2589))` away
   from a vendor, once Linen Cloth is loaded (hover one first: a bare id query doesn't load it), should
   print 13 (its sell price in copper); the global `GetItemInfo(2589)` is nil on Forever. If the
   engine answers 0 or nil there, the line never shows (every item reads as selling for nothing;
-  nothing breaks), and the sell price has to come from the served table instead (7.3's stage 2). Later stages add what
-  vendors charge (Chronicle's `merchant` events, pooled by the API) and an auction-house line to the
-  same mod. `test/prices_test.lua` runs it against a fake client.
+  nothing breaks), and the sell price has to come from the served table instead (7.3's stage 2). A later stage adds what
+  vendors charge (Chronicle's `merchant` events, pooled by the API).
+
+  **The auction line** (7.3's step 2, `Auction.lua`; the API's contract is docs/wow.md section 17 in
+  the api repo). When you open the auction house, and this character's last snapshot was asked for
+  15 minutes ago or more (`RynaDB.prices.auctionAt[<player GUID>]`; ATT keeps the same throttle),
+  the mod calls `C_AuctionHouse.ReplicateItems()` once; at `REPLICATE_ITEM_LIST_UPDATE` it reads the
+  rows (`GetReplicateItemInfo(i)`, `i` from 0) 2,000 a frame, skipping and counting rows with no
+  buyout or with `hasAllInfo` false, then summarises each item a slice a frame: `n` listings, `q`
+  total quantity, and the unit buyout (`buyoutPrice / count`, rounded to copper) as `min`, `q25` and
+  `med`, the 25th and 50th percentiles weighted by quantity. Each listing is held as one number
+  until its item is summarised (about 5 MB for the 192,300 rows Stormwind had on 2026-11-08), then
+  dropped. The house closing or a logout while rows are read stops the walk and nothing is kept.
+  The result goes to `RynaDB.prices.auction[itemId] = { min, q25, med, n, q, at }` (copper, one table
+  for the account, replaced per item by each snapshot; entries older than 14 days are dropped at
+  login, and past 20,000 items the most recently seen are kept), and up as `auction` journal events
+  (`{ at, rows, part, parts, items = { { id, n, q, min, q25, med } } }`, integers only, at most 2,000
+  items an event; an item outside the API's limits is kept here and left out of the event). A
+  search on the browse tab folds its results in as `{ min = minPrice, q = totalQuantity, at }` (no
+  median), unless the item has a snapshot from the last 15 minutes; searches are never sent.
+  **What is not stored or sent: anything about a seller or a bidder.** Forever's rows have no owner
+  fields (they come back nil), the mod never reads those positions, and the event has no field for
+  one; per-listing rows never leave the client. The tooltip line: "AH: 4g 20s each · 31 listed ·
+  2 hours ago", with the stack's total when the tooltip says how many ("AH: 4g 20s each (84g for 20)
+  · ..."), or "AH: from 10c each · 13754 for sale · just now" where only a search saw the item;
+  nothing for an item never seen, and nothing while the auction house window shows that item's
+  price itself (a tooltip from its own lists, or an item the browse tab lists). Settings, on the
+  Prices tab: `priceAuctionLine` (on), `priceAuctionStackTotal` (on), `priceAuctionSnapshot` (on;
+  off means no `ReplicateItems()` and no event, while searches still feed the line). `/ryna prices`
+  shows them and the last snapshot's age, rows and items. **Owed in game**: that
+  `REPLICATE_ITEM_LIST_UPDATE` fires after `ReplicateItems()` (without it the mod reads the rows a
+  minute after asking), what the walk costs a frame on 192k rows, that `GetBrowseResults()`'
+  `minPrice` is per unit for stackable goods, and that `AUCTION_HOUSE_BROWSE_RESULTS_UPDATED` is the
+  event a search fires. `test/prices_test.lua` runs the vendor line against a fake client,
+  `test/auction_test.lua` the auction side.
 - `settings/`: **Settings**, off by default (`kind: "agent"`, `defaultOn: false`, `actsInGame:
   false`; docs/ryna-agent-cores-mods.md 7.2): addon settings copied between characters and backed
   up to ryna.io, encrypted on this machine (the API's docs/wow.md section 15). All of it is the core's
