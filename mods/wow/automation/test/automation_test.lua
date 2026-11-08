@@ -219,7 +219,8 @@ _G.C_CVar = {
     W.cvars[name] = value
   end,
 }
-_G.GetNumTrainerServices = function() return #W.services end
+-- Forever answers 0 to addons while the window lists its spells (W.countLies); the indexed reads still work.
+_G.GetNumTrainerServices = function() return W.countLies and 0 or #W.services end
 _G.GetTrainerServiceInfo = function(i)
   local s = W.services[i]
   if s then return s.name, s.sub, s.kind end
@@ -804,8 +805,7 @@ local function services()
 end
 fresh(); set({ autoTrainAll = true }); W.services = services(); _G.ClassTrainerFrame.shown = true
 fire("TRAINER_SHOW"); fire("TRAINER_SHOW"); settle()
-check(called("SetTrainerServiceTypeFilter") == 1, "the filter is set to available services, once")
-advance(0.25)
+check(called("SetTrainerServiceTypeFilter") == 0, "the type filter is never touched")
 check(called("BuyTrainerService") == 1, "one purchase at a time")
 advance(2)
 check(called("BuyTrainerService") == 3, "everything within the 10g cap, after each index moved")
@@ -820,6 +820,11 @@ check(chat[#chat] and chat[#chat]:find("1 more is over your 10g cap", 1, true) ~
 fresh(); set({ autoTrainAll = true }); W.services = services(); _G.ClassTrainerFrame.shown = true; W.money = 15000
 fire("TRAINER_SHOW"); advance(2)
 check(called("BuyTrainerService") == 2, "not more than your gold (1g 50s: Fireball, Slow Fall)")
+-- Forever: the count says 0, the list is walked by index.
+fresh(); set({ autoTrainAll = true }); W.services = services(); W.countLies = true; _G.ClassTrainerFrame.shown = true
+fire("TRAINER_SHOW"); advance(2)
+check(called("BuyTrainerService") == 3, "a count of 0 (Forever): the list is still walked by index, 3 bought")
+W.countLies = nil
 fresh(); set({ autoTrainAll = true }); W.services = services(); _G.ClassTrainerFrame.shown = true
 commands.auto.run("traincap", "traincap 0")
 check(settings.autoTrainCap == 0, "/ryna auto traincap 0")
@@ -836,7 +841,7 @@ check(called("BuyTrainerService") == 0, "Shift at the trainer: nothing")
 fresh(); set({ autoTrainAll = true }); W.services = services(); _G.ClassTrainerFrame.shown = true
 fire("TRAINER_SHOW"); advance(0.25)
 _G.ClassTrainerFrame.shown = false; fire("TRAINER_CLOSED"); advance(2)
-check(called("BuyTrainerService") == 1, "closing the trainer stops it")
+check(called("BuyTrainerService") == 2, "closing the trainer stops it (two bought in the first 0.25 s, none after)")
 
 -- Loot rolls. ---------------------------------------------------------------------------------------
 local function rolls()

@@ -2,11 +2,16 @@
 -- cap (autoTrainCap, in copper; 10 gold until it's set with /ryna auto traincap <gold>, and 0 means
 -- train nothing), off by default.
 --
--- A frame after TRAINER_SHOW, while the trainer's window is up, it shows only available services
--- (SetTrainerServiceTypeFilter, where the client has it) and buys them in the trainer's order, one
--- every 0.2 seconds, while the total stays within the cap and the player's gold. The list is read
--- again before every purchase, since indices move as services are learnt, and nothing is bought twice
--- in a visit. One chat line at the end: what was learnt and what it cost, and how many were left.
+-- A frame after TRAINER_SHOW, while the trainer's window is up, it buys the available services in
+-- the trainer's order, one every 0.2 seconds, while the total stays within the cap and the player's
+-- gold. The list is read again before every purchase, since indices move as services are learnt, and
+-- nothing is bought twice in a visit. One chat line at the end: what was learnt and what it cost, and
+-- how many were left.
+--
+-- Forever's trainer (checked in game 2026-11-07): GetNumTrainerServices() answers 0 to addons while the
+-- window lists its spells, but GetTrainerServiceInfo(i), GetTrainerServiceCost(i) and
+-- BuyTrainerService(i) work by index. So the list is walked by index until the first empty one (the
+-- count, when the client gives one, only raises the floor), and the type filter isn't touched.
 
 local _, ns = ...
 if ns.off then return end
@@ -17,6 +22,8 @@ local T = {}
 ns.Trainer = T
 
 local INTERVAL = 0.2
+-- How far to walk by index when the client's count is 0 or short (Forever's is 0).
+T.WALK_LIMIT = 200
 local visit, open, started = 0, false, nil
 
 local function trainerOpen(v)
@@ -31,8 +38,11 @@ end
 -- how many available ones don't fit.
 function T.Next(bought, total, cap, startMoney)
   local pick, label, price, left = nil, nil, nil, 0
-  for i = 1, tonumber((ns.G("GetNumTrainerServices"))) or 0 do
+  local count = tonumber((ns.G("GetNumTrainerServices"))) or 0
+  for i = 1, math.max(count, T.WALK_LIMIT) do
     local name, subText, kind = ns.G("GetTrainerServiceInfo", i)
+    -- Past the count the client admits to, the first index with no service is the end of the list.
+    if not ns.NonEmpty(name) and i > count then break end
     if kind == "available" and ns.NonEmpty(name) then
       local text = ns.NonEmpty(subText) and string.format("%s (%s)", name, subText) or name
       if not bought[text] then
@@ -83,12 +93,7 @@ ns.On("TRAINER_SHOW", function()
     local v = visit
     if started == v then return end
     started = v
-    local filtered = ns.Fn("SetTrainerServiceTypeFilter") ~= nil
-    if filtered then ns.G("SetTrainerServiceTypeFilter", "available", 1) end
-    -- The filter rebuilds the list; read it a moment later.
-    ns.After(filtered and INTERVAL or 0, "automation train", function()
-      step(v, cap, money(), {}, {}, 0)
-    end)
+    step(v, cap, money(), {}, {}, 0)
   end)
 end)
 
