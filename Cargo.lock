@@ -3739,7 +3739,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "ryna"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "anyhow",
  "clap",
@@ -3750,7 +3750,7 @@ dependencies = [
 
 [[package]]
 name = "ryna-agent"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "base64 0.22.1",
  "directories",
@@ -3768,7 +3768,7 @@ dependencies = [
 
 [[package]]
 name = "ryna-wow-app"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "ryna-agent",
  "ryna-wow-core",
@@ -3786,7 +3786,7 @@ dependencies = [
 
 [[package]]
 name = "ryna-wow-core"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "anyhow",
  "flate2",
