@@ -869,13 +869,22 @@ mod tests {
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         let resources = conf["bundle"]["resources"].as_object().unwrap();
         for key in resources.keys() {
-            assert!(!key.contains('*'), "{key}: a glob loses the addon's subfolders");
+            assert!(
+                !key.contains('*'),
+                "{key}: a glob loses the addon's subfolders"
+            );
         }
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let mut folders = vec![("../../../cores/wow/addon/Ryna".to_string(), "Ryna".to_string())];
+        let mut folders = vec![(
+            "../../../cores/wow/addon/Ryna".to_string(),
+            "Ryna".to_string(),
+        )];
         for m in core_mods::bundled() {
             for folder in &m.addons {
-                folders.push((format!("../../../mods/wow/{}/addon/{folder}", m.id), folder.clone()));
+                folders.push((
+                    format!("../../../mods/wow/{}/addon/{folder}", m.id),
+                    folder.clone(),
+                ));
             }
         }
         for (from, folder) in folders {
@@ -892,10 +901,16 @@ mod tests {
                 .map(str::trim)
                 .filter(|l| !l.is_empty() && !l.starts_with('#'))
                 .collect();
-            assert!(files.iter().any(|f| f.starts_with("Locales")), "{folder}.toc loads its Locales");
+            assert!(
+                files.iter().any(|f| f.starts_with("Locales")),
+                "{folder}.toc loads its Locales"
+            );
             for file in files {
                 let rel = file.replace('\\', "/");
-                assert!(dir.join(&rel).is_file(), "{folder}: the TOC loads {rel}, which isn't there");
+                assert!(
+                    dir.join(&rel).is_file(),
+                    "{folder}: the TOC loads {rel}, which isn't there"
+                );
             }
         }
     }
