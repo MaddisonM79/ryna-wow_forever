@@ -375,16 +375,19 @@ added to the same addon later, each line its own toggle on the mod's tab.
 
 **Step 1: the vendor line.** Two halves:
 
-- *What a vendor pays you* is already on the machine: `GetItemInfo(link)` returns `sellPrice` (its
-  11th value) from the item tables shipped with the client, away from any vendor; the stock tooltip
+- *What a vendor pays you* is already on the machine: `C_Item.GetItemInfo(link)` returns `sellPrice`
+  (its 11th value) from the item tables shipped with the client, away from any vendor (checked in game
+  2026-11-08: the `GetItemInfo` global is nil on Forever, an unloaded item answers nothing at all rather
+  than nil and a bare ID doesn't load it, so the mod asks with `C_Item.RequestLoadItemDataByID` and
+  refreshes on `ITEM_DATA_LOAD_RESULT`; `C_Item.GetItemInfoInstant` works but has no price); the stock tooltip
   only shows it while a merchant window is open. The mod adds one line to every item tooltip through
   the core's tooltip hook (the `TooltipDataProcessor` path Chronicle's lines use): "Sells for 13s 50c"
   and, for a stack, "(2g 70s for 20)". Nothing to fetch. An item the client hasn't cached answers nil
   once and fires `GET_ITEM_INFO_RECEIVED`; the line appears on the next hover. Settings: the line on
   every tooltip or only outside merchant windows (default: every tooltip), the stack total (default
-  on). One probe owed in game before anything else: `/dump select(11, GetItemInfo(2589))` should
-  print 13 (Linen Cloth) away from a vendor; if Forever's Modern engine answers 0 or nil there, the
-  served table below is the source instead.
+  on). One probe still owed in game: `/dump select(11, C_Item.GetItemInfo(C_Container.GetContainerItemLink(0, 1)))`
+  should print the first bag item's sell price; if a loaded item answers 0 or nothing, the served table
+  below is the source instead.
 - *What vendors charge, and which vendor* is not in `GetItemInfo`. Chronicle records the merchant
   when the player opens one: a `merchant` journal event (`npc` GUID and name, `zone`, `subzone`, and
   `items: [ { id, price, currency?, stack, limited } ]`, from `GetMerchantNumItems` /
