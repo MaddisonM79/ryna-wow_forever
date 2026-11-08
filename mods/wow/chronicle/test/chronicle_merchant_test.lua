@@ -5,8 +5,9 @@
 --
 --   lua5.1 mods/wow/chronicle/test/chronicle_merchant_test.lua
 --
--- This proves the logic (the event's shape, currencies only when there are any, once per NPC, the
--- 200-item cap, waiting for MERCHANT_UPDATE when links haven't loaded, and the `merchants` setting);
+-- This proves the logic (the event's shape, currencies only when there are any, currency slots, once
+-- per NPC per login, retrying on late item data, the partial list at close, the merchant filter, the
+-- fingerprint's 7-day skip and 30-day pruning, the 200-item cap, and the `merchants` setting);
 -- it can't prove the client's merchant API returns what's assumed. That's the game's.
 -- luacheck: ignore 1
 
@@ -39,15 +40,31 @@ _G.UnitGUID = function(unit) if unit == "npc" and SHOP then return SHOP.guid end
 _G.UnitName = function(unit) if unit == "npc" and SHOP then return SHOP.name end end
 _G.GetRealZoneText = function() return "Orgrimmar" end
 _G.GetSubZoneText = function() return "Valley of Strength" end
-_G.GetMerchantNumItems = function() return SHOP and #SHOP.items or 0 end
+-- emptyAtClose: the client lists nothing once the window is closing.
+local closing, emptyAtClose = false, false
+_G.GetMerchantNumItems = function()
+  if closing and emptyAtClose then return 0 end
+  return SHOP and #SHOP.items or 0
+end
+-- A slot selling a currency has a currency link (or, with `noLink`, none at all).
 _G.GetMerchantItemLink = function(i)
   local it = SHOP and SHOP.items[i]
-  if it and not unloaded[i] then return itemLink(it.id) end
+  if not it or unloaded[i] then return nil end
+  if it.currency then
+    if it.noLink then return nil end
+    return "|cnIQ1:|Hcurrency:" .. it.currency .. ":0|h[Currency " .. it.currency .. "]|h|r"
+  end
+  return itemLink(it.id)
 end
+local FILTER = 1 -- LE_LOOT_FILTER_ALL
+_G.GetMerchantFilter = function() return FILTER end
+local clock = 1800000000
 -- The classic order: name, texture, price, quantity, numAvailable, isUsable, extendedCost.
 _G.GetMerchantItemInfo = function(i)
   local it = SHOP and SHOP.items[i]
-  if it then return "Item " .. it.id, 133784, it.price, it.stack, it.available, true, it.cost ~= nil end
+  if it then
+    return "Item " .. tostring(it.id or it.currency), 133784, it.price, it.stack, it.available, true, it.cost ~= nil
+  end
 end
 _G.GetMerchantItemCostInfo = function(i)
   local it = SHOP and SHOP.items[i]
@@ -96,6 +113,7 @@ _G.Ryna = {
   IsSecret = function() return false end,
   NonEmpty = function(s) if type(s) == "string" and s ~= "" then return s end end,
   Locale = function() return "enUS" end,
+  Now = function() return clock end,
   Print = function(m) chat[#chat + 1] = "Ryna: " .. m end,
   Debug = function() end,
   Run = run,
@@ -157,9 +175,13 @@ local function visit(shop)
   fire("MERCHANT_SHOW")
 end
 local function leave()
+  closing = true
   fire("MERCHANT_CLOSED")
+  closing = false
   SHOP = nil
 end
+-- A new login: the per-login memory goes, RynaDB stays.
+local function relog() ns.Merchants.seen = {} end
 local function shop(guid, name, items) return { guid = guid, name = name, items = items } end
 local function one(id, price) return { { id = id, price = price, stack = 1, available = -1 } } end
 local function merchants()
@@ -170,7 +192,8 @@ end
 
 check(not ns.off and ns.Merchants ~= nil, "Merchants.lua loads")
 check(defaults.merchants == true, "merchants is on by default")
-check(handlers.MERCHANT_SHOW and handlers.MERCHANT_UPDATE and handlers.MERCHANT_CLOSED, "the three merchant events")
+check(handlers.MERCHANT_SHOW and handlers.MERCHANT_UPDATE and handlers.MERCHANT_CLOSED
+  and handlers.GET_ITEM_INFO_RECEIVED, "the merchant events, and late item data")
 
 -- No character record yet (before login): nothing.
 visit(shop("Creature-0-1-1-1-3933-0000000001", "Innkeeper Gryshka", one(4540, 25)))
@@ -209,11 +232,17 @@ check(d.currency and d.currency[1].amount == 75 and d.currency[1].currencyId == 
   and d.currency[1].name == "Honor Points" and d.currency[1].itemId == nil, "a currency: amount, id and name")
 check(d.currency and d.currency[2].itemId == 20560 and d.currency[2].amount == 2, "an item as a cost: its item id")
 check(d.price == 900, "and its copper part")
+check(e.filter == 1 and e.partial == nil, "the filter it was listed under (all), and not partial")
 fire("MERCHANT_UPDATE")
-check(#merchants() == 1, "MERCHANT_UPDATE in the same visit writes nothing more")
+fire("GET_ITEM_INFO_RECEIVED", 4540, true)
+check(#merchants() == 1, "updates in the same visit write nothing more")
 leave()
+check(#merchants() == 1, "nor does closing it")
+local fp = db.chronicle and db.chronicle.merchants and db.chronicle.merchants[gryshka.guid]
+check(type(fp) == "table" and type(fp.hash) == "string" and fp.at == clock,
+  "its fingerprint is kept in RynaDB.chronicle.merchants, with the time")
 
--- Once per NPC. --------------------------------------------------------------------------------
+-- Once per NPC per login. -----------------------------------------------------------------------
 visit(gryshka)
 fire("MERCHANT_UPDATE")
 leave()
@@ -223,52 +252,143 @@ visit(other)
 leave()
 check(#merchants() == 2 and merchants()[2].npc == other.guid, "another NPC: its own event")
 
--- Links that haven't loaded: wait for MERCHANT_UPDATE. ------------------------------------------
+-- Across logins: the fingerprint. ----------------------------------------------------------------
+relog()
+clock = clock + 6 * 86400
+visit(gryshka)
+leave()
+check(#merchants() == 2, "next login, same list within 7 days: not written again")
+check(db.chronicle.merchants[gryshka.guid].at == clock - 6 * 86400, "and its fingerprint keeps the time it was written")
+relog()
+gryshka.items[1].price = 30
+visit(gryshka)
+leave()
+check(#merchants() == 3 and merchants()[3].items[1].price == 30, "a changed price is written again")
+gryshka.items[1].price = 25
+relog()
+clock = clock + 8 * 86400
+visit(other)
+leave()
+check(#merchants() == 4, "an unchanged list more than 7 days old is written again")
+
+-- Pruned at login after 30 days.
+clock = clock + 31 * 86400
+db.chronicle.merchants["Creature-0-1-1-1-1-0000000099"] = { hash = "x", at = clock - 86400 }
+db.chronicle.merchants.junk = "not a table"
+local gone = ns.Merchants.Prune()
+check(db.chronicle.merchants[gryshka.guid] == nil and db.chronicle.merchants[other.guid] == nil
+  and db.chronicle.merchants.junk == nil, "fingerprints older than 30 days (and malformed ones) go: " .. gone)
+check(db.chronicle.merchants["Creature-0-1-1-1-1-0000000099"] ~= nil, "recent ones stay")
+relog()
+local count = #merchants()
+local function since() return #merchants() - count end
+
+-- Links that haven't loaded: wait, and retry on late item data. ----------------------------------
 local slow = { guid = "Creature-0-1-1-1-3881-0000000004", name = "Grimtak", items = {
   { id = 3173, price = 4, stack = 1, available = -1 }, { id = 2672, price = 4, stack = 1, available = -1 } } }
 unloaded[2] = true
 visit(slow)
-check(#merchants() == 2, "a link not loaded at MERCHANT_SHOW: nothing yet")
+check(since() == 0, "a link not loaded at MERCHANT_SHOW: nothing yet")
+fire("MERCHANT_UPDATE")
+check(since() == 0, "still not loaded at MERCHANT_UPDATE: still nothing (no partial list closes the NPC)")
 unloaded[2] = nil
+fire("GET_ITEM_INFO_RECEIVED", 2672, true)
+check(since() == 1 and merchants()[#merchants()].items[2] and merchants()[#merchants()].partial == nil,
+  "GET_ITEM_INFO_RECEIVED finds it complete: written, with every item")
 fire("MERCHANT_UPDATE")
-check(#merchants() == 3 and #merchants()[3].items == 2, "the first MERCHANT_UPDATE writes it, with every item")
-fire("MERCHANT_UPDATE")
-check(#merchants() == 3, "later updates write nothing")
 leave()
+check(since() == 1, "and nothing more that visit")
 
--- Still not loaded at the update: what's there.
-local partial = { guid = "Creature-0-1-1-1-3882-0000000005", name = "Zansoa", items = {
+-- Never complete, and no MERCHANT_UPDATE at all: what loaded is written at close, as partial.
+local zansoa = { guid = "Creature-0-1-1-1-3882-0000000005", name = "Zansoa", items = {
   { id = 6256, price = 5, stack = 1, available = -1 }, { id = 6530, price = 1, stack = 1, available = -1 } } }
 unloaded[1] = true
-visit(partial)
-fire("MERCHANT_UPDATE")
-check(#merchants() == 4 and #merchants()[4].items == 1 and merchants()[4].items[1].id == 6530,
-  "a link still missing at the update: the items that loaded")
-unloaded[1] = nil
+visit(zansoa)
+check(since() == 1, "an item missing: nothing while open")
+emptyAtClose = true
 leave()
+emptyAtClose = false
+local z = merchants()[#merchants()]
+check(since() == 2 and z.npc == zansoa.guid and z.partial == true and #z.items == 1 and z.items[1].id == 6530,
+  "closed without completing (and listing nothing by then): the last reading, partial = true")
+visit(zansoa)
+check(since() == 2, "a partial list doesn't close the NPC: still waiting at the next visit")
+unloaded[1] = nil
+fire("GET_ITEM_INFO_RECEIVED", 6256, true)
+check(since() == 3 and merchants()[#merchants()].partial == nil and #merchants()[#merchants()].items == 2,
+  "and once it loads, the whole list is written")
+leave()
+visit(zansoa)
+leave()
+check(since() == 3, "then the NPC is done for the login")
+
+-- Currency sold as goods. ----------------------------------------------------------------------
+visit(shop("Creature-0-1-1-1-4000-0000000010", "Token Vendor", {
+  { currency = 1901, price = 0, stack = 50, available = -1 },
+  { id = 4540, price = 25, stack = 1, available = -1 },
+}))
+local t = merchants()[#merchants()]
+check(since() == 4 and t.partial == nil, "a slot selling a currency doesn't hold the list back")
+check(t.items[1].currencyId == 1901 and t.items[1].id == nil and t.items[1].stack == 50,
+  "it's { currencyId, price, stack }")
+leave()
+
+-- The filter: a class-filtered list doesn't close the NPC. -------------------------------------------
+FILTER = 2
+local filtered = shop("Creature-0-1-1-1-4100-0000000011", "Class Vendor", one(2589, 13))
+visit(filtered)
+check(since() == 5 and merchants()[#merchants()].filter == 2, "a filtered list is written, with its filter")
+fire("MERCHANT_UPDATE")
+check(since() == 5, "once per visit and filter")
+FILTER = 1
+fire("MERCHANT_UPDATE")
+check(since() == 6 and merchants()[#merchants()].filter == 1,
+  "the filter set to all in the same visit: the whole list too")
+leave()
+visit(filtered)
+leave()
+check(since() == 6, "then done for the login")
+FILTER = 2
+local filtered2 = shop("Creature-0-1-1-1-4200-0000000012", "Other Class Vendor", one(2589, 13))
+visit(filtered2)
+leave()
+relog()
+visit(filtered2)
+leave()
+check(since() == 7, "only a filtered list seen: next visit (unchanged, within 7 days) isn't written again")
+FILTER = 1
+visit(filtered2)
+leave()
+check(since() == 8, "but the whole list, once the filter shows it, is")
 
 -- The cap. -------------------------------------------------------------------------------------
 local big = { guid = "Creature-0-1-1-1-9999-0000000006", name = "Big Shop", items = {} }
 for i = 1, 250 do big.items[i] = { id = 10000 + i, price = i, stack = 1, available = -1 } end
 visit(big)
 leave()
-check(#merchants() == 5 and #merchants()[5].items == 200,
-  "at most 200 items: " .. #(merchants()[5] or { items = {} }).items)
+check(since() == 9 and #merchants()[#merchants()].items == 200,
+  "at most 200 items: " .. #merchants()[#merchants()].items)
 
 -- C_MerchantFrame.GetItemInfo's named fields, where the client has it. ----------------------------
 _G.C_MerchantFrame = {
   GetItemInfo = function(i)
     local it = SHOP.items[i]
-    return { name = "x", price = it.price, stackCount = it.stack, numAvailable = it.available }
+    return { name = "x", price = it.price, stackCount = it.stack, numAvailable = it.available,
+      currencyID = it.currency }
   end,
 }
+local classic = _G.GetMerchantItemInfo
 _G.GetMerchantItemInfo = function() error("not used when C_MerchantFrame is there") end
-visit(shop("Creature-0-1-1-1-7777-0000000007", "Modern", { { id = 4600, price = 50, stack = 20, available = 4 } }))
+visit(shop("Creature-0-1-1-1-7777-0000000007", "Modern", {
+  { id = 4600, price = 50, stack = 20, available = 4 },
+  { currency = 1792, noLink = true, price = 0, stack = 1, available = -1 },
+}))
 leave()
-local m = merchants()[6] or { items = { {} } }
-check(m.items[1].price == 50 and m.items[1].stack == 20 and m.items[1].limited == true,
+local m = merchants()[#merchants()]
+check(since() == 10 and m.items[1].price == 50 and m.items[1].stack == 20 and m.items[1].limited == true,
   "C_MerchantFrame.GetItemInfo is read")
-_G.C_MerchantFrame = nil
+check(m.partial == nil and m.items[2].currencyId == 1792, "its currencyID marks a currency slot with no link")
+_G.C_MerchantFrame, _G.GetMerchantItemInfo = nil, classic
 
 -- Nothing to go by. ------------------------------------------------------------------------------
 visit(shop(nil, "Nobody", one(1, 1)))
@@ -276,22 +396,22 @@ leave()
 visit({ guid = "Creature-0-1-1-1-1-0000000008", name = "Empty", items = {} })
 fire("MERCHANT_UPDATE")
 leave()
-check(#merchants() == 6, "no GUID, or nothing listed: nothing")
+check(since() == 10, "no GUID, or nothing listed: nothing")
 
 -- The setting off. -------------------------------------------------------------------------------
 settings.merchants = false
 visit(shop("Creature-0-1-1-1-2-0000000009", "Off", one(1, 1)))
 fire("MERCHANT_UPDATE")
 leave()
-check(#merchants() == 6, "merchants off: nothing recorded")
+check(since() == 10, "merchants off: nothing recorded")
 settings.merchants = nil
 visit(shop("Creature-0-1-1-1-2-0000000009", "Off", one(1, 1)))
 leave()
-check(#merchants() == 7, "on again: the NPC skipped while off is recorded at its next visit")
+check(since() == 11, "on again: the NPC skipped while off is recorded at its next visit")
 
 -- The Recording tab's switch. ---------------------------------------------------------------------
 local recording
-for _, t in ipairs(tabs) do if t.key == "recording" then recording = t end end
+for _, tab in ipairs(tabs) do if tab.key == "recording" then recording = tab end end
 check(recording ~= nil, "the Recording tab")
 local stack = { y = 0 }
 function stack.text() end

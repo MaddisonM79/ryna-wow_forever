@@ -17,6 +17,7 @@ local function onLogin()
   ns.Journal.Add("session", { kind = "login", clock = time(), zone = rec.zone })
   ns.Debug("login: record built for %s, level %s %s, in %s", rec.fullName, rec.level, rec.class, rec.zone)
   ns.Run("nearby sightings", ns.Sightings.RegisterNearby)
+  ns.Run("merchant fingerprints", ns.Merchants.Prune)
   ns.Session.Start(rec.guid)
   ns.Run("session strip", ns.Strip.Create)
 end
