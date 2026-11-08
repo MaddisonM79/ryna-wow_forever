@@ -49,7 +49,10 @@ async function toggleMod(m: ModView, on: boolean): Promise<void> {
     const done = await api.setModEnabled(m.id, on);
     const lines = modToggledLines(done);
     for (const line of lines) log(line);
-    modResults.value[m.id] = { ok: true, lines: lines.slice(1) };
+    // The first line ("Settings: on.") is the checkbox itself; an agent mod has nothing after it,
+    // and an empty banner drew as a blank pill (2026-11-08).
+    const rest = lines.slice(1);
+    if (rest.length) modResults.value[m.id] = { ok: true, lines: rest };
   } catch (e) {
     modResults.value[m.id] = { ok: false, lines: [errorText(e)] };
     log(`Couldn't turn ${m.name} ${on ? "on" : "off"}: ${errorText(e)}`, "error");
@@ -91,7 +94,7 @@ async function toggleMod(m: ModView, on: boolean): Promise<void> {
           </button>
           <span v-if="modInstalls.length > 1" class="path">{{ i.path }}</span>
         </p>
-        <p v-for="r in modResultOf(m.id)" :key="m.id" class="banner" :class="{ error: !r.ok }">
+        <p v-for="r in modResultOf(m.id).filter((r) => r.lines.length)" :key="m.id" class="banner" :class="{ error: !r.ok }">
           <template v-for="(line, n) in r.lines" :key="n">
             <br v-if="n > 0" />{{ line }}
           </template>

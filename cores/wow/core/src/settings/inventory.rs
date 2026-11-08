@@ -171,10 +171,17 @@ impl Inventory {
     /// character ([`Inventory::new_character`] does that, on purpose).
     pub fn character(&self, s: &str) -> Result<Character> {
         let c = Character::parse(s)?;
+        // Matched on the whole `Name-Realm` first: on Forever a character's name can itself hold a
+        // hyphen (`Maddie-Shammie` on realm `91`), so splitting at the first `-` gets the wrong
+        // pair; the folder-by-folder match below is the fallback for a realm with a hyphen in it.
+        let whole = s.trim();
         self.characters
             .iter()
-            .find(|k| {
-                k.name.eq_ignore_ascii_case(&c.name) && k.realm.eq_ignore_ascii_case(&c.realm)
+            .find(|k| k.to_string().eq_ignore_ascii_case(whole))
+            .or_else(|| {
+                self.characters.iter().find(|k| {
+                    k.name.eq_ignore_ascii_case(&c.name) && k.realm.eq_ignore_ascii_case(&c.realm)
+                })
             })
             .cloned()
             .ok_or_else(|| {
@@ -542,6 +549,33 @@ mod tests {
             name: name.into(),
             realm: realm.into(),
         }
+    }
+
+    #[test]
+    fn a_forever_name_with_a_hyphen_is_found_whole() {
+        // On Forever a character can be `Maddie-Shammie` on realm `91`, so `Maddie-Shammie-91`
+        // split at the first `-` is the wrong pair; the lookup matches the whole string first.
+        let dir = tempfile::tempdir().unwrap();
+        let i = install(
+            dir.path(),
+            &[("Details", "## SavedVariablesPerCharacter: DetailsCharDB\n")],
+        );
+        put(
+            &i,
+            "91/Maddie-Shammie/SavedVariables/Details.lua",
+            "DetailsCharDB = {}\n",
+        );
+        let inv = inventory(&i, "ACCOUNT1").unwrap();
+        assert_eq!(inv.characters, [ch("Maddie-Shammie", "91")]);
+        assert_eq!(
+            inv.character("maddie-shammie-91").unwrap(),
+            ch("Maddie-Shammie", "91")
+        );
+        assert_eq!(
+            inv.character("Maddie-Shammie-91").unwrap().to_string(),
+            "Maddie-Shammie-91"
+        );
+        assert!(inv.character("Maddie-Shammie-92").is_err());
     }
 
     #[test]
