@@ -402,9 +402,13 @@ added to the same addon later, each line its own toggle on the mod's tab.
   (Maddison's call to confirm).
 
 **Step 2: the auction line**, in the same mod. The same pooling shape with a price
-model on top: what each player's own AH browsing shows (`C_AuctionHouse` / the classic `QueryAuctionItems`
-results on this client, to be checked in game) goes up as `auction` journal events, per item: unit
-price, quantity, time left bucket, and nothing else; the API keeps per-item daily aggregates (min,
+model on top: the house itself: checked in game 2026-11-08 (docs/forever-client-api.md, Auction house),
+`C_AuctionHouse.ReplicateItems()` hands an addon the whole house in one pull (192,300 rows on
+Stormwind that day, each with item id, count, buyout, bid, quality, level and **no owner fields**), so the
+mod takes one snapshot per auction-house visit (never more than once per 15 minutes, the throttle ATT
+honours), walks the rows over several frames, aggregates per item in the addon (listings, quantity, min
+unit buyout, a few price buckets for a median) and sends that aggregate up as one `auction` journal event;
+per-listing rows never leave the client; the API keeps per-item daily aggregates (min,
 median, market value as the weighted mean of the cheapest 30%, number of listings and sellers) and the
 data layer brings `Data/auctions.lua` down for the tooltip: "AH: 4g 20s each (median this week), 31
 listed". Rules, since this is the one place item data touches people: **never record a seller's name**

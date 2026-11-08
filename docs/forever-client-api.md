@@ -267,9 +267,21 @@ Each entry: what we expected, what Forever does, how we know, what to do.
 - **Not on Forever, as far as the source shows**: `QueryAuctionItems` and `GetAuctionItemInfo`.
   The only mention of `QueryAuctionItems` on the `forever` branch is the doc string saying
   `ReplicateItems` replaces it (Blz, grep).
-- **Unknown**: everything about behaviour in game (throttles, whether `ReplicateItems` returns the
-  whole house, whether prices carry copper, commodities vs items for Forever's goods). Probes first
-  in the list below.
+- **Verified in game (Team, 2026-11-08, Stormwind auctioneer, 1.60.1.70862):** `C_AuctionHouse ~= nil`
+  is true, `QueryAuctionItems` and `GetAuctionItemInfo` are nil; `SupportsCopperValues()` and
+  `FavoritesAreAvailable()` are both true. After one Browse search, `GetBrowseResults()[1]` is a
+  `BrowseResultInfo`: `itemKey { itemID = 1251, itemLevel = 1, itemSuffix = 0, battlePetSpeciesID = 0 }`,
+  `totalQuantity = 13754`, `minPrice = 10` (copper: Linen Bandage at 10c), `containsOwnerItem = false`;
+  before any search it answers nothing. `C_AuctionHouse.ReplicateItems()` (a `/run`, no output) followed
+  a minute later by `GetNumReplicateItems()` gave **192,300** rows: the whole house in one pull.
+  `GetReplicateItemInfo(0)` returned the classic-shaped list `name "Simple Branch of Power", texture
+  135139, count 1, qualityID 2, usable false, level 10, levelColHeader "REQ_LEVEL_ABBR", minBid 0,
+  minIncrement 0, buyoutPrice 700, bidAmount 0, [13..16] nil, saleStatus 0, itemID 15933, hasAllInfo true`:
+  the owner fields (13 to 16: highBidder, bidderFullName, owner, ownerFullName) came back **nil**, so the
+  client does not hand addons seller names here. Prices are per listing; divide by `count` for a unit price.
+- **Still unknown**: the replicate throttle (ATT allows itself one every 15 minutes), whether a replicate
+  row's `hasAllInfo` is ever false on Forever, and whether commodities (stackable goods) differ from
+  items in `GetBrowseResults`' shape beyond `totalQuantity`.
 
 ### Mail
 
@@ -369,6 +381,9 @@ Each entry: what we expected, what Forever does, how we know, what to do.
 | `GetItemInfo` global nil | verified in game | Team | 2026-11-08 |
 | `C_Item.GetItemInfo`: 18 returns, nothing when unloaded | verified in game; documented | Team; Docs | 2026-11-08 |
 | Links use `\|cnIQ2:` | verified in game | Team | 2026-11-08 |
+| `C_AuctionHouse` present; `QueryAuctionItems`, `GetAuctionItemInfo` nil; copper values and favourites supported | verified in game | Team | 2026-11-08 |
+| `GetBrowseResults()` entries: `itemKey`, `totalQuantity`, `minPrice` (copper), `containsOwnerItem` | verified in game | Team | 2026-11-08 |
+| `ReplicateItems()` returns the whole house (192,300 rows); `GetReplicateItemInfo(i)` has no owner fields (13..16 nil) | verified in game | Team | 2026-11-08 |
 | `C_Container.*` works | verified in game; seen in BVP | Team; BVP | 2026-11-08 |
 | `TooltipDataProcessor` and `C_TooltipInfo` work | seen in Forever addons | BVP, Questie, ATT | 2026-11-08 |
 | Merchant frame reads `C_MerchantFrame.GetItemInfo` | Blizzard source | Blz `MerchantFrame.lua:290` | 2026-11-08 |
@@ -409,22 +424,18 @@ Each entry: what we expected, what Forever does, how we know, what to do.
 
 ### Still owed
 
-Auction house first; each is one line to paste.
+The auction-house probes (the old 1 to 4) were answered on 2026-11-08 and folded into the Auction house section above. Each line below is one to paste.
 
-1. `/dump C_AuctionHouse ~= nil, QueryAuctionItems ~= nil, GetAuctionItemInfo ~= nil` (anywhere)
-2. `/dump C_AuctionHouse.SupportsCopperValues(), C_AuctionHouse.FavoritesAreAvailable()` (at the auctioneer)
-3. `/dump C_AuctionHouse.GetBrowseResults()[1]` (after one search in the Browse tab)
-4. `/run C_AuctionHouse.ReplicateItems()` then, a minute later, `/dump C_AuctionHouse.GetNumReplicateItems(), C_AuctionHouse.GetReplicateItemInfo(0)` (at the auctioneer; ATT allows this once per 15 minutes)
-5. `/dump WOW_PROJECT_ID, WOW_PROJECT_CAMELOT, GetBuildInfo()`
-6. `/run print(select("#", C_Item.GetItemInfo(2589)), select(11, C_Item.GetItemInfo(2589)))` (after hovering Linen Cloth, away from a vendor)
-7. `/dump GetMerchantItemInfo ~= nil, C_MerchantFrame.GetItemInfo(1)` (at a vendor)
-8. `/dump GetNumTrainerServices(), GetTrainerServiceInfo(1)` (trainer window open, a second after it opens)
-9. `/dump GetNumTalentTabs ~= nil, GetTalentTabInfo ~= nil, C_ClassTalents.GetActiveConfigID()`
-10. `/dump GetProfessions ~= nil, GetSkillLineInfo ~= nil, C_SkillInfo.GetNumSkillLines()`
-11. `/dump GetInboxHeaderInfo(1)` (at a mailbox with mail)
-12. `/dump GetLootRollItemInfo ~= nil, RollOnLoot ~= nil, GetLootSourceInfo ~= nil`
-13. `/dump C_Secrets and C_Secrets.HasSecretRestrictions(), GetCVarBool("loadDeprecationFallbacks")`
-14. `/dump UnitGUID("target")` on the same mob twice, a minute apart (is the obfuscated spawn part stable?)
+1. `/dump WOW_PROJECT_ID, WOW_PROJECT_CAMELOT, GetBuildInfo()`
+2. `/run print(select("#", C_Item.GetItemInfo(2589)), select(11, C_Item.GetItemInfo(2589)))` (after hovering Linen Cloth, away from a vendor)
+3. `/dump GetMerchantItemInfo ~= nil, C_MerchantFrame.GetItemInfo(1)` (at a vendor)
+4. `/dump GetNumTrainerServices(), GetTrainerServiceInfo(1)` (trainer window open, a second after it opens)
+5. `/dump GetNumTalentTabs ~= nil, GetTalentTabInfo ~= nil, C_ClassTalents.GetActiveConfigID()`
+6. `/dump GetProfessions ~= nil, GetSkillLineInfo ~= nil, C_SkillInfo.GetNumSkillLines()`
+7. `/dump GetInboxHeaderInfo(1)` (at a mailbox with mail)
+8. `/dump GetLootRollItemInfo ~= nil, RollOnLoot ~= nil, GetLootSourceInfo ~= nil`
+9. `/dump C_Secrets and C_Secrets.HasSecretRestrictions(), GetCVarBool("loadDeprecationFallbacks")`
+10. `/dump UnitGUID("target")` on the same mob twice, a minute apart (is the obfuscated spawn part stable?)
 
 ## Links
 
