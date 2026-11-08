@@ -324,6 +324,15 @@ function ns.InitDB()
   if type(db.guilds) ~= "table" then db.guilds = {} end
   if type(db.journal) ~= "table" then db.journal = {} end
   if type(db.settings) ~= "table" then db.settings = {} end
+  -- meta.accountId: 16 random hex digits minted once per RynaDB (one per WoW account), meaning
+  -- nothing beyond telling this account's journal apart in the companion app's AgentStatus.lua
+  -- (Journal.lua, J.Uploaded). Never shown, never sent to the API.
+  if type(db.meta) ~= "table" then db.meta = {} end
+  if type(db.meta.accountId) ~= "string" or not db.meta.accountId:match("^%x+$") or #db.meta.accountId ~= 16 then
+    local hex = {}
+    for i = 1, 16 do hex[i] = string.format("%x", math.random(0, 15)) end
+    db.meta.accountId = table.concat(hex)
+  end
   ns.ApplySettingDefaults(db.settings)
   RynaDB = db
   ns.db = db

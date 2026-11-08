@@ -18,27 +18,62 @@ local function keepNewest(list, n)
   return out
 end
 
--- Bulky event types, kept only until the companion app has uploaded them, and never longer than
--- this many seconds. The Prices mod's `auction` snapshots run to megabytes each, and the API's ingest
--- takes at most 16 MB and keeps every event it stores, so carrying them for 30 days would fill it.
+-- Bulky event types, kept only until the companion app has uploaded them (this account's
+-- journalThrough in AgentStatus.lua), and never longer than this many seconds. The Prices mod's
+-- `auction` snapshots run to megabytes each, and the API's ingest takes at most 16 MB and keeps
+-- every event it stores, so carrying them for 30 days would fill it.
 J.SHORT_LIVED = { auction = 3 * 86400 }
 
--- Whether the companion app has uploaded everything this journal held at the last save: every
--- account it reports was pushed after it was last saved (pushedAt >= savedAt), and the newest of
--- those saves is no older than the journal's newest event (`newest`), so that save carried them.
--- AgentStatus.lua (RynaAgentStatus) is the app's, rewritten after each sync and read at login.
-function J.Uploaded(newest)
+-- This account's entry in the companion app's AgentStatus.lua (RynaAgentStatus, rewritten after each
+-- sync and read at login): the one whose accountId is RynaDB.meta.accountId. Nil when the app
+-- predates the id, or hasn't pushed this account yet.
+local function myAccount()
   local a = _G.RynaAgentStatus
   local accounts = type(a) == "table" and a.accounts
-  if type(accounts) ~= "table" or type(newest) ~= "number" then return false end
-  local latest
+  local id = type(ns.db) == "table" and type(ns.db.meta) == "table" and ns.db.meta.accountId
+  if type(accounts) ~= "table" or type(id) ~= "string" then return nil end
   for _, acct in ipairs(accounts) do
-    if type(acct) == "table" and type(acct.savedAt) == "number" then
-      if type(acct.pushedAt) ~= "number" or acct.pushedAt < acct.savedAt then return false end
-      if not latest or acct.savedAt > latest then latest = acct.savedAt end
+    if type(acct) == "table" and acct.accountId == id then return acct end
+  end
+  return nil
+end
+
+-- Whether the companion app has uploaded event `e`: this account's journalThrough (the newest event
+-- `at` the app pushed for it) has reached it. Another account's push says nothing about this one.
+function J.Uploaded(e, acct)
+  acct = acct or myAccount()
+  return type(acct) == "table" and type(acct.journalThrough) == "number" and type(e) == "table"
+    and type(e.at) == "number" and acct.journalThrough >= e.at
+end
+
+-- A mod's view of the journal (Ryna.Journal.Events, .Remove): the events of one type, and removing
+-- some of them. The Prices mod uses them to keep its bulky `auction` events in bounds.
+function J.Events(eventType)
+  local out = {}
+  local journal = ns.db and ns.db.journal
+  if type(journal) ~= "table" then return out end
+  for i = 1, #journal do
+    local e = journal[i]
+    if type(e) == "table" and e.type == eventType then out[#out + 1] = e end
+  end
+  return out
+end
+
+-- Removes the events of `eventType` for which drop(e) is true; returns how many went.
+function J.Remove(eventType, drop)
+  local journal = ns.db and ns.db.journal
+  if type(journal) ~= "table" or type(drop) ~= "function" then return 0 end
+  local out, n = {}, 0
+  for i = 1, #journal do
+    local e = journal[i]
+    if type(e) == "table" and e.type == eventType and drop(e) then
+      n = n + 1
+    else
+      out[#out + 1] = e
     end
   end
-  return latest ~= nil and latest >= newest
+  if n > 0 then ns.db.journal = out end
+  return n
 end
 
 -- On login: drop events older than 30 days (and anything malformed), the short-lived types once
@@ -47,18 +82,13 @@ function J.Prune()
   local now = ns.Now()
   local cutoff = now - KEEP_SECONDS
   local old = ns.db.journal
-  local newest
-  for i = 1, #old do
-    local e = old[i]
-    if type(e) == "table" and type(e.at) == "number" and (not newest or e.at > newest) then newest = e.at end
-  end
-  local uploaded = J.Uploaded(newest)
+  local acct = myAccount()
   local out, short = {}, 0
   for i = 1, #old do
     local e = old[i]
     if type(e) == "table" and type(e.at) == "number" and e.at >= cutoff then
       local limit = J.SHORT_LIVED[e.type]
-      if limit and (uploaded or e.at < now - limit) then
+      if limit and (J.Uploaded(e, acct) or e.at < now - limit) then
         short = short + 1
       else
         out[#out + 1] = e
@@ -67,8 +97,7 @@ function J.Prune()
   end
   ns.db.journal = keepNewest(out, CAP)
   ns.Debug("journal: %d events kept from earlier sessions, %d older than 30 days dropped, %d bulky ones "
-    .. "dropped (%s)", #ns.db.journal, #old - #ns.db.journal - short, short,
-    uploaded and "uploaded" or "past their limit")
+    .. "dropped (uploaded or past their limit)", #ns.db.journal, #old - #ns.db.journal - short, short)
 end
 
 function J.StartSession(guid)
