@@ -45,7 +45,8 @@ standalone branch "running concurrently with both retail and Classic", developed
 | Engine | Retail (Midnight) 12.1.5 with Forever's changes; it "shares Mainline WoW's UI architecture, including the vast majority of APIs available in 12.1.5" | W160 intro and its "12.1.5 (69952)" to "1.60.1 (70205)" diff |
 | Ruleset | Classic | QuestieDB `src/config.lua:66` (`rules = "Classic"`); Pawn treats it with Classic stats and scales (`Pawn/ScaleTemplates.lua:14`) |
 | Interface number | **16001** | Every Forever addon's TOC (Disk `Interface/AddOns/*/*.toc`); WTOC's table ("Forever 16001"); https://warcraft.wiki.gg/wiki/GetBuildInfo (row 1.60.1, build 70790, 16001) |
-| `WOW_PROJECT_ID` | 18, `WOW_PROJECT_CAMELOT` | Combat log header `PROJECT_ID,18` (Disk `Logs/WoWCombatLog-110826_113736.txt`, line 1); https://warcraft.wiki.gg/wiki/WOW_PROJECT_ID; W160 ("Added `WOW_PROJECT_CAMELOT` (18) constant", build 70170) |
+| `WOW_PROJECT_ID` | 18, `WOW_PROJECT_CAMELOT` (also 18) | In game: `/dump WOW_PROJECT_ID, WOW_PROJECT_CAMELOT` gave `18, 18` (Team, 2026-11-08); combat log header `PROJECT_ID,18` (Disk `Logs/WoWCombatLog-110826_113736.txt`, line 1); https://warcraft.wiki.gg/wiki/WOW_PROJECT_ID; W160 ("Added `WOW_PROJECT_CAMELOT` (18) constant", build 70170) |
+| `GetBuildInfo()` | `"1.60.1", "70862", "Nov  6 2026", 16001, "", " "`: six values, the retail shape (no Classic seventh `currentVersion`) | In game (Team, 2026-11-08); shape per https://warcraft.wiki.gg/wiki/GetBuildInfo |
 | TOC game type | `camelot`, with `forever` as an alias since build 70291; family `mainline` | WTOC; W160 |
 
 Our TOCs already say `## Interface: 16001` (Disk `Ryna/Ryna.toc`). That number is now verified;
@@ -88,8 +89,8 @@ What not to key on:
   only for engine questions (which frame exists, whether CLEU may be registered).
 - **`WOW_PROJECT_ID` alone, or `== WOW_PROJECT_MAINLINE` as "this is retail"**. W160 cites a forum
   thread titled "WOW_PROJECT_ID for Forever seems to be the same as Retail" from before the
-  constant was added in build 70170. The current build reports 18 (combat log header above), but
-  the history says not to depend on it.
+  constant was added in build 70170. The current build reports 18 in game (table above), but the
+  history says not to depend on it.
 - **`ClassicExpansionAtLeast(...)`**: "ClassicExpansionAtLeast is always true in Forever" (ElvUI
   `LibDualSpec-1.0.lua:72`).
 - **`WOW_PROJECT_ID == WOW_PROJECT_CLASSIC`**: false on Forever; "Classic Era; does not include
@@ -133,7 +134,7 @@ Each entry: what we expected, what Forever does, how we know, what to do.
   `canaccessallvalues`, `canaccesssecrets`, `hasanysecretvalues`, `scrubsecretvalues`,
   `secretwrap`, `dropsecretaccess` (Docs `FrameScriptDocumentation.lua`), and `C_Secrets.*`
   predicates such as `HasSecretRestrictions()` (retail docs, `SecretPredicateAPIDocumentation.lua`
-  on `live`; not checked on `forever`).
+  on `live`), which exists and returns true in game (Team, 2026-11-08).
 - **Do instead**: pass every value from the game through a guard like the core's `IsSecret`
   before comparing it, and keep combat-time reads to a minimum.
 
@@ -146,6 +147,11 @@ Each entry: what we expected, what Forever does, how we know, what to do.
   `itemDescription` (Docs `ItemDocumentation.lua`; added in 12.0.0 per the wiki page), and is
   flagged `MayReturnNothing = true`: an unloaded item gives **zero values**, not nil, and a bare id
   does not load it (Team probe; Docs).
+- **Verified in game (Team, 2026-11-08)**: for loaded Linen Cloth,
+  `/run print(select("#", C_Item.GetItemInfo(2589)), select(11, C_Item.GetItemInfo(2589)))` printed
+  `18 13 7 5 0 0 nil true` twice: 18 returns, `sellPrice` 13 copper, `classID` 7, `subclassID` 5,
+  `bindType` 0, `expansionID` 0, `setID` nil, `isCraftingReagent` true, then an empty
+  `itemDescription`. The Prices mod's sell line has a real price to show.
 - **Do instead**: `C_Item.RequestLoadItemDataByID`, then `ITEM_DATA_LOAD_RESULT` or
   `GET_ITEM_INFO_RECEIVED`; or `Item:CreateFromItemID(id):ContinueOnItemLoad` (ATT
   `src/UI/Windows/Auctions.lua:57-59`). `C_Item.GetItemInfoInstant` works but has no price (Team).
@@ -185,8 +191,14 @@ Each entry: what we expected, what Forever does, how we know, what to do.
   (Docs `MerchantFrameDocumentation.lua`). Retail 12.0 **removed**
   `GetMerchantItemInfo` (W120). `C_MerchantFrame.SellAllJunkItems` exists (ElvUI
   `Game/Shared/Modules/Bags/Bags.lua:61`).
-- **Unknown**: whether the global `GetMerchantItemInfo` exists on Forever. Chronicle falls back to
-  it; on Forever that path is probably dead.
+- **Verified in game (Team, 2026-11-08, Marda Weller, a weapons merchant)**: `GetMerchantItemInfo`
+  is **nil**, so Chronicle's fallback to it never runs on Forever. `C_MerchantFrame.GetItemInfo(1)`
+  returned `{ name = "Cutlass", price = 2023, stackCount = 1, numAvailable = -1, texture = 135346,
+  isPurchasable = false, isUsable = false, hasExtendedCost = false, isQuestStartItem = false }`,
+  with `currencyID` and `spellID` absent (nil fields don't print). The window showed the Cutlass at
+  20s 23c, so `price` is copper for `stackCount` pieces. `numAvailable = -1` is unlimited stock.
+  `isPurchasable` was false while the character had 3s 14c, which suggests it means "can afford
+  now"; that reading is **unverified**.
 
 ### Trainers
 
@@ -199,10 +211,12 @@ Each entry: what we expected, what Forever does, how we know, what to do.
   `GetCategorizeTrainerUI`, `SetCategorizeTrainerUI`, `GetTrainerType` (Team `/dump C_Trainer`;
   W160 lists exactly those three as Forever additions; retail's `C_Trainer` has no functions,
   `TrainerDocumentation.lua` on `live`).
-- **Contradiction, unresolved**: Blizzard's own list loop is `for index = 1, GetNumTrainerServices()`
-  (Blz `Blizzard_TrainerUI.lua:460-468`), so the count is not 0 for Blizzard's code. Either it is
-  0 only for tainted callers, or our read came before `TRAINER_UPDATE`. Keep walking by index
-  until the first empty slot, as Automation does; the probe is owed.
+- **Resolved in game (Team, 2026-11-08, Brother Joshua, priest trainer, window open)**:
+  `/dump GetNumTrainerServices(), GetTrainerServiceInfo(1)` gave `157, "Lesser Heal", "unavailable",
+  135929, 10, "Rank 3", ""`. The count works for user code too, matching Blizzard's own loop
+  (Blz `Blizzard_TrainerUI.lua:460-468`), and the sixth value `category` is an empty string at this
+  trainer. The 0 on 2026-11-07 was most likely read before the list arrived (at `TRAINER_SHOW`,
+  before `TRAINER_UPDATE`); that cause is a guess. Automation's walk by index stays as a safety net.
 - The window groups services into categories (`categorizeTrainerUI` CVar) except at pet trainers
   (Blz `Blizzard_TrainerUI/Mainline/Blizzard_TrainerUI_Camelot.lua:9-11`).
 
@@ -247,8 +261,12 @@ Each entry: what we expected, what Forever does, how we know, what to do.
   Ryna's identity code already uses `First-Last` (Team `cores/wow/addon/README.md`).
 - GUIDs: "the server ID and spawn ID portions of creature, vehicle, pet and game
   object GUIDs have been replaced with obfuscated values" (blue post 2026-10-16 in W160). The NPC
-  id field is not mentioned as changed. **Unknown**: whether the obfuscated spawn part is stable
-  for one creature, which Chronicle's once-per-GUID kill count relies on.
+  id field is not mentioned as changed. **Verified in game (Team, 2026-11-08)**: `UnitGUID("target")`
+  on one Defias Cutpurse, three times between 13:44 and 13:45 and out of combat, was
+  `"Creature-0-6805-0-2-94-39FF3AAEEF"` every time: readable, and stable for that creature over
+  that minute. The fields still split on `-` as type, 0, server (6805, obfuscated), instance, zone,
+  **NPC id (94)**, spawn (obfuscated). **Unknown**: whether it is secret in combat, and whether it
+  stays the same across a `/reload` or for another player looking at the same creature.
 - `UnitName("player")` returning "Unknown" before `PLAYER_LOGIN` was fixed in build 70170 (W160).
 - Specs: the `GetSpecialization`-style deprecation globals do not load on Forever
   (`Blizzard_DeprecatedSpecialization.toc`: `AllowLoadGameType: classic, standard`, Blz); use
@@ -275,7 +293,7 @@ Each entry: what we expected, what Forever does, how we know, what to do.
   before any search it answers nothing. `C_AuctionHouse.ReplicateItems()` (a `/run`, no output) followed
   a minute later by `GetNumReplicateItems()` gave **192,300** rows: the whole house in one pull.
   `GetReplicateItemInfo(0)` returned the classic-shaped list `name "Simple Branch of Power", texture
-  135139, count 1, qualityID 2, usable false, level 10, levelColHeader "REQ_LEVEL_ABBR", minBid 0,
+  135139, count 1, qualityID 2, usable false, level 10, levelType "REQ_LEVEL_ABBR", minBid 0,
   minIncrement 0, buyoutPrice 700, bidAmount 0, [13..16] nil, saleStatus 0, itemID 15933, hasAllInfo true`:
   the owner fields (13 to 16: highBidder, bidderFullName, owner, ownerFullName) came back **nil**, so the
   client does not hand addons seller names here. Prices are per listing; divide by `count` for a unit price.
@@ -290,13 +308,21 @@ Each entry: what we expected, what Forever does, how we know, what to do.
   `HasInboxMoney`, `IsCommandPending`, `SetOpeningAll`, `GetCraftingOrderMailInfo` (retail docs,
   `MailInfoDocumentation.lua` on `live`; `C_Mail.CanCheckInbox` at Blz `MailFrame.lua:242`).
   Forever's mail frame differs in layout (ElvUI `Game/Shared/Skins/Mail.lua:81-89`).
+- **Verified in game (Team, 2026-11-08)**: `GetInboxHeaderInfo(1)` for an auction-house mail gave
+  15 values in Blizzard's order (Blz `MailFrame.lua:340`): packageIcon 132543, stationeryIcon
+  134939, sender "Alliance Auction House", subject "Auction won: Linen Boots", money 0, CODAmount 0,
+  daysLeft 29.9998 (a fraction, not whole days), itemCount 1, wasRead false, then false, true
+  (Blizzard's `x, y`; `wasReturned, textCreated` at `MailFrame.lua:583`), canReply false, isGM false,
+  firstItemQuantity 1, firstItemLink `|cnIQ2:|Hitem:2569::::::8:1487:::::::|h[Linen Boots]|h|r`.
+  The link carries bonus fields after the item id, so parse ids with `Hitem:(%d+)` only.
 
 ### Loot and rolls
 
 - **Forever**: Classic loot methods are back: master looter frames, `GroupLootFrame` additions,
   `C_LootFrame.TryAutoLoot`, `C_AutoLoot.SetUseAutoLootToggle`, `UnitHasLootInteraction` (W160).
   `GetLootSourceInfo` is the per-source read (Team, Chronicle `Chronicle.lua:436`).
-  `GetLootRollItemInfo`/`RollOnLoot` are used by Automation; **unverified** on Forever.
+  `GetLootRollItemInfo`, `RollOnLoot` and `GetLootSourceInfo` all exist (`/dump ... ~= nil` gave
+  `true, true, true`, Team, 2026-11-08). Their return shapes on Forever are not yet checked.
 
 ### Talents and specs
 
@@ -306,10 +332,17 @@ Each entry: what we expected, what Forever does, how we know, what to do.
   `C_SpecializationInfo.SetActiveSpecGroup` (Blz `Blizzard_PlayerSpells/Camelot/ClassTalents/Blizzard_ClassTalentsFrame.lua:95,112`).
   ElvUI skins `PlayerSpellsFrame.TalentsFrame` with Forever-only tree headers and primary/secondary
   tabs (ElvUI `Game/Shared/Skins/PlayerSpells.lua:172-200`).
-- **Unknown**: whether the classic `GetNumTalentTabs`/`GetTalentTabInfo` exist on Forever. No
-  Blizzard code on the branch calls them (Blz, grep). Chronicle builds its "Assassination 5 /
-  Combat 31 / Subtlety 0" string from them (`Ryna_Chronicle/Character.lua:184-209`); if they are
-  absent the string must come from `C_Traits.GetGroupCurrencyInfo`.
+- **Verified in game (Team, 2026-11-08)**: `GetNumTalentTabs` and `GetTalentTabInfo` are **nil**;
+  `C_ClassTalents.GetActiveConfigID()` is `4954925`. Chronicle builds its "Elemental 5 /
+  Enhancement 11 / Restoration 0" string from those two globals
+  (`mods/wow/chronicle/addon/Ryna_Chronicle/Character.lua:184-209`), so **on Forever it records no
+  talents**. The points per tree have to come from the trait API, the way Blizzard's frame gets
+  them: `C_Traits.GetConfigInfo(configID).treeIDs[1]` for the tree,
+  `C_Traits.GetGroupDisplayInfoByTreeID(treeID)` for each tree's `groupID` and `displayName`, and
+  `C_Traits.GetGroupCurrencyInfo(configID, { groupID })`, whose `currencyInfos` entries carry
+  `spent` and `spentInTree` (Docs `SharedTraitsDocumentation.lua`: `TraitConfigInfo`,
+  `TraitGroupDisplayInfo`, `GroupCurrencyInfo`, `TreeCurrencyInfo`). Which of `spent` and
+  `spentInTree` is a tree's points is not yet checked (probe below).
 
 ### Professions
 
@@ -317,8 +350,10 @@ Each entry: what we expected, what Forever does, how we know, what to do.
   `GetSkillLineInfo`, `GetSkillLineInfoByID`, `ExpandSkillHeader`, `AbandonSkill` were added and the
   global `AbandonSkill` removed (W160). The professions book is a Forever frame (ElvUI
   `Game/Shared/Skins/Professions.lua:691`).
-- **Unknown**: whether the global `GetSkillLineInfo` and `GetProfessions` still exist. Chronicle
-  tries `GetProfessions` first and `GetSkillLineInfo` second; add `C_SkillInfo` as a candidate.
+- **Verified in game (Team, 2026-11-08)**: `GetProfessions` exists, the global `GetSkillLineInfo`
+  is **nil**, and `C_SkillInfo.GetNumSkillLines()` is 21. Chronicle's `GetProfessions` path is the
+  one that runs; its `GetSkillLineInfo` fallback is dead on Forever, and `C_SkillInfo.GetSkillLineInfo`
+  is the replacement if one is needed. What `GetProfessions()` returns is not yet checked.
 
 ### CVars
 
@@ -328,7 +363,11 @@ Each entry: what we expected, what Forever does, how we know, what to do.
   `hasSelectedExperiencePreset`, and `C_CVar.SetTempCVar` (W160). Which 7 were removed is not
   readable from W160.
 - `loadDeprecationFallbacks` decides whether Blizzard's deprecation globals exist at all (Blz,
-  above). Never rely on a deprecated global.
+  above). On the probe character it is **true** (`GetCVarBool`, Team, 2026-11-08), so shims such
+  as `CombatLogGetCurrentEventInfo` load there. It is a CVar a player can turn off, so never rely
+  on a deprecated global.
+- `C_Secrets.HasSecretRestrictions()` is **true** in game (Team, 2026-11-08): secret values are
+  on for this client build.
 
 ### Addon messaging and chat
 
@@ -387,22 +426,28 @@ Each entry: what we expected, what Forever does, how we know, what to do.
 | `C_Container.*` works | verified in game; seen in BVP | Team; BVP | 2026-11-08 |
 | `TooltipDataProcessor` and `C_TooltipInfo` work | seen in Forever addons | BVP, Questie, ATT | 2026-11-08 |
 | Merchant frame reads `C_MerchantFrame.GetItemInfo` | Blizzard source | Blz `MerchantFrame.lua:290` | 2026-11-08 |
-| `GetMerchantItemInfo` exists | unknown (removed in retail 12.0) | W120 | 2026-11-08 |
-| `GetNumTrainerServices()` is 0 for addons | verified in game; contradicted by Blizzard's loop | Team; Blz | 2026-11-07 |
+| `GetMerchantItemInfo` is nil | verified in game (removed in retail 12.0) | Team; W120 | 2026-11-08 |
+| `C_MerchantFrame.GetItemInfo` table: `price` in copper per `stackCount`, `numAvailable` -1 for unlimited | verified in game | Team | 2026-11-08 |
+| `GetNumTrainerServices()` counts with the window open (157) | verified in game; the 0 of 2026-11-07 was probably read too early | Team; Blz | 2026-11-08 |
 | `GetTrainerServiceInfo` order (name, kind, texture, level, subText, category) | verified in game; Blizzard source | Team; Blz `Blizzard_TrainerUI.lua:469` | 2026-11-08 |
+| `GetBuildInfo()` gives six values ending 16001, "", " " | verified in game | Team | 2026-11-08 |
+| Linen Cloth `sellPrice` 13 copper via `C_Item.GetItemInfo` | verified in game | Team | 2026-11-08 |
 | `C_Trainer` has 3 functions | verified in game; documented | Team; W160 | 2026-11-08 |
 | Quests: `AcceptQuest` on `QUEST_DETAIL`, `C_GossipInfo` | Blizzard source; seen in AQ | Blz `QuestFrame.lua:646`; AQ | 2026-11-08 |
 | `/who` needs a hardware event | verified in game | Team `3e50f74` | 2026-11-07 |
 | `SendWho` takes a filters argument | Blizzard source | Blz `WhoList.lua:178` | 2026-11-08 |
 | Auction house is `C_AuctionHouse` | Blizzard source; seen in ElvUI | Blz AH TOC; ElvUI | 2026-11-08 |
 | `QueryAuctionItems` absent | Blizzard source (no caller, doc says replaced) | Blz | 2026-11-08 |
-| AH behaviour in game | unknown | | |
-| Mail inbox via `GetInboxHeaderInfo` | Blizzard source | Blz `MailFrame.lua:340` | 2026-11-08 |
+| Mail inbox via `GetInboxHeaderInfo`, 15 values | verified in game; Blizzard source | Team; Blz `MailFrame.lua:340` | 2026-11-08 |
 | Talents via `C_Traits` groups | Blizzard source | Blz Camelot `Blizzard_ClassTalentsFrame.lua:95` | 2026-11-08 |
-| `GetTalentTabInfo` exists | unknown | | |
+| `GetNumTalentTabs`, `GetTalentTabInfo` are nil; `C_ClassTalents.GetActiveConfigID()` works | verified in game | Team | 2026-11-08 |
+| `GetProfessions` exists; global `GetSkillLineInfo` nil; `C_SkillInfo.GetNumSkillLines()` 21 | verified in game | Team | 2026-11-08 |
+| `GetLootRollItemInfo`, `RollOnLoot`, `GetLootSourceInfo` exist | verified in game | Team | 2026-11-08 |
+| `C_Secrets.HasSecretRestrictions()` true; `loadDeprecationFallbacks` true on the probe character | verified in game | Team | 2026-11-08 |
 | Spec deprecation globals absent | Blizzard source | Blz `Blizzard_DeprecatedSpecialization.toc` | 2026-11-08 |
 | `C_SkillInfo` added, global `AbandonSkill` removed | documented | W160 | 2026-11-08 |
 | Creature GUID server and spawn parts obfuscated | documented | W160 (blue post 2026-10-16) | 2026-11-08 |
+| A creature's GUID is readable out of combat, stable over a minute, NPC id still in field 6 | verified in game | Team | 2026-11-08 |
 | Names are First plus Last-as-realm | seen in Forever addons | ElvUI `Core.lua:70`; Pawn `Pawn.lua:588` | 2026-11-08 |
 | Unknown event name errors on register | seen in Forever addon | Doud `Core.lua:845` | 2026-11-08 |
 | `/dump` prints nothing for zero values | verified in game | Team | 2026-11-08 |
@@ -424,18 +469,17 @@ Each entry: what we expected, what Forever does, how we know, what to do.
 
 ### Still owed
 
-The auction-house probes (the old 1 to 4) were answered on 2026-11-08 and folded into the Auction house section above. Each line below is one to paste.
+All fourteen probes of the first list were answered on 2026-11-08 and folded into the sections
+above. These are the next ones, each one line to paste.
 
-1. `/dump WOW_PROJECT_ID, WOW_PROJECT_CAMELOT, GetBuildInfo()`
-2. `/run print(select("#", C_Item.GetItemInfo(2589)), select(11, C_Item.GetItemInfo(2589)))` (after hovering Linen Cloth, away from a vendor)
-3. `/dump GetMerchantItemInfo ~= nil, C_MerchantFrame.GetItemInfo(1)` (at a vendor)
-4. `/dump GetNumTrainerServices(), GetTrainerServiceInfo(1)` (trainer window open, a second after it opens)
-5. `/dump GetNumTalentTabs ~= nil, GetTalentTabInfo ~= nil, C_ClassTalents.GetActiveConfigID()`
-6. `/dump GetProfessions ~= nil, GetSkillLineInfo ~= nil, C_SkillInfo.GetNumSkillLines()`
-7. `/dump GetInboxHeaderInfo(1)` (at a mailbox with mail)
-8. `/dump GetLootRollItemInfo ~= nil, RollOnLoot ~= nil, GetLootSourceInfo ~= nil`
-9. `/dump C_Secrets and C_Secrets.HasSecretRestrictions(), GetCVarBool("loadDeprecationFallbacks")`
-10. `/dump UnitGUID("target")` on the same mob twice, a minute apart (is the obfuscated spawn part stable?)
+1. Talent points per tree (the replacement for Chronicle's talent scan):
+   `/run local c=C_ClassTalents.GetActiveConfigID() local t=C_Traits.GetConfigInfo(c).treeIDs[1] for _,d in ipairs(C_Traits.GetGroupDisplayInfoByTreeID(t)) do local g=C_Traits.GetGroupCurrencyInfo(c,{d.groupID})[1] local i=g and g.currencyInfos and g.currencyInfos[1] print(d.displayName, i and i.spent, i and i.spentInTree) end`
+2. `/dump issecretvalue(UnitGUID("target")), issecretvalue(UnitName("target"))` (as a macro, in combat with a mob)
+3. `/dump UnitGUID("target")` on the same mob after a `/reload` (does the obfuscated spawn part survive a reload?)
+4. `/dump GetProfessions()` then `/dump C_SkillInfo.GetSkillLineInfo(1)`
+5. `/run C_AuctionHouse.ReplicateItems()` again within 15 minutes of the last one, then `/dump C_AuctionHouse.GetNumReplicateItems()` (is there a throttle?)
+6. `/dump GetGuildRosterInfo(1)` (needs a character in a guild)
+7. `/dump C_MerchantFrame.GetItemInfo(1).isPurchasable` at a vendor with enough money for item 1 (does it mean "can afford"?)
 
 ## Links
 
