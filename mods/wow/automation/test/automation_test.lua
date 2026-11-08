@@ -221,9 +221,13 @@ _G.C_CVar = {
 }
 -- Forever answers 0 to addons while the window lists its spells (W.countLies); the indexed reads still work.
 _G.GetNumTrainerServices = function() return W.countLies and 0 or #W.services end
+-- Forever's return order (name, kind, texture, level, sub);
+-- W.classicOrder gives the classic one (name, sub, kind, texture).
 _G.GetTrainerServiceInfo = function(i)
   local s = W.services[i]
-  if s then return s.name, s.sub, s.kind end
+  if not s then return end
+  if W.classicOrder then return s.name, s.sub, s.kind, 136026 end
+  return s.name, s.kind, 136026, 10, s.sub
 end
 _G.GetTrainerServiceCost = function(i) return W.services[i] and W.services[i].cost end
 _G.SetTrainerServiceTypeFilter = record("SetTrainerServiceTypeFilter")
@@ -825,6 +829,11 @@ fresh(); set({ autoTrainAll = true }); W.services = services(); W.countLies = tr
 fire("TRAINER_SHOW"); advance(2)
 check(called("BuyTrainerService") == 3, "a count of 0 (Forever): the list is still walked by index, 3 bought")
 W.countLies = nil
+-- The classic return order still reads.
+fresh(); set({ autoTrainAll = true }); W.services = services(); W.classicOrder = true; _G.ClassTrainerFrame.shown = true
+fire("TRAINER_SHOW"); advance(2)
+check(called("BuyTrainerService") == 3, "the classic return order: 3 bought")
+W.classicOrder = nil
 fresh(); set({ autoTrainAll = true }); W.services = services(); _G.ClassTrainerFrame.shown = true
 commands.auto.run("traincap", "traincap 0")
 check(settings.autoTrainCap == 0, "/ryna auto traincap 0")

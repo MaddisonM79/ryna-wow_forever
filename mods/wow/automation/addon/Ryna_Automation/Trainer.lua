@@ -34,13 +34,24 @@ local function money()
   return tonumber((ns.G("GetMoney"))) or 0
 end
 
+local KINDS = { available = true, unavailable = true, used = true }
+
+-- A service's name, sub text ("Rank 2") and kind ("available", "unavailable", "used"), whichever way
+-- this client orders GetTrainerServiceInfo's returns: the classic order is (name, subText, kind,
+-- texture); Forever's (checked in game 2026-11-07) is (name, kind, texture, requiredLevel, subText).
+function T.ServiceInfo(i)
+  local a, b, c, _, e = ns.G("GetTrainerServiceInfo", i)
+  if type(b) == "string" and KINDS[b] then return a, e, b end
+  return a, b, c
+end
+
 -- The first available service not yet bought this visit that fits: its index, label and cost; and
 -- how many available ones don't fit.
 function T.Next(bought, total, cap, startMoney)
   local pick, label, price, left = nil, nil, nil, 0
   local count = tonumber((ns.G("GetNumTrainerServices"))) or 0
   for i = 1, math.max(count, T.WALK_LIMIT) do
-    local name, subText, kind = ns.G("GetTrainerServiceInfo", i)
+    local name, subText, kind = T.ServiceInfo(i)
     -- Past the count the client admits to, the first index with no service is the end of the list.
     if not ns.NonEmpty(name) and i > count then break end
     if kind == "available" and ns.NonEmpty(name) then
