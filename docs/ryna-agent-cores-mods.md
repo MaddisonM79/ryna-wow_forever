@@ -424,13 +424,21 @@ carried by the app and the release zip like Automation's. The line is "Sells for
 getter that filled it (`GetBagItem`, `GetInventoryItem` for the bank, `GetLootItem`) or the slot
 button's `count`; with neither (a chat link, a merchant's item) it is a full stack of a stackable
 item, and a slot holding one shows the single price. A sell price of 0, or none, adds nothing; an
-uncached item adds nothing and, when `GET_ITEM_INFO_RECEIVED` names it while the same tooltip still
-shows it, the tooltip is refreshed (`RefreshData`, else the line added by hand). Its Prices tab
+uncached item adds nothing and, when `ITEM_DATA_LOAD_RESULT` or `GET_ITEM_INFO_RECEIVED` names it
+while the same tooltip still shows it, the tooltip is refreshed (`RefreshData`, else the line added
+by hand). What the game said (Maddison's client, 2026-11-08), which the code follows: the global
+`GetItemInfo` is nil on Forever, so only `C_Item.GetItemInfo` is asked (the documented 18 returns:
+sellPrice 11th, itemStackCount 8th); an item the client hasn't loaded answers **nothing** (no values,
+not a nil) and asking again doesn't load it, so an empty answer counts as "not loaded" and the mod
+calls `C_Item.RequestLoadItemDataByID`; `C_Item.GetItemInfoInstant` has no price; and links start
+`|cnIQ2:` rather than `|cffxxxxxx`, so ids are read from `Hitem:(%d+)`. Whether a loaded item's answer
+carries a sell price is still being checked; an answer without one adds no line. Its Prices tab
 (after Automation) has `priceSellLine` (on), `priceStackTotal` (on) and `priceOnlyAwayFromMerchant`
 (off: the line shows at merchants too; on, it stays away while the merchant window is open, by the
 merchant events or `MerchantFrame`); `/ryna prices` lists them and `/ryna prices <name> on|off`
 changes one. It prints nothing unasked and writes nothing but its settings. The probe is still owed:
-if `/dump select(11, GetItemInfo(2589))` answers 0 or nil away from a vendor, the line simply never
+if `/dump select(11, C_Item.GetItemInfo(2589))` (Linen Cloth loaded first) answers 0 or nil away
+from a vendor, the line simply never
 shows (every item reads as selling for nothing), and the sell price has to come from the served
 table instead.
 
@@ -451,7 +459,8 @@ tab):
 `currency` is there only when `GetMerchantItemCostInfo` says the item costs something besides copper.
 It is written at `MERCHANT_SHOW` when every slot's link has loaded, else at the visit's first
 `MERCHANT_UPDATE` that finds any (items without a link are left out), once per NPC per login and at
-most 200 items. The reads prefer `C_MerchantFrame.GetItemInfo`'s named fields and take only the
+most 200 items. The reads prefer `C_MerchantFrame.GetItemInfo`'s named fields (a table on the
+Modern engine; which of the two the client has is asked at run time, not assumed) and fall back to the
 3rd to 5th values of `GetMerchantItemInfo` (price, stack, available), which classic and modern
 clients agree on, since Forever's return orders have differed from the wiki's before. The agent
 passes it through as it does every unknown event type; docs/wow.md's row comes with the pool.
