@@ -20,8 +20,9 @@ There are two, installed side by side by the companion app:
   starts off, with its own Automation tab and `/ryna auto` (`mods/wow/README.md`). Holding Shift
   pauses it.
 
-Together they have a small settings panel (in tabs), a minimap button, and a line in chat when you
-log in.
+Together they have a small settings panel (in tabs) and a minimap button. Nothing is printed to chat
+unless you ask: the login line and the combat-logging notices are a setting under Advanced, off by
+default, and `/ryna` answers only when typed.
 
 The game writes SavedVariables at logout and `/reload`. Addons can't reach the network or the
 filesystem, so that file is the only way the data leaves the game. The addon never depends on

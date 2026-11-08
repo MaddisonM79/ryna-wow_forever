@@ -62,6 +62,9 @@ L["Messages"] = nil
 L["Advanced"] = nil
 L["Show the minimap button"] = nil
 L["Drag it around the minimap to move it."] = nil
+L["Chat notices"] = nil
+L["A line in chat when you log in, when the companion app hasn't synced, and when Ryna turns "
+  .. "combat logging on or off. Off, Ryna only answers /ryna."] = nil
 L["Debug messages"] = nil
 L["Prints what Ryna is doing to the chat window: scans, journal events, sightings. "
   .. "For checking that it works."] = nil

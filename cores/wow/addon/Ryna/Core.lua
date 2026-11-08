@@ -263,6 +263,8 @@ end)
 --   nearbyPlayers   record players whose nameplate, target or mouseover I see (needs census)
 --   chronicle       count kills and loot into the character record (Chronicle's Chronicle.lua)
 --   tooltips        show my own kill and loot numbers on creature and item tooltips (Chronicle's Tooltip.lua)
+--   chatNotices     the login line, the "companion app hasn't synced" note and the combat-logging
+--                   on/off lines in chat; off, Ryna prints nothing it wasn't asked for (Maddison, 2026-11-08)
 --   debug           print what the addon is doing to chat (ns.Debug)
 --   minimap         { shown = true, angle = <degrees> } for the minimap button
 --   panelTab        the options panel's selected tab ("status", "recording", "census", "messages",
@@ -270,7 +272,7 @@ end)
 --                   "status", and Defaults keeps it
 ns.SETTING_DEFAULTS = {
   chatSightings = true, census = true, groupMembers = true, nearbyPlayers = true, advancedCombatLog = true,
-  chronicle = true, tooltips = true, debug = false,
+  chronicle = true, tooltips = true, chatNotices = false, debug = false,
 }
 -- Settings that are gone, removed from RynaDB.settings on load. censusSweep switched the automated
 -- /who sweep, which was deleted: Ryna never sends /who itself (the player's own /who is still read).

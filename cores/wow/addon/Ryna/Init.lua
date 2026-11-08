@@ -18,13 +18,17 @@ ns.On("PLAYER_LOGIN", function()
   ns.Journal.Prune()
   ns.Journal.StartSession(UnitGUID("player"))
   ns.CallMods("onLogin")
-  ns.PrintRaw(string.format("|cff7fb2ffRyna %s|r: %s", ns.VERSION, L["recording. /ryna for settings."]))
+  if ns.Setting("chatNotices") then
+    ns.PrintRaw(string.format("|cff7fb2ffRyna %s|r: %s", ns.VERSION, L["recording. /ryna for settings."]))
+  end
   ns.Debug("login: %d mods (%s)", #ns.mods, ns.ListText((function()
     local ids = {}
     for i, m in ipairs(ns.mods) do ids[i] = m.id end
     return ids
   end)()))
-  if ns.Status.IsStale() then ns.Print(L["the companion app hasn't synced recently."]) end
+  if ns.Setting("chatNotices") and ns.Status.IsStale() then
+    ns.Print(L["the companion app hasn't synced recently."])
+  end
   ns.Debug("companion app file: %s", ns.Status.DebugLine())
   ns.Run("advanced combat logging", ns.CombatLog.ApplyAdvancedLogging)
 end)

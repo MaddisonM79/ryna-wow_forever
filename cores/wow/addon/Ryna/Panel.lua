@@ -325,6 +325,10 @@ function build.advanced(f)
   toggle(P.acl, "advancedCombatLog", function() CL.ApplyAdvancedLogging() end)
   P.otherHeader = text(f, "GameFontNormal")
   P.otherHeader:SetText(L["Other settings"])
+  P.notices = checkbox(f, L["Chat notices"],
+    L["A line in chat when you log in, when the companion app hasn't synced, and when Ryna turns "
+    .. "combat logging on or off. Off, Ryna only answers /ryna."])
+  toggle(P.notices, "chatNotices")
   P.debug = checkbox(f, L["Debug messages"],
     L["Prints what Ryna is doing to the chat window: scans, journal events, sightings. "
     .. "For checking that it works."])
@@ -363,8 +367,10 @@ function layout.advanced(s, settings)
   P.acl:SetChecked(settings.advancedCombatLog)
   P.acl.place(s, 4)
   s.text(P.otherHeader, 0, 6)
+  P.notices:SetChecked(settings.chatNotices)
   P.debug:SetChecked(settings.debug)
   P.minimap:SetChecked(settings.minimap.shown)
+  P.notices.place(s, 4)
   P.debug.place(s, 4)
   P.minimap.place(s, 4)
   if P.defaults then s.add(P.defaults, 22, 8, 16) end

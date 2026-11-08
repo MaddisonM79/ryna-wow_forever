@@ -245,6 +245,69 @@ Stage (a) built (2026-11-07, agent side, the API's docs/wow.md 13.1, 13.3 and 13
   and weighting, with the Admin view of IDs. (c) The agent's "census only" mode: the Census tab and
   the core run with no sign-in.
 
+### 7.2 Settings: backup and copy (asked 2026-11-08)
+
+Maddison's ask, in her words: "settings is literal settings. i.e. backup my elv settings. i make a
+new character on horde i want you to copy my settings from alliance to that character. i want no
+chat messages." So: a **Settings mod** for the WoW core that backs up addon settings to ryna.io and
+copies them between characters, with nothing said in game.
+
+**What it works on.** Addon settings are the SavedVariables files the game writes: account-wide ones
+in `WTF/Account/<account>/SavedVariables/<Addon>.lua` and per-character ones in
+`WTF/Account/<account>/<Realm>/<Character>/SavedVariables/<Addon>.lua`. Which addon owns which file
+comes from the addon's own TOC (`## SavedVariables:` and `## SavedVariablesPerCharacter:` lines), so
+the mod detects every installed addon's settings without knowing the addon. The game's own
+per-character files (`config-cache.wtf` CVars, `bindings-cache.wtf`, `macros-cache.txt`,
+`chat-cache.txt`, `layout-local.txt`, `AddOns.txt`) are offered too, each by name, with one check
+still owed in game: on the Modern engine bindings and macros are normally server-owned and those
+files only caches, and whether Forever's server keeps them decides whether copying them does anything.
+
+**Where it runs.** On the agent, not in the addon (`actsInGame: false`): the agent already finds every
+install and account folder and parses SavedVariables Lua (`discovery.rs`, `lua.rs`); the new parts are
+a Lua writer, the TOC scan, the realm/character folder walk and the AceDB adapter below. There is no
+in-game side at all. Nothing is printed to chat, by this mod or (from 2026-11-08) by the core unless
+the person turns the core's chat notices on.
+
+**The one rule: the game must be closed.** WoW reads SavedVariables at login and rewrites them at
+logout and `/reload`, so a file written under a logged-in character is lost at logout. The app
+detects the game process and greys out every write ("close the game first"); reads (backups, the
+diff view) are always safe. Ryna's own settings (`RynaDB`, account-wide, so already shared by every
+character on one account) can instead ride the file the agent already writes into the addon folder
+(`AgentStatus.lua`, read at login), which works while the game runs; other addons get no such path.
+
+**Copy, two tiers.**
+
+1. *File level.* A per-character file copies as it is to another character, another account or
+   another install. Always works, and because the Lua is parsed the app can show which characters
+   differ for an addon before copying.
+2. *Addon aware.* The big addons (ElvUI, Details, WeakAuras, Questie, Plater, Bartender) use AceDB:
+   one account-wide file where per-character state sits under `"Name - Realm"` keys in `profileKeys`
+   and `char` (ElvUI's private settings in `ElvPrivateDB` the same way). Copying the file does nothing
+   there; the agent edits the table and duplicates those keys for the target character. One generic
+   AceDB adapter covers them, plus hand-written adapters for addons with their own layout; an addon
+   the mod doesn't know falls back to tier 1 and says so.
+
+Faction plays no part: "copy to my new Horde character" is a copy to another character. The few
+addons that key data by faction (auction history) are left out of a copy on purpose.
+
+**Backup.** Needs a sign-in (it is a person's own data, not census-style anonymous). The agent zips
+the chosen files, uploads them to R2 under the person's `sub` through the API (`POST
+/v1/wow/settings/backups`, a route section for `docs/wow.md`), keeps the last N, and restores through
+the app with the same closed-game rule. The person's backups are theirs alone: other addons' files hold
+other players' names and chat, so they never feed the census or any pooled table, and the app's copy
+says so. Recommended: a size cap (50 MB a backup, keep 10; Details and WeakAuras run to tens of
+megabytes) and encryption at rest only, person-scoped, since client-side encryption loses the backup
+with the key on a new machine, which is the case backups exist for.
+
+**UI.** In the agent, under the WoW core: a Settings section listing addons with their scope
+(account, per character), size and last-written time; per addon the characters that have settings for
+it; "Copy from <character>" on a character, "Back up now", "Restore", a history. Each copy and
+restore writes a `.bak` of what it replaced beside the file, kept until the next one.
+
+**Open (Maddison's calls):** one mod or two (backup, copy); copies between accounts in v1 or only
+between characters; cross-machine sync automatic ("restore here" on a new machine, or on every
+sync) or manual only.
+
 ## 8. Identity
 
 Today: one device client per game (`ryna-wow`, the Palworld agent's), each a public client at
@@ -298,6 +361,7 @@ Maddison's; the agent can carry both old and new clients for a release or two.
    cap), mail (never cash on delivery), resurrections, friend and guild invites, bind/roll/delete
    confirmations, cinematics, quest tracking, release in battlegrounds, auto-loot and loot rolls
    (never Need); off by default, every chore its own toggle that starts off, Shift pauses it.
+   Then the Settings mod (7.2): backup of addon settings and copies between characters, agent side.
 3. **Data layer v1.** Parse the three caches, upload them, pool them, write `Data/names.lua` and
    `Data/quests.lua` back down; the kills table gains names for creatures never targeted; the
    Chronicle window (0.2.x plan) reads community numbers from the same files.

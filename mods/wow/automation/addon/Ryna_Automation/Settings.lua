@@ -1,7 +1,7 @@
 -- Settings: Automation's toggles, each its own key in RynaDB.settings (the core keeps one flat table
 -- for the core and every mod, so these all start with "auto"). Every feature is off by default:
--- turning the mod on in the companion app does nothing until a feature here is ticked too. Only
--- `autoReport`, which acts on nothing (it prints what the others did), starts on.
+-- turning the mod on in the companion app does nothing until a feature here is ticked too, and
+-- `autoReport` (a chat line for what the others did) is off like the rest: nothing in chat unasked.
 --
 -- Each feature has the short name `/ryna auto <name> on|off` takes (the brief's words), its setting,
 -- its group and, for the ones that only matter under another, that one (`under`). `changed(on)`, where
@@ -47,7 +47,6 @@ S.FEATURES = {
 
 local defaults = {}
 for _, f in ipairs(S.FEATURES) do defaults[f.key] = false end
-defaults.autoReport = true
 ns.API.Settings.AddDefaults(defaults)
 
 -- Whether a feature is on: its own toggle, and the one it sits under (if any).

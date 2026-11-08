@@ -42,7 +42,9 @@ function Z.ApplyCombatLog(inInstance)
   local wanted = mode == "always" or (mode == "instances" and inInstance)
   if wanted then
     if pcall(fn, true) then
-      if not on then ns.Print(inInstance and L["combat logging on (instance)"] or L["combat logging on"]) end
+      if not on and ns.Setting("chatNotices") then
+        ns.Print(inInstance and L["combat logging on (instance)"] or L["combat logging on"])
+      end
       Z.addonTurnedOn = true
       ns.Debug("combat log: mode %s, %s: %s", mode, where, on and "kept on" or "turned on")
     else
@@ -51,7 +53,7 @@ function Z.ApplyCombatLog(inInstance)
   elseif on and (Z.addonTurnedOn or (mode == "instances" and Z.wasInInstance)) then
     if pcall(fn, false) then
       Z.addonTurnedOn = false
-      ns.Print(L["combat logging off"])
+      if ns.Setting("chatNotices") then ns.Print(L["combat logging off"]) end
       ns.Debug("combat log: mode %s, %s: turned off", mode, where)
     end
   else

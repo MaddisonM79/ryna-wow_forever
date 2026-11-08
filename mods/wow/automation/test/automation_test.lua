@@ -428,7 +428,9 @@ local function fresh()
     for _, f in ipairs(handlers[e] or {}) do f(e) end
   end
   reset()
-  settings = {}
+  -- The scenarios check the chat lines, so the report is on here; its default (off) is checked above,
+  -- and the accepting scenario checks that off means silence.
+  settings = { autoReport = true }
   db = { settings = settings }
   timers, now = {}, 0
 end
@@ -436,7 +438,7 @@ end
 -- Off by default: nothing at all happens. -----------------------------------------------------------
 fresh()
 for _, f in ipairs(ns.Settings.FEATURES) do
-  check(defaults[f.key] == (f.key == "autoReport"), f.key .. " defaults to " .. tostring(f.key == "autoReport"))
+  check(defaults[f.key] == false, f.key .. " defaults to false")
 end
 _G.QuestFrame.shown, W.questID, W.completable = true, 11, true
 fire("QUEST_DETAIL"); fire("QUEST_PROGRESS"); W.choices = {}; fire("QUEST_COMPLETE"); settle()
@@ -449,10 +451,13 @@ check(#calls == 0, "with nothing ticked, no client action is called (" .. #calls
 check(statusPanel[1].fn()[1] == "Automation: nothing on", "status says nothing on")
 
 -- Accepting. ----------------------------------------------------------------------------------------
-fresh(); set({ autoAcceptQuests = true })
+fresh(); set({ autoAcceptQuests = true, autoReport = false })
+local quiet = #chat
 _G.QuestFrame.shown, W.questID = true, 21
 fire("QUEST_DETAIL"); fire("QUEST_DETAIL"); settle()
 check(called("AcceptQuest") == 1, "an offered quest is accepted once, though the event came twice")
+check(#chat == quiet, "and with the report off (the default) nothing is said in chat")
+set({ autoReport = true })
 check(statusSlash[1].fn()[1] == "Automation: quests (accept)", "status names accept")
 close()
 W.questID = 22; _G.QuestFrame.shown = true; W.shift = true

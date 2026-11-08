@@ -53,6 +53,9 @@ L["Messages"] = true
 L["Advanced"] = true
 L["Show the minimap button"] = true
 L["Drag it around the minimap to move it."] = true
+L["Chat notices"] = true
+L["A line in chat when you log in, when the companion app hasn't synced, and when Ryna turns "
+  .. "combat logging on or off. Off, Ryna only answers /ryna."] = true
 L["Debug messages"] = true
 L["Prints what Ryna is doing to the chat window: scans, journal events, sightings. "
   .. "For checking that it works."] = true
