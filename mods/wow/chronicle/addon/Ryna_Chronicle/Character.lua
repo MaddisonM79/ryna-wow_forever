@@ -181,14 +181,55 @@ function C.ScanGear()
   ns.Debug("gear: %d items equipped", #gear)
 end
 
--- Talents: "Elemental 5 / Enhancement 11 / Restoration 0". GetTalentTabInfo's returns differ by
--- client generation (name first, or an id first), so both shapes are read.
-function C.ScanTalents()
-  local rec = ns.rec
-  if not rec then return end
+-- Talents: "Elemental 5 / Enhancement 11 / Restoration 0", one "<tree> <points>" per tree.
+--
+-- Forever (checked in game 2026-11-08): GetNumTalentTabs and GetTalentTabInfo are nil. Its talent
+-- frame is the trait system: the class tree's trait groups are the three trees, and each group's
+-- points are C_Traits.GetGroupCurrencyInfo's currencyInfos[1].spent, which is what Blizzard's own
+-- Forever tree headers show (Blizzard_PlayerSpells/Camelot/ClassTalents/Blizzard_ClassTalentsFrame.lua,
+-- docs/forever-client-api.md "Talents and specs"). Trees come in the order the client lists them.
+local function traitTalentParts()
+  local configId = ns.Try(ns.Fn("C_ClassTalents", "GetActiveConfigID"))
+  local getConfig = ns.Fn("C_Traits", "GetConfigInfo")
+  local getGroups = ns.Fn("C_Traits", "GetGroupDisplayInfoByTreeID")
+  local getCurrency = ns.Fn("C_Traits", "GetGroupCurrencyInfo")
+  if type(configId) ~= "number" or not (getConfig and getGroups and getCurrency) then return nil end
+  local config = ns.Try(getConfig, configId)
+  local treeId = type(config) == "table" and type(config.treeIDs) == "table" and config.treeIDs[1]
+  if type(treeId) ~= "number" then return nil end
+  local groups = ns.Try(getGroups, treeId)
+  if type(groups) ~= "table" or #groups == 0 then return nil end
+  local ids = {}
+  for _, group in ipairs(groups) do
+    if type(group) == "table" and type(group.groupID) == "number" then ids[#ids + 1] = group.groupID end
+  end
+  local spent = {}
+  local infos = ns.Try(getCurrency, configId, ids)
+  if type(infos) == "table" then
+    for _, info in ipairs(infos) do
+      local currency = type(info) == "table" and type(info.currencyInfos) == "table" and info.currencyInfos[1]
+      if type(currency) == "table" and info.traitNodeGroupID ~= nil then
+        spent[info.traitNodeGroupID] = currency.spent
+      end
+    end
+  end
+  local parts = {}
+  for _, group in ipairs(groups) do
+    local name = type(group) == "table" and group.displayName
+    local points = type(group) == "table" and spent[group.groupID]
+    if type(name) == "string" and not ns.IsSecret(name) and not ns.IsSecret(points) then
+      parts[#parts + 1] = name .. " " .. tostring(tonumber(points) or 0)
+    end
+  end
+  return #parts > 0 and parts or nil
+end
+
+-- Classic clients keep GetTalentTabInfo, whose returns differ by client generation (name first, or
+-- an id first), so both shapes are read.
+local function tabTalentParts()
   local numTabs = ns.Try(ns.Fn("GetNumTalentTabs"))
   local info = ns.Fn("GetTalentTabInfo")
-  if type(numTabs) ~= "number" or numTabs < 1 or not info then return end
+  if type(numTabs) ~= "number" or numTabs < 1 or not info then return nil end
   local parts = {}
   for tab = 1, numTabs do
     local r1, r2, r3, _, r5 = ns.Try(info, tab)
@@ -202,8 +243,15 @@ function C.ScanTalents()
       parts[#parts + 1] = name .. " " .. tostring(tonumber(points) or 0)
     end
   end
-  if #parts > 0 then rec.talents = table.concat(parts, " / ") end
-  ns.Debug("talents: %s", #parts > 0 and rec.talents or "none readable")
+  return #parts > 0 and parts or nil
+end
+
+function C.ScanTalents()
+  local rec = ns.rec
+  if not rec then return end
+  local parts = traitTalentParts() or tabTalentParts()
+  if parts then rec.talents = table.concat(parts, " / ") end
+  ns.Debug("talents: %s", parts and rec.talents or "none readable")
 end
 
 local function professionRow(id, name, rank, max)
@@ -514,7 +562,13 @@ ns.On("PLAYER_GUILD_UPDATE", function() C.UpdateGuild() end)
 ns.On("PLAYER_EQUIPMENT_CHANGED", function() ns.Debounce("gear", 1, C.ScanGear) end)
 ns.On("SKILL_LINES_CHANGED", function() ns.Debounce("professions", 2, C.ScanProfessions) end)
 ns.On("UPDATE_FACTION", function() ns.Debounce("reputations", 2, C.ScanReputations) end)
-ns.On("CHARACTER_POINTS_CHANGED", function() ns.Debounce("talents", 1, C.ScanTalents) end)
+-- Talents change through the trait system on Forever (spending, a spec swap, the config loading
+-- after login) and through CHARACTER_POINTS_CHANGED on classic clients. A client without one of
+-- these events just skips it (ns.On).
+for _, event in ipairs({ "CHARACTER_POINTS_CHANGED", "TRAIT_CONFIG_UPDATED", "TRAIT_CONFIG_LIST_UPDATED",
+  "PLAYER_TALENT_UPDATE", "ACTIVE_TALENT_GROUP_CHANGED" }) do
+  ns.On(event, function() ns.Debounce("talents", 1, C.ScanTalents) end)
+end
 ns.On("TRADE_SKILL_SHOW", function() ns.Debounce("recipes-trade", 1, function() C.ScanRecipes("trade") end) end)
 ns.On("TRADE_SKILL_UPDATE", function() ns.Debounce("recipes-trade", 1, function() C.ScanRecipes("trade") end) end)
 ns.On("CRAFT_SHOW", function() ns.Debounce("recipes-craft", 1, function() C.ScanRecipes("craft") end) end)

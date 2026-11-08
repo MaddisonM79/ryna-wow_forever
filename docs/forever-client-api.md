@@ -333,10 +333,11 @@ Each entry: what we expected, what Forever does, how we know, what to do.
   ElvUI skins `PlayerSpellsFrame.TalentsFrame` with Forever-only tree headers and primary/secondary
   tabs (ElvUI `Game/Shared/Skins/PlayerSpells.lua:172-200`).
 - **Verified in game (Team, 2026-11-08)**: `GetNumTalentTabs` and `GetTalentTabInfo` are **nil**;
-  `C_ClassTalents.GetActiveConfigID()` is `4954925`. Chronicle builds its "Elemental 5 /
-  Enhancement 11 / Restoration 0" string from those two globals
-  (`mods/wow/chronicle/addon/Ryna_Chronicle/Character.lua:184-209`), so **on Forever it records no
-  talents**. The points per tree have to come from the trait API, the way Blizzard's frame gets
+  `C_ClassTalents.GetActiveConfigID()` is `4954925`. Chronicle used to build its "Elemental 5 /
+  Enhancement 11 / Restoration 0" string from those two globals only, so on Forever it recorded no
+  talents; it now reads the trait API first and keeps the globals for classic clients
+  (`mods/wow/chronicle/addon/Ryna_Chronicle/Character.lua`, `C.ScanTalents`; covered by
+  `mods/wow/chronicle/test/chronicle_talents_test.lua`). The points per tree come from the trait API, the way Blizzard's frame gets
   them: `C_Traits.GetConfigInfo(configID).treeIDs[1]` for the tree,
   `C_Traits.GetGroupDisplayInfoByTreeID(treeID)` for each tree's `groupID` and `displayName`, and
   `C_Traits.GetGroupCurrencyInfo(configID, { groupID })`, whose `currencyInfos` entries carry
