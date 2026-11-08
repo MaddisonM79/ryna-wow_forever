@@ -438,6 +438,7 @@ mod tests {
                 "Addon",
                 "Chronicle",
                 "Automation",
+                "Settings",
                 "Log",
                 "Fights, last 12 h",
                 "Last fight"

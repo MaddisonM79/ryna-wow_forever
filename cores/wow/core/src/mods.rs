@@ -2,7 +2,9 @@
 //! one's addon folders are, what's installed, and putting an install in step with what's on.
 //!
 //! A WoW mod is `kind: "addon"`: one or more addon folders (`Ryna_Chronicle`) installed beside the
-//! core's `Ryna`, with `## Dependencies: Ryna`. The bundled ones are compiled in (their
+//! core's `Ryna`, with `## Dependencies: Ryna`. Or it is `kind: "agent"`: no addon folder at all,
+//! the work done by the agent itself (the Settings mod, [`crate::settings`]); installing and
+//! removing one is nothing, and its toggle only says whether the agent does that work. The bundled ones are compiled in (their
 //! `mods/wow/<id>/mod.json`, [`BUNDLED_MOD_JSON`]), so they version with the agent; a test holds the
 //! list to the folders in `mods/wow`. Their addon folders come with the core's addon: the app carries
 //! them beside `addon/Ryna` (`addon/Ryna_Chronicle`), the release zip beside `Ryna`, and a checkout in
@@ -29,13 +31,21 @@ use crate::discovery::Install;
 pub const BUNDLED_MOD_JSON: &[&str] = &[
     include_str!("../../../../mods/wow/chronicle/mod.json"),
     include_str!("../../../../mods/wow/automation/mod.json"),
+    include_str!("../../../../mods/wow/settings/mod.json"),
 ];
 
-/// The one kind this core installs.
+/// The kind whose mods are addon folders, installed beside the core's.
 pub const KIND: &str = "addon";
+/// The kind whose mods run in the agent: no folder, nothing in the game.
+pub const AGENT_KIND: &str = "agent";
 
-/// The bundled mods, parsed once: every one is this core's, an `addon`, bundled, and works with this
-/// core's version (a test holds them to it; one that isn't is left out rather than installed).
+/// Whether `m` is an agent mod (no addon folder: install and remove do nothing).
+pub fn is_agent_mod(m: &ModManifest) -> bool {
+    m.kind == AGENT_KIND
+}
+
+/// The bundled mods, parsed once: every one is this core's, an `addon` with folders or an `agent`
+/// mod with none, bundled, and works with this core's version (a test holds them to it; one that isn't is left out rather than installed).
 pub fn bundled() -> &'static [ModManifest] {
     static MODS: OnceLock<Vec<ModManifest>> = OnceLock::new();
     MODS.get_or_init(|| {
@@ -45,9 +55,9 @@ pub fn bundled() -> &'static [ModManifest] {
             .filter_map(|json| ModManifest::parse(json).ok())
             .filter(|m| {
                 m.core == core.id
-                    && m.kind == KIND
+                    && ((m.kind == KIND && !m.addons.is_empty())
+                        || (m.kind == AGENT_KIND && m.addons.is_empty()))
                     && m.source == ModSource::Bundled
-                    && !m.addons.is_empty()
                     && m.works_with_core(&core.version)
             })
             .collect()
@@ -152,6 +162,8 @@ pub struct ModStatus {
     pub id: String,
     pub name: String,
     pub summary: String,
+    /// `addon` (folders in the game) or `agent` (the agent's own work, nothing to install).
+    pub kind: String,
     pub acts_in_game: bool,
     pub default_on: bool,
     pub on: bool,
@@ -183,13 +195,16 @@ pub fn statuses(
                 id: m.id.clone(),
                 name: m.name.clone(),
                 summary: m.summary.clone(),
+                kind: m.kind.clone(),
                 acts_in_game: m.acts_in_game,
                 default_on: m.default_on,
                 on: is_on(m, chosen),
                 bundled: bundled_version(core_source, m),
                 addons: m.addons.clone(),
+                // An agent mod is in no install: there's nothing of it in the game.
                 installs: installs
                     .iter()
+                    .filter(|_| !is_agent_mod(m))
                     .map(|i| ModInstall {
                         install: i.path.to_string_lossy().into_owned(),
                         installed: addon_install::addon_dir_named(i, folder).is_dir(),
@@ -235,7 +250,7 @@ pub fn apply(
     let has_core = addon_install::has_addon(install);
     for m in bundled()
         .iter()
-        .filter(|m| only.is_none_or(|id| m.id == id))
+        .filter(|m| only.is_none_or(|id| m.id == id) && !is_agent_mod(m))
     {
         for folder in &m.addons {
             if folder == ADDON_NAME {
@@ -277,6 +292,13 @@ pub fn apply(
 /// The status card's words for a mod in the install at `path`.
 pub fn row_words(m: &ModStatus, path: &str) -> (String, ryna_agent::core::Chip) {
     use ryna_agent::core::Chip;
+    if m.kind == AGENT_KIND {
+        return if m.on {
+            ("On · runs in the app".to_string(), Chip::Pushed)
+        } else {
+            ("Off".to_string(), Chip::Waiting)
+        };
+    }
     let here = m.at(path);
     let installed = here.filter(|i| i.installed);
     let mut words = match (m.on, installed) {
@@ -361,6 +383,10 @@ mod tests {
         let automation = bundled().iter().find(|m| m.id == "automation").unwrap();
         assert!(!automation.default_on && automation.acts_in_game);
         assert_eq!(automation.addons, ["Ryna_Automation"]);
+        // Settings runs in the agent: no folder, nothing in the game, off until turned on.
+        let settings = bundled().iter().find(|m| m.id == "settings").unwrap();
+        assert!(is_agent_mod(settings) && settings.addons.is_empty());
+        assert!(!settings.default_on && !settings.acts_in_game);
     }
 
     /// A release layout: `<dir>/Ryna` and each bundled mod's folder beside it, each with its toc.
@@ -449,7 +475,7 @@ mod tests {
             "{changes:?}"
         );
         let s = statuses(std::slice::from_ref(&inst), Some(&source), &none);
-        assert_eq!(s.len(), 2);
+        assert_eq!(s.len(), 3);
         let automation = of(&s, "automation");
         assert!(!automation.on && !automation.default_on && automation.acts_in_game);
         assert!(!automation.at(&here).unwrap().installed);
@@ -506,11 +532,53 @@ mod tests {
     }
 
     #[test]
+    fn an_agent_mod_installs_nothing_and_its_row_is_on_or_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = release(dir.path(), "0.3.0");
+        let inst = forever(dir.path());
+        addon_install::install(&source, &inst).unwrap();
+        let on = BTreeMap::from([("settings".to_string(), true)]);
+        // On: nothing goes into the game for it, and no folder is looked for.
+        assert!(apply(&inst, &source, &on, Some("settings"))
+            .unwrap()
+            .is_empty());
+        let before: Vec<_> = std::fs::read_dir(inst.path.join("Interface/AddOns"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.file_name())
+            .collect();
+        let off = BTreeMap::from([("settings".to_string(), false)]);
+        assert!(apply(&inst, &source, &off, Some("settings"))
+            .unwrap()
+            .is_empty());
+        let after: Vec<_> = std::fs::read_dir(inst.path.join("Interface/AddOns"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.file_name())
+            .collect();
+        assert_eq!(before, after);
+        let here = inst.path.to_string_lossy().into_owned();
+        let s = statuses(std::slice::from_ref(&inst), Some(&source), &on);
+        let settings = s.iter().find(|m| m.id == "settings").unwrap();
+        assert_eq!(settings.kind, AGENT_KIND);
+        assert!(settings.on && settings.installs.is_empty());
+        assert_eq!(
+            row_words(settings, &here),
+            ("On · runs in the app".to_string(), Chip::Pushed)
+        );
+        let s = statuses(std::slice::from_ref(&inst), Some(&source), &BTreeMap::new());
+        let settings = s.iter().find(|m| m.id == "settings").unwrap();
+        assert!(!settings.on);
+        assert_eq!(row_words(settings, &here).0, "Off");
+    }
+
+    #[test]
     fn the_rows_say_on_off_installed_and_off_in_the_game() {
         let m = |on: bool, installed: bool, version: Option<&str>, off: usize| ModStatus {
             id: "chronicle".into(),
             name: "Chronicle".into(),
             summary: "x".into(),
+            kind: KIND.into(),
             acts_in_game: false,
             default_on: true,
             on,

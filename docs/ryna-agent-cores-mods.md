@@ -148,7 +148,7 @@ A mod is a folder with a manifest, installed and toggled by the agent, belonging
   "name": "Vendor prices on tooltips",
   "version": "0.1.0",
   "summary": "What a vendor pays for an item and its stack, on the tooltip.",
-  "kind": "addon",                                   // wow: an addon folder; other cores: their kinds
+  "kind": "addon",                                   // wow: "addon" (an addon folder) or "agent" (no folder: the agent's own work, the Settings mod); other cores: their kinds
   "actsInGame": false,                               // true for anything that does something for the player
   "source": { "kind": "bundled" },                   // or { "kind": "git", "repo": "https://github.com/…", "tag": "v0.1.0", "sha256": "…" }
   "requires": { "core": ">=0.3.0" },

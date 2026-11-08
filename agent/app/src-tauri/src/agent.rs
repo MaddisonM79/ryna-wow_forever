@@ -785,6 +785,17 @@ pub fn set_mod_enabled(app: &AppHandle, id: &str, on: bool) -> Result<ModToggleR
             .save(dir)
             .map_err(|e| format!("Couldn't save the setting: {e}"))?;
     }
+    // An agent mod (Settings) has nothing in the game: the toggle is the whole of it.
+    if core_mods::is_agent_mod(m) {
+        return Ok(ModToggleResult {
+            id: m.id.clone(),
+            name: m.name.clone(),
+            on,
+            changes: Vec::new(),
+            waiting_for_addon: Vec::new(),
+            game_running: false,
+        });
+    }
     let found = discovery::discover(settings.install_override.as_deref());
     let picked =
         targets(&found.installs, settings.install_override.is_some(), None).unwrap_or_default();
