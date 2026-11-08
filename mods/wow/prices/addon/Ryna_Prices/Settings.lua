@@ -2,9 +2,10 @@
 -- the core and every mod, so these all start with "price"). The mod itself is off until it's turned
 -- on in the companion app; once it's on, the sell line shows, since that is all stage 1 is.
 --
---   priceSellLine              the "Sells for ..." line on item tooltips (on)
+--   priceSellLine              the "Sell Price: ..." line on item tooltips (on); it stays away by itself
+--                              wherever the game draws its own price
 --   priceStackTotal            the stack's total after it, "(2g 70s for 20)" (on)
---   priceOnlyAwayFromMerchant  no line while a merchant window is open, where the game shows its own (off)
+--   priceOnlyAwayFromMerchant  no line at all while a merchant window is open (off)
 --
 -- Each has the short name `/ryna prices <name> on|off` takes, and the one it sits under (`under`).
 

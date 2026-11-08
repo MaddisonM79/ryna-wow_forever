@@ -44,12 +44,13 @@ is the whole of it).
   junk (`RynaDB.automation.junk`, `/ryna auto junk` with the item on the cursor).
   `test/automation_test.lua` runs its logic against a fake client (`lua5.1`, in the addon workflow).
 - `prices/`: **Prices**, off by default (`defaultOn: false`, `actsInGame: false`;
-  docs/ryna-agent-cores-mods.md 7.3): prices on item tooltips. Stage 1 is the vendor line, "Sells
-  for 13s 50c (2g 70s for 20)", on every item tooltip (bags, bank, chat links, loot, merchants), from
+  docs/ryna-agent-cores-mods.md 7.3): prices on item tooltips. Stage 1 is the vendor line, "Sell
+  Price: 13s 50c (2g 70s for 20)" (the client's own label and coin icons, never where the game
+  already drew its own price), on every item tooltip (bags, bank, chat links, loot, merchants), from
   `C_Item.GetItemInfo`'s sell price (its 11th value; Forever has no global `GetItemInfo`), which the
-  client has for every item it has loaded, away from vendors. The stack's total is for the stack in that slot where the tooltip says (bag,
-  bank or loot slot, or the slot button's count), else for a full stack of a stackable item; a slot
-  holding one shows the single price. Items vendors won't buy get no line. An item the client
+  client has for every item it has loaded, away from vendors. The stack's total is for how many the tooltip shows where the client says (bag,
+  bank or loot slot, loot roll, quest reward, mail, trade, merchant or buyback, else the slot
+  button's count); a chat link, or no count at all, shows one item's price. Items vendors won't buy get no line. An item the client
   hasn't loaded answers nothing at all on Forever (no values, and asking again doesn't load it), so
   the mod asks for it (`C_Item.RequestLoadItemDataByID`) and refreshes the tooltip on
   `ITEM_DATA_LOAD_RESULT` or `GET_ITEM_INFO_RECEIVED` if it still shows that item; items you can

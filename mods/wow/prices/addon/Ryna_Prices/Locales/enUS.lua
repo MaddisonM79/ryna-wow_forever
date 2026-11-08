@@ -17,7 +17,8 @@ if ns.off then return end
 local L = ns.L
 
 -- Tooltip.lua
--- The line on item tooltips. %s: money, "13s 50c".
+-- The line on item tooltips where the client has no SELL_PRICE label of its own (the client's own,
+-- "Sell Price: ...", is used where it has one). %s: money, "13s 50c" or coin icons.
 L["Sells for %s"] = true
 -- After it, for a stack. %s: the stack's money; %d: how many.
 L["(%s for %d)"] = true
@@ -39,13 +40,13 @@ L["Prices"] = true
 L["Prices puts what a vendor pays on item tooltips. It only reads the game's item data: it does nothing "
   .. "for you and says nothing in chat."] = true
 -- The checkboxes' help, when hovered.
-L["Adds \"Sells for ...\" to every item tooltip: in your bags and bank, in chat links, in loot and at "
+L["Adds the sell price to every item tooltip: in your bags and bank, in chat links, in loot and at "
   .. "merchants. From the game's own item data, so it works away from vendors. Items vendors won't buy get "
-  .. "no line."] = true
-L["After the price, what the stack sells for: the stack in that bag slot, or a full stack of an item "
-  .. "you're not holding."] = true
-L["At a merchant the game shows its own sell price, so the line can stay away while the merchant window "
-  .. "is open."] = true
+  .. "no line, and where the game shows its own price, this one stays away."] = true
+L["After the price, what the stack sells for, wherever the game says how many there are: bags, bank, loot, "
+  .. "mail, trade, quest rewards and merchants. A chat link shows one item's price."] = true
+L["The line already stays away where the game shows its own price. This hides it for every item while a "
+  .. "merchant window is open."] = true
 
 -- Status.lua
 -- The Status tab's and /ryna status' line. %s: the piece above.

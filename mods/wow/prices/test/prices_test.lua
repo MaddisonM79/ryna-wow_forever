@@ -4,13 +4,14 @@
 --
 --   lua5.1 mods/wow/prices/test/prices_test.lua
 --
--- This proves the logic (the line's text for one item and a stack, the stack's count from the
--- tooltip's slot (bag, bank, loot, the owner button, clamped to a stack; never for a link) or the
--- item's stack size, the post call's data before GetItem, no line twice, nothing for items vendors
--- won't buy, an uncached item
--- asked for and refreshed on ITEM_DATA_LOAD_RESULT or GET_ITEM_INFO_RECEIVED, the merchant-window
--- setting, the toggles, /ryna prices, and
--- nothing in chat unasked); it can't prove the client's API behaves as assumed. That's the game's.
+-- This proves the logic (the line's text for one item and a stack, with the client's SELL_PRICE label
+-- and coin icons or the fallbacks; the stack's count from the tooltip's getter (bag, bank, loot, loot
+-- roll, quest, mail, trade, merchant, buyback) or the owner button, clamped to a stack, and one item's
+-- price for a link or an unknown count; the post call's data before GetItem; no line twice; no line
+-- where the game drew its own price; nothing for items vendors won't buy; an uncached item asked for
+-- and refreshed on ITEM_DATA_LOAD_RESULT or GET_ITEM_INFO_RECEIVED, those events registered only while
+-- it waits; the merchant-window setting, the toggles, /ryna prices, and nothing in chat unasked); it
+-- can't prove the client's API behaves as assumed. That's the game's.
 -- luacheck: ignore 1
 
 local ADDON = "mods/wow/prices/addon/Ryna_Prices/"
@@ -63,9 +64,24 @@ end
 -- Bags (C_Container), loot, and inventory slots (the bank's main slots among them).
 local BAGS, LOOT, INVENTORY = {}, {}, {}
 
+-- Frames (CreateFrame): the events each has registered, and its scripts.
+local frames = {}
+local function createFrame()
+  local f = { events = {}, scripts = {} }
+  function f.RegisterEvent(self, e) self.events[e] = true end
+  function f.UnregisterEvent(self, e) self.events[e] = nil end
+  function f.SetScript(self, k, h) self.scripts[k] = h end
+  frames[#frames + 1] = f
+  return f
+end
+
 local postCalls = {}
 local function installClient(processor)
   _G.GetLocale = function() return "enUS" end
+  _G.SELL_PRICE = "Sell Price" -- the client's GlobalStrings
+  _G.C_CurrencyInfo, _G.GetCoinTextureString = nil, nil -- coin icons: tested on their own below
+  frames = {}
+  _G.CreateFrame = function() return createFrame() end
   _G.DEFAULT_CHAT_FRAME = { AddMessage = function(_, msg) chat[#chat + 1] = msg end }
   _G.C_Item = {
     GetItemInfo = getItemInfo,
@@ -211,6 +227,9 @@ end
 
 local function fire(event, ...)
   for _, f in ipairs(handlers[event] or {}) do run(event, f, event, ...) end
+  for _, f in ipairs(frames) do
+    if f.events[event] and f.scripts.OnEvent then run(event, f.scripts.OnEvent, f, event, ...) end
+  end
 end
 
 -- Loads the addon as the client would (every file of the TOC, with its name and namespace), then
@@ -253,13 +272,16 @@ end
 local function priceLine(tip)
   for i = 2, #tip.lines do
     local l = plain(tip.lines[i])
-    if l:match("^Sells for ") then return l end
+    if l:match("^Sell Price: ") or l:match("^Sells for ") then return l end
   end
   return nil
 end
 local function priceLines(tip)
   local n = 0
-  for i = 2, #tip.lines do if plain(tip.lines[i]):match("^Sells for ") then n = n + 1 end end
+  for i = 2, #tip.lines do
+    local l = plain(tip.lines[i])
+    if l:match("^Sell Price: ") or l:match("^Sells for ") then n = n + 1 end
+  end
   return n
 end
 
@@ -282,30 +304,30 @@ local tip = filler(newTooltip(true))
 tip:Fill(2589, "GetBagItem", { 0, 1 })
 BAGS[0] = { [1] = 1, [2] = 20, [3] = 7 }
 tip:Fill(2589, "GetBagItem", { 0, 1 })
-check(priceLine(tip) == "Sells for 13c", "one Linen Cloth in a bag slot: the single price only: "
+check(priceLine(tip) == "Sell Price: 13c", "one Linen Cloth in a bag slot: the single price only: "
   .. tostring(priceLine(tip)))
 check(priceLines(tip) == 1, "one line, once")
 tip:Fill(4306, "GetBagItem", { 0, 2 })
-check(priceLine(tip) == "Sells for 13s 50c (2g 70s for 20)", "a stack of 20: the stack's total: "
+check(priceLine(tip) == "Sell Price: 13s 50c (2g 70s for 20)", "a stack of 20: the stack's total: "
   .. tostring(priceLine(tip)))
 tip:Fill(4306, "GetBagItem", { 0, 3 })
-check(priceLine(tip) == "Sells for 13s 50c (94s 50c for 7)", "a stack of 7: " .. tostring(priceLine(tip)))
+check(priceLine(tip) == "Sell Price: 13s 50c (94s 50c for 7)", "a stack of 7: " .. tostring(priceLine(tip)))
 check(tip.shows == 0, "the processor path doesn't re-show the tooltip itself")
 
--- A chat link (no slot): a full stack of a stackable item; a single item that doesn't stack.
+-- No count known (a chat link with no slot or button): one item's price (Maddison, 2026-11-08).
 tip:Fill(2589, nil, nil)
-check(priceLine(tip) == "Sells for 13c (2s 60c for 20)", "a link: a full stack's total: " .. tostring(priceLine(tip)))
+check(priceLine(tip) == "Sell Price: 13c", "no count: one item's price, no stack total: " .. tostring(priceLine(tip)))
 tip:Fill(2140, nil, nil)
-check(priceLine(tip) == "Sells for 7c", "an item that doesn't stack: the single price: " .. tostring(priceLine(tip)))
+check(priceLine(tip) == "Sell Price: 7c", "an item that doesn't stack: the single price: " .. tostring(priceLine(tip)))
 
 -- The slot button's count, when the tooltip doesn't say which slot.
 tip:Fill(4306, nil, nil, { count = 5 })
-check(priceLine(tip) == "Sells for 13s 50c (67s 50c for 5)", "the owner button's count: " .. tostring(priceLine(tip)))
+check(priceLine(tip) == "Sell Price: 13s 50c (67s 50c for 5)", "the owner button's count: " .. tostring(priceLine(tip)))
 
 -- Loot: the loot slot's quantity.
 LOOT[2] = 3
 tip:Fill(2589, "GetLootItem", { 2 })
-check(priceLine(tip) == "Sells for 13c (39c for 3)", "loot: the slot's quantity: " .. tostring(priceLine(tip)))
+check(priceLine(tip) == "Sell Price: 13c (39c for 3)", "loot: the slot's quantity: " .. tostring(priceLine(tip)))
 
 -- Items vendors won't buy: nothing.
 tip:Fill(6948, "GetBagItem", { 0, 1 })
@@ -327,9 +349,22 @@ ITEMS[9999].cached = true
 fire("ITEM_DATA_LOAD_RESULT", 9999, true)
 check(tip.refreshes == 1, "ITEM_DATA_LOAD_RESULT refreshes the tooltip still showing the item")
 -- The slot says 20 of an item that stacks to 5: clamped to the stack.
-check(priceLine(tip) == "Sells for 2s 50c (12s 50c for 5)", "and the line is there, the count clamped to a stack of 5: "
+check(priceLine(tip) == "Sell Price: 2s 50c (12s 50c for 5)",
+  "and the line is there, the count clamped to a stack of 5: "
   .. tostring(priceLine(tip)))
 check(ns.Tooltip.pending == nil, "nothing waits any more")
+
+-- The load events are registered only while a tooltip waits.
+local waiter = ns.Tooltip.waiter
+check(waiter ~= nil and next(waiter.events) == nil, "nothing waiting: no load events registered")
+ITEMS[9999].cached = false
+tip:Fill(9999, "GetBagItem", { 0, 2 })
+check(waiter.events.ITEM_DATA_LOAD_RESULT and waiter.events.GET_ITEM_INFO_RECEIVED,
+  "a tooltip waiting: both load events registered")
+tip:Fill(2589, "GetBagItem", { 0, 1 })
+check(ns.Tooltip.pending == nil and next(waiter.events) == nil,
+  "the tooltip moving on to a loaded item: nothing waits, the events are unregistered")
+ITEMS[9999].cached = true
 
 -- The load failed: no refresh, and nothing waits.
 ITEMS[9999].cached = false
@@ -359,8 +394,9 @@ plainTip:Fill(9999, nil, nil)
 check(#plainTip.lines == 1, "unloaded again: nothing")
 ITEMS[9999].cached = true
 fire("GET_ITEM_INFO_RECEIVED", 9999, true) -- the older event counts too
-check(priceLine(plainTip) == "Sells for 2s 50c (12s 50c for 5)" and plainTip.shows == 1,
-  "no RefreshData: the line is added and the tooltip shown again: " .. tostring(priceLine(plainTip)))
+check(priceLine(plainTip) == "Sell Price: 2s 50c" and plainTip.shows == 1,
+  "no RefreshData: the line (one item, no count known) is added and the tooltip shown again: "
+  .. tostring(priceLine(plainTip)))
 
 -- The by-hand path never adds the line twice (the client running the hook again, a second load event).
 ITEMS[9999].cached = false
@@ -374,33 +410,103 @@ check(priceLines(plainTip) == 1 and plainTip.shows == 2, "the hook running again
 -- The bank's main slots: GetInventoryItem and its count. ------------------------------------------
 INVENTORY[40] = 12
 tip:Fill(4306, "GetInventoryItem", { "player", 40 })
-check(priceLine(tip) == "Sells for 13s 50c (1g 62s for 12)", "a bank slot (GetInventoryItem): its count: "
+check(priceLine(tip) == "Sell Price: 13s 50c (1g 62s for 12)", "a bank slot (GetInventoryItem): its count: "
   .. tostring(priceLine(tip)))
 
 -- The stack clamp, and links ignore the owner's count. ----------------------------------------------
 tip:Fill(4306, nil, nil, { count = 99 })
-check(priceLine(tip) == "Sells for 13s 50c (2g 70s for 20)", "an owner count above the stack is clamped to 20: "
+check(priceLine(tip) == "Sell Price: 13s 50c (2g 70s for 20)", "an owner count above the stack is clamped to 20: "
   .. tostring(priceLine(tip)))
 tip:Fill(2140, nil, nil, { count = 4 })
-check(priceLine(tip) == "Sells for 7c (28c for 4)", "an item whose stack size is 1 isn't clamped: "
+check(priceLine(tip) == "Sell Price: 7c (28c for 4)", "an item whose stack size is 1 isn't clamped: "
   .. tostring(priceLine(tip)))
 local ref = filler(newTooltip(true))
 ref:Fill(4306, "GetHyperlink", { link(4306) }, { count = 3 })
-check(priceLine(ref) == "Sells for 13s 50c (2g 70s for 20)",
-  "ItemRefTooltip in processor mode, a link: a full stack, not the owner's count: " .. tostring(priceLine(ref)))
+check(priceLine(ref) == "Sell Price: 13s 50c",
+  "ItemRefTooltip in processor mode, a link: one item's price, not the owner's count: " .. tostring(priceLine(ref)))
 
 -- Append mode: the data's item, not GetItem's (the primary one). -------------------------------------
 tip.data = { id = 2589, type = 0 }
 tip:Fill(4306, nil, nil)
 tip.data = nil
-check(priceLine(tip) == "Sells for 13c (2s 60c for 20)",
+check(priceLine(tip) == "Sell Price: 13c",
   "appended data (Linen Cloth) under a Silk tooltip: the data's item: "
   .. tostring(priceLine(tip)))
 tip.data = { hyperlink = link(2589), type = 0 }
 tip:Fill(4306, nil, nil)
 tip.data = nil
-check(priceLine(tip) == "Sells for 13c (2s 60c for 20)", "appended data with only a hyperlink: its item: "
+check(priceLine(tip) == "Sell Price: 13c", "appended data with only a hyperlink: its item: "
   .. tostring(priceLine(tip)))
+
+-- The count from each getter the client names. ------------------------------------------------------
+_G.GetLootRollItemInfo = function(id) if id == 7 then return "icon", "Silk Cloth", 4 end end
+_G.GetQuestItemInfo = function(kind, i) if kind == "reward" and i == 1 then return "Silk Cloth", "icon", 6 end end
+_G.GetQuestLogRewardInfo = function(i, questID) if i == 1 and questID == 99 then return "Silk Cloth", "icon", 8 end end
+_G.GetQuestLogChoiceInfo = function(i) if i == 2 then return "Silk Cloth", "icon", 9 end end
+_G.GetInboxItem = function(m, a) if m == 1 and a == 2 then return "Silk Cloth", 4306, "icon", 11 end end
+_G.GetSendMailItem = function(i) if i == 3 then return "Silk Cloth", 4306, "icon", 12 end end
+_G.GetTradePlayerItemInfo = function(i) if i == 1 then return "Silk Cloth", "icon", 13 end end
+_G.GetTradeTargetItemInfo = function(i) if i == 2 then return "Silk Cloth", "icon", 14 end end
+_G.C_MerchantFrame = { GetItemInfo = function(i) if i == 5 then return { stackCount = 10 } end end }
+_G.GetBuybackItemInfo = function(i) if i == 1 then return "Silk Cloth", "icon", 1350, 15 end end
+local function countOf(getter, args, owner)
+  tip:Fill(4306, getter, args, owner)
+  return (priceLine(tip) or ""):match("for (%d+)%)$")
+end
+check(countOf("GetLootRollItem", { 7 }) == "4", "a loot roll: its quantity")
+check(countOf("GetQuestItem", { "reward", 1 }) == "6", "a quest reward (GetQuestItem)")
+check(countOf("GetQuestLogItem", { "reward", 1, 99 }) == "8", "a quest log reward, with its quest id")
+check(countOf("GetQuestLogItem", { "choice", 2 }) == "9", "a quest log choice")
+check(countOf("GetInboxItem", { 1, 2 }) == "11", "a mail attachment")
+check(countOf("GetInboxItem", { 1 }, { count = 3 }) == "3", "a mail's header item: no count of its own, the button's")
+check(countOf("GetSendMailItem", { 3 }) == "12", "an item being mailed")
+check(countOf("GetTradePlayerItem", { 1 }) == "13", "my side of a trade")
+check(countOf("GetTradeTargetItem", { 2 }) == "14", "their side of a trade")
+check(countOf("GetMerchantItem", { 5 }) == "10", "a merchant's item: C_MerchantFrame's stackCount")
+_G.C_MerchantFrame = nil
+_G.GetMerchantItemInfo = function(i) if i == 5 then return "Silk Cloth", "icon", 1350, 5 end end
+check(countOf("GetMerchantItem", { 5 }) == "5", "a merchant's item without C_MerchantFrame: the older function")
+check(countOf("GetBuybackItem", { 1 }) == "15", "a buyback item")
+check(countOf("GetQuestItem", { "reward", 4 }, { count = 2 }) == "2",
+  "a getter with no answer: the owner button's count")
+_G.GetQuestItemInfo = nil
+check(countOf("GetQuestItem", { "reward", 1 }) == nil, "a getter this client lacks, no button: one item's price")
+check(priceLine(tip) == "Sell Price: 13s 50c", "  and the line is the single price: " .. tostring(priceLine(tip)))
+
+-- The game's own price on the tooltip (a money line it drew): no second one. -------------------------
+tip.shownMoneyFrames = 1
+tip:Fill(4306, "GetBagItem", { 0, 2 })
+check(priceLine(tip) == nil and #tip.lines == 1, "the game drew its own price: no line from us")
+tip.shownMoneyFrames = 0
+tip:Fill(4306, "GetBagItem", { 0, 2 })
+check(priceLine(tip) ~= nil, "no money line drawn: ours")
+tip.shownMoneyFrames = nil
+
+-- Coin icons and the label. ---------------------------------------------------------------------------
+_G.C_CurrencyInfo = { GetCoinTextureString = function(c) return "<" .. c .. ">" end }
+tip:Fill(4306, "GetBagItem", { 0, 2 })
+check(priceLine(tip) == "Sell Price: <1350> (<27000> for 20)",
+  "C_CurrencyInfo's coin icons: " .. tostring(priceLine(tip)))
+_G.C_CurrencyInfo = { GetCoinTextureString = function() return "" end }
+_G.GetCoinTextureString = function(c) return "[" .. c .. "]" end
+tip:Fill(4306, "GetBagItem", { 0, 2 })
+check(priceLine(tip) == "Sell Price: [1350] ([27000] for 20)",
+  "an empty answer from C_CurrencyInfo: the older global's: " .. tostring(priceLine(tip)))
+_G.C_CurrencyInfo = { GetCoinTextureString = function() error("no") end }
+_G.GetCoinTextureString = nil
+tip:Fill(4306, "GetBagItem", { 0, 2 })
+check(priceLine(tip) == "Sell Price: 13s 50c (2g 70s for 20)", "a formatter that raises: the core's money text: "
+  .. tostring(priceLine(tip)))
+_G.C_CurrencyInfo = nil
+_G.SELL_PRICE = nil
+tip:Fill(4306, "GetBagItem", { 0, 2 })
+check(priceLine(tip) == "Sells for 13s 50c (2g 70s for 20)", "no SELL_PRICE on the client: our own label: "
+  .. tostring(priceLine(tip)))
+_G.SELL_PRICE = "Verkaufspreis"
+tip:Fill(4306, "GetBagItem", { 0, 2 })
+check(plain(tip.lines[2]) == "Verkaufspreis: 13s 50c (2g 70s for 20)", "the client's label, in its language: "
+  .. plain(tip.lines[2] or ""))
+_G.SELL_PRICE = "Sell Price"
 
 -- Only away from merchants. ----------------------------------------------------------------------
 _G.MerchantFrame.shown = true
@@ -424,7 +530,7 @@ settings.priceOnlyAwayFromMerchant = nil
 -- The toggles. -----------------------------------------------------------------------------------
 settings.priceStackTotal = false
 tip:Fill(4306, "GetBagItem", { 0, 2 })
-check(priceLine(tip) == "Sells for 13s 50c", "stack total off: the single price only")
+check(priceLine(tip) == "Sell Price: 13s 50c", "stack total off: the single price only")
 settings.priceStackTotal = nil
 settings.priceSellLine = false
 tip:Fill(4306, "GetBagItem", { 0, 2 })
@@ -476,7 +582,7 @@ check(gt.scripts.OnTooltipSetItem ~= nil and _G.ItemRefTooltip.scripts.OnTooltip
   "GameTooltip and ItemRefTooltip hooked")
 BAGS[0] = { [2] = 20 }
 gt:Fill(4306, nil, nil, { count = 20 })
-check(priceLine(gt) == "Sells for 13s 50c (2g 70s for 20)" and gt.shows == 1,
+check(priceLine(gt) == "Sell Price: 13s 50c (2g 70s for 20)" and gt.shows == 1,
   "the script path adds the line and re-shows: " .. tostring(priceLine(gt)))
 check(#chat == 0, "nothing in chat")
 

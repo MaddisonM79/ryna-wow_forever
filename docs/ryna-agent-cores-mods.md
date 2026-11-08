@@ -383,8 +383,8 @@ added to the same addon later, each line its own toggle on the mod's tab.
   refreshes on `ITEM_DATA_LOAD_RESULT`; `C_Item.GetItemInfoInstant` works but has no price); the stock tooltip
   only shows it while a merchant window is open. The mod adds one line to every item tooltip through
   the core's tooltip hook (the `TooltipDataProcessor` path Chronicle's lines use): "Sells for 13s 50c"
-  and, for a stack, "(2g 70s for 20)". Nothing to fetch. An item the client hasn't cached answers nil
-  once and fires `GET_ITEM_INFO_RECEIVED`; the line appears on the next hover. Settings: the line on
+  and, for a stack, "(2g 70s for 20)". Nothing to fetch. An item the client hasn't loaded is asked
+  for and the tooltip refreshed once it arrives (as built, below). Settings: the line on
   every tooltip or only outside merchant windows (default: every tooltip), the stack total (default
   on). One probe still owed in game: `/dump select(11, C_Item.GetItemInfo(C_Container.GetContainerItemLink(0, 1)))`
   should print the first bag item's sell price; if a loaded item answers 0 or nothing, the served table
@@ -446,7 +446,22 @@ changes one. It prints nothing unasked (an error caught inside its hook is the o
 core's `ReportError` line, once) and writes nothing but its settings. The probe is still owed:
 if `/dump select(11, C_Item.GetItemInfo(2589))` (Linen Cloth loaded first) answers 0 or nil away
 from a vendor, the line simply never shows (every item reads as selling for nothing), and the sell price has to come from the served
-table instead.
+table instead. (Maddison ran it in game the same day: the line works.)
+
+**After a comparison with Ketho's VendorPrice (2026-11-08; Maddison's calls).** This supersedes the line's wording and counts above. The line reads like the game's
+own: the client's `SELL_PRICE` label ("Sell Price: ...", so every client language reads it) and its coin
+icons (`C_CurrencyInfo.GetCoinTextureString`, else the `GetCoinTextureString` global), falling back to
+"Sells for" and `MoneyText`. The count comes from every getter that names one: bag, bank and loot
+slots, `GetLootRollItem`, `GetQuestItem`, `GetQuestLogItem` (reward and choice), `GetInboxItem` (an
+attachment), `GetSendMailItem`, both sides of a trade, `GetMerchantItem` (`C_MerchantFrame`, else
+`GetMerchantItemInfo`) and `GetBuybackItem`; else the slot button's `count`. A chat link, or anything
+else with no count, shows one item's price: the full-stack guess is gone. Where the game already drew
+its own price on the tooltip (a money line, `shownMoneyFrames`), ours stays away, so a merchant window
+never shows two; `priceOnlyAwayFromMerchant` (still off) now means no line at all at a merchant.
+Comparison tooltips keep the line. The load events are registered only while a tooltip waits, on a
+frame of Prices' own. Still owed in game: that Forever's merchant tooltip draws its price as a money
+line (else the two prices stay), the getter names above (a missing one falls back to the button's count
+or one item's price), and whether a recipe tooltip gets two lines (the recipe's and the product's).
 
 Chronicle's `merchant` event, as built (`Merchants.lua`, setting `merchants`, on, on the Recording
 tab):

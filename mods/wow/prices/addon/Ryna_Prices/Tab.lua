@@ -14,13 +14,13 @@ local P = {}
 
 -- What each checkbox says when hovered, by setting.
 local HELP = {
-  priceSellLine = L["Adds \"Sells for ...\" to every item tooltip: in your bags and bank, in chat links, in loot "
+  priceSellLine = L["Adds the sell price to every item tooltip: in your bags and bank, in chat links, in loot "
     .. "and at merchants. From the game's own item data, so it works away from vendors. Items vendors won't "
-    .. "buy get no line."],
-  priceStackTotal = L["After the price, what the stack sells for: the stack in that bag slot, or a full stack "
-    .. "of an item you're not holding."],
-  priceOnlyAwayFromMerchant = L["At a merchant the game shows its own sell price, so the line can stay away "
-    .. "while the merchant window is open."],
+    .. "buy get no line, and where the game shows its own price, this one stays away."],
+  priceStackTotal = L["After the price, what the stack sells for, wherever the game says how many there are: "
+    .. "bags, bank, loot, mail, trade, quest rewards and merchants. A chat link shows one item's price."],
+  priceOnlyAwayFromMerchant = L["The line already stays away where the game shows its own price. This hides "
+    .. "it for every item while a merchant window is open."],
 }
 
 local function build(f)

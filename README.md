@@ -79,10 +79,10 @@ the mods that are on. Each mod is listed under the install with a switch; there 
   your group sees them). It's off by default, and turning it on in the app still does nothing until
   you tick a chore: every one starts unticked. Hold Shift (at an NPC, or as a cinematic starts) and
   nothing happens by itself; nothing happens in combat either.
-- **Prices**: what a vendor pays for an item, and for its stack, on every item tooltip ("Sells for
-  13s 50c (2g 70s for 20)"), in your bags and bank, in chat links and loot, away from vendors too.
-  Its Prices tab (or `/ryna prices`) turns the stack total off or keeps the line away while a
-  merchant window is open. It only reads the game's item data. Off by default.
+- **Prices**: what a vendor pays for an item, and for its stack, on every item tooltip ("Sell
+  Price: 13s 50c (2g 70s for 20)", in the game's own words and coins), in your bags and bank, in chat
+  links and loot, away from vendors too, and never twice where the game shows its own. Its Prices tab
+  (or `/ryna prices`) turns the stack total off or keeps the line away while a merchant window is open. It only reads the game's item data. Off by default.
 - **Settings**: your addons' settings (ElvUI and every other addon's, found from their own files),
   copied from one character to another and backed up to ryna.io, stored encrypted for you. It
   works in the app with the game closed and puts nothing in the game, so there's no addon folder for

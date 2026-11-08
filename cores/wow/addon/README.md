@@ -237,9 +237,9 @@ The settings (saved in `RynaDB.settings`; if the game loses them, the defaults c
 | Record players I see nearby | Census | on | Part of the census. Players whose nameplates, target or mouseover you see, of either faction: their level, class, guild and faction, and where. Off: those three sources are ignored. Friendly nameplates are the game's own setting (Shift+V); the button under this one turns them on. |
 | Debug messages | Advanced | off | Prints what Ryna is doing to the chat window, one dimmed `Ryna debug:` line each: scans as they run (played time, gear, professions, reputations, bags and bank, quest log, group, guild roster), every journal event, every sighting and every sighting skipped (by the 10-minute window or a census setting; nearby players print at most one line per 5 seconds, a count with the names when there are 5 or fewer), each answer to your own `/who`, combat-log decisions and settings changes. For checking that it works. Same as `/ryna debug`. |
 | Show the minimap button | Advanced | on | Hides or shows the button. `/ryna` still opens the panel. |
-| Show what a vendor pays on item tooltips | Prices | on | "Sells for 13s 50c" on every item tooltip (`priceSellLine`; Prices' own, there only while the mod is). |
-| Add what the whole stack sells for | Prices | on | "(2g 70s for 20)" after it: the stack in that slot, or a full stack (`priceStackTotal`). |
-| Not while a merchant window is open | Prices | off | Keeps the line away at merchants, where the game shows its own price (`priceOnlyAwayFromMerchant`). |
+| Show what a vendor pays on item tooltips | Prices | on | "Sell Price: 13s 50c" on every item tooltip, except where the game already shows its own (`priceSellLine`; Prices' own, there only while the mod is). |
+| Add what the whole stack sells for | Prices | on | "(2g 70s for 20)" after it, wherever the game says how many (bags, bank, loot, mail, trade, quest rewards, merchants); a chat link shows one item's price (`priceStackTotal`). |
+| Not while a merchant window is open | Prices | off | No line at all while a merchant window is open; without it the line already stays away where the game shows its own price (`priceOnlyAwayFromMerchant`). |
 
 The settings are for the whole game account (`RynaDB` is account-wide), not per character.
 
