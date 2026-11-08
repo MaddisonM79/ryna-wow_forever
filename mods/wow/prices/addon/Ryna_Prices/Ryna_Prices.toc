@@ -19,6 +19,7 @@ Locales\koKR.lua
 Locales\zhCN.lua
 Locales\zhTW.lua
 Settings.lua
+Auction.lua
 Tooltip.lua
 Tab.lua
 Status.lua

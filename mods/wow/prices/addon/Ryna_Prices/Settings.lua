@@ -1,11 +1,18 @@
 -- Settings: Prices' toggles, each its own key in RynaDB.settings (the core keeps one flat table for
 -- the core and every mod, so these all start with "price"). The mod itself is off until it's turned
--- on in the companion app; once it's on, the sell line shows, since that is all stage 1 is.
+-- on in the companion app; once it's on, both lines show and the snapshot is taken.
 --
 --   priceSellLine              the "Sell Price: ..." line on item tooltips (on); it stays away by itself
 --                              wherever the game draws its own price
 --   priceStackTotal            the stack's total after it, "(2g 70s for 20)" (on)
---   priceOnlyAwayFromMerchant  no line at all while a merchant window is open (off)
+--   priceOnlyAwayFromMerchant  no sell line at all while a merchant window is open (off)
+--   priceAuctionLine           the "AH: 4g 20s each · 31 listed · 2 hours ago" line (on), from this
+--                              account's own snapshots and searches; never where the auction house
+--                              window shows the item's price itself
+--   priceAuctionStackTotal     the stack's total in it (on)
+--   priceAuctionSnapshot       one snapshot of the house per visit, at most one per 15 minutes per
+--                              character, and the `auction` journal event it makes (on; off: no
+--                              ReplicateItems() and no event)
 --
 -- Each has the short name `/ryna prices <name> on|off` takes, and the one it sits under (`under`).
 
@@ -22,6 +29,12 @@ S.FEATURES = {
     label = L["Add what the whole stack sells for"] },
   { name = "awayFromMerchant", key = "priceOnlyAwayFromMerchant", default = false, under = "priceSellLine",
     label = L["Not while a merchant window is open"] },
+  { name = "auctionLine", key = "priceAuctionLine", default = true,
+    label = L["Show auction house prices on item tooltips"] },
+  { name = "auctionStackTotal", key = "priceAuctionStackTotal", default = true, under = "priceAuctionLine",
+    label = L["Add what the whole stack goes for"] },
+  { name = "auctionSnapshot", key = "priceAuctionSnapshot", default = true,
+    label = L["Take a snapshot of the auction house when you open it"] },
 }
 
 local defaults = {}
@@ -55,4 +68,13 @@ function S.Summary()
   if stack then return L["sell line on (with the stack's total, everywhere)"] end
   if away then return L["sell line on (no stack total, away from merchants)"] end
   return L["sell line on (no stack total, everywhere)"]
+end
+
+-- "auction line on, snapshots on", and the like.
+function S.AuctionSummary()
+  local line, snap = S.On("priceAuctionLine"), S.On("priceAuctionSnapshot")
+  if line and snap then return L["auction line on, snapshots on"] end
+  if line then return L["auction line on, snapshots off"] end
+  if snap then return L["auction line off, snapshots on"] end
+  return L["auction line off, snapshots off"]
 end

@@ -25,7 +25,17 @@
 -- while a tooltip waits (they fire for every item the client loads), on a frame of Prices' own.
 -- Item ids come from `Hitem:(%d+)`: Forever's links start `|cnIQ2:`, not `|cffxxxxxx`.
 --
--- With `priceOnlyAwayFromMerchant` on, no line at all while a merchant window is open.
+-- With `priceOnlyAwayFromMerchant` on, no sell line at all while a merchant window is open.
+--
+-- The auction line (`priceAuctionLine`), under the sell line in the same hook: "AH: 4g 20s each ·
+-- 31 listed · 2 hours ago" from Auction.lua's store (this account's last snapshot of the item:
+-- its quantity-weighted median unit buyout, how many listings, how long ago), or "AH: from 10c
+-- each · 13754 for sale · just now" where only a browse search saw the item (its lowest price and
+-- the quantity, no median). With `priceAuctionStackTotal`, the stack's count as the sell line takes
+-- it: "AH: 4g 20s each (84g for 20) · ...". Nothing for an item with no entry, and nothing while
+-- the auction house window itself shows the item's price (Auction.HouseShows). The age is the
+-- core's Ago ("2 hours ago"). An item the client hasn't loaded still gets it: the store needs only
+-- the id.
 --
 -- Hooked like Chronicle's lines: TooltipDataProcessor where the client has it, GameTooltip's and
 -- ItemRefTooltip's OnTooltipSetItem otherwise. Every client call goes through ns.Try.
@@ -249,31 +259,64 @@ local function setPending(p)
   end
 end
 
--- Adds the line to `tooltip`; `show` re-shows it (the script hooks, and a refresh by hand).
+-- The auction line for `howMany` of item `id`, from the store, or nil when it has no entry.
+function T.AuctionLine(id, howMany)
+  local e = ns.Auction.Entry(id)
+  if not e then return nil end
+  local each = type(e.med) == "number" and e.med or e.min
+  if type(each) ~= "number" or each <= 0 then return nil end
+  local price = string.format(L["%s each"], T.Money(each))
+  if type(howMany) == "number" and howMany > 1 and S.On("priceAuctionStackTotal") then
+    price = price .. " " .. string.format(L["(%s for %d)"], T.Money(each * howMany), howMany)
+  end
+  local ago = ns.Ago(e.at) or "?"
+  if type(e.med) == "number" and type(e.n) == "number" then
+    return string.format(L["AH: %s · %d listed · %s"], price, e.n, ago)
+  end
+  return string.format(L["AH: from %s · %d for sale · %s"], price, type(e.q) == "number" and e.q or 0, ago)
+end
+
+-- Adds `line` once (`show`: unless it is already there, from a refresh by hand).
+local function add(tooltip, line, show)
+  if not line or (show and T.HasLine(tooltip, line)) then return false end
+  tooltip:AddLine(COLOR .. line .. "|r")
+  return true
+end
+
+-- Adds the lines to `tooltip`; `show` re-shows it (the script hooks, and a refresh by hand).
 function T.OnItem(tooltip, data, show)
-  if not S.On("priceSellLine") then return end
+  local sell, auction = S.On("priceSellLine"), S.On("priceAuctionLine")
+  if not sell and not auction then return end
   if type(tooltip) ~= "table" or type(tooltip.AddLine) ~= "function" then return end
-  if S.On("priceOnlyAwayFromMerchant") and T.AtMerchant() then return end
+  if sell and S.On("priceOnlyAwayFromMerchant") and T.AtMerchant() then sell = false end
   local link, id = T.ItemOf(tooltip, data)
   if not link and not id then return end
   local price, maxStack = T.Price(link or id)
-  if price == nil then
-    if id then
-      setPending({ tooltip = tooltip, id = id })
-      ns.Try(ns.Fn("C_Item", "RequestLoadItemDataByID"), id)
-    end
-    return
+  local n
+  -- How many the tooltip shows; a frame's count can't be more than a stack holds, so it is clamped
+  -- where the stack size is known (an item not loaded yet has none).
+  local function slotCount()
+    if n then return n end
+    n = T.SlotCount(tooltip, type(data) == "table") or 1
+    if maxStack and maxStack > 1 and n > maxStack then n = maxStack end
+    return n
   end
-  if T.pending and T.pending.tooltip == tooltip then setPending(nil) end
-  if T.GameShowsPrice(tooltip) then return end
-  local n = T.SlotCount(tooltip, type(data) == "table") or 1
-  -- A frame's count can't be more than a stack holds: clamp it where the stack size is known.
-  if maxStack > 1 and n > maxStack then n = maxStack end
-  local line = T.Line(price, n)
-  if not line then return end
-  if show and T.HasLine(tooltip, line) then return end
-  tooltip:AddLine(COLOR .. line .. "|r")
-  if show and type(tooltip.Show) == "function" then tooltip:Show() end
+  local added = false
+  if sell then
+    if price == nil then
+      if id then
+        setPending({ tooltip = tooltip, id = id })
+        ns.Try(ns.Fn("C_Item", "RequestLoadItemDataByID"), id)
+      end
+    else
+      if T.pending and T.pending.tooltip == tooltip then setPending(nil) end
+      if not T.GameShowsPrice(tooltip) then added = add(tooltip, T.Line(price, slotCount()), show) end
+    end
+  end
+  if auction and id and not ns.Auction.HouseShows(tooltip, id) then
+    added = add(tooltip, T.AuctionLine(id, slotCount()), show) or added
+  end
+  if added and show and type(tooltip.Show) == "function" then tooltip:Show() end
 end
 
 local function shown(tooltip)

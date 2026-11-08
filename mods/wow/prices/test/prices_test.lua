@@ -189,6 +189,11 @@ local function installApi()
     Run = run,
     ReportError = function(label, err) errors[#errors + 1] = label .. ": " .. tostring(err) end,
     MoneyText = money,
+    -- The clock, the timers and the journal (the auction side's; test/auction_test.lua tests them).
+    Now = function() return 1700000000 end,
+    Ago = function() return "just now" end,
+    After = function(_, label, f) run(label, f) end,
+    Journal = { Add = function() return {} end },
     On = function(event, f)
       handlers[event] = handlers[event] or {}
       table.insert(handlers[event], f)
@@ -554,7 +559,8 @@ check(statusPanel[1].fn()[1] == "Prices: sell line on (with the stack's total, e
 check(statusSlash[1] and statusSlash[1].order == statusPanel[1].order, "and the same in /ryna status")
 check(#chat == 0, "nothing in chat from any tooltip")
 commands.prices.run("", "")
-check(#chat == 1 + #ns.Settings.FEATURES + 1, "/ryna prices prints its state when typed: " .. #chat)
+-- The two status lines (the sell line's, the auction side's), a line per setting, and the hint.
+check(#chat == 2 + #ns.Settings.FEATURES + 1, "/ryna prices prints its state when typed: " .. #chat)
 check(chat[1] == "Ryna: Prices: sell line on (with the stack's total, everywhere)", chat[1])
 chat = {}
 commands.prices.run("stacktotal", "stacktotal off")
