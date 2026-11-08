@@ -141,18 +141,19 @@ may refuse kinds it doesn't support), and nothing in the Palworld core assumes a
 A mod is a folder with a manifest, installed and toggled by the agent, belonging to one core:
 
 ```jsonc
-// mods/wow/vendor-prices/mod.json
+// mods/wow/prices/mod.json
 {
-  "id": "vendor-prices",
+  "id": "prices",
   "core": "wow",
-  "name": "Vendor prices on tooltips",
-  "version": "0.1.0",
-  "summary": "What a vendor pays for an item and its stack, on the tooltip.",
+  "name": "Prices",
+  "version": "0.3.8",
+  "summary": "Puts what a vendor pays for an item, and for its stack, on every item tooltip, away from vendors too. Nothing in chat, nothing done for you.",
   "kind": "addon",                                   // wow: "addon" (an addon folder) or "agent" (no folder: the agent's own work, the Settings mod); other cores: their kinds
   "actsInGame": false,                               // true for anything that does something for the player
   "source": { "kind": "bundled" },                   // or { "kind": "git", "repo": "https://github.com/…", "tag": "v0.1.0", "sha256": "…" }
-  "requires": { "core": ">=0.3.0" },
-  "defaultOn": false
+  "requires": { "core": ">=0.3.8" },
+  "defaultOn": false,
+  "addons": ["Ryna_Prices"]                          // an addon mod's folders, installed beside Ryna
 }
 ```
 
@@ -161,7 +162,7 @@ A mod is a folder with a manifest, installed and toggled by the agent, belonging
 - **Bundled or fetched.** A bundled mod ships inside the agent and versions with it. A fetched mod is
   pulled by the agent from a git source on an allow-list, by pinned tag, and its files are checked
   against the manifest's hash before anything is written. The person sees the source and the version.
-- **The WoW kind.** A WoW mod is its own addon folder (`Ryna_VendorPrices`, `## Dependencies: Ryna`),
+- **The WoW kind.** A WoW mod is its own addon folder (`Ryna_Prices`, `## Dependencies: Ryna`),
   installed next to `Ryna`. The toggle in the agent installs or removes the folder; the toggle in the
   in-game panel enables or disables the addon through the client's addon list and asks for a reload.
   Both toggles show the same state. Mods may use the core's namespace for shared helpers and settings
@@ -417,6 +418,70 @@ Stages: (1) the Prices mod with the sell line, Lua only, plus Chronicle's `merch
 stores an unknown event type as sent, so recording starts at once), one release; (2) the API pool and
 `Data/vendors.lua`; (3) the auction line, after the in-game check of what the AH API gives. Open: the two defaults above; whether the AH line shows on every tooltip or only in
 bags and at the AH.
+
+**Stage 1 as built (2026-11-08, not yet run in game).** `mods/wow/prices` (`mod.json`: `kind: "addon"`,
+`actsInGame: false`, bundled, `defaultOn: false`, `requires.core >=0.3.8`) and its addon `Ryna_Prices`,
+carried by the app and the release zip like Automation's. The line is "Sells for 13s 50c (2g 70s for
+20)" in the core's `MoneyText`, on every item tooltip (TooltipDataProcessor's item post call, else
+`OnTooltipSetItem` on GameTooltip and ItemRefTooltip). The stack's count is the tooltip's own: the
+getter that filled it (`GetBagItem`, `GetInventoryItem` for the bank, `GetLootItem`) or the slot
+button's `count` (never for a link, `GetHyperlink`, and clamped to the item's stack size); with
+neither (a chat link, a merchant's item) it is a full stack of a stackable item, and a slot holding
+one shows the single price. The item is the post call's own data first (`data.id`,
+`data.hyperlink`), since a tooltip that appends a second item still answers `GetItem` with the
+first; a line added by hand is never added twice. A sell price of 0, or none, adds nothing; an
+uncached item adds nothing and, when `ITEM_DATA_LOAD_RESULT` or `GET_ITEM_INFO_RECEIVED` names it
+while the same tooltip still shows it, the tooltip is refreshed (`RefreshData`, else the line added
+by hand). What the game said (Maddison's client, 2026-11-08), which the code follows: the global
+`GetItemInfo` is nil on Forever, so only `C_Item.GetItemInfo` is asked (the documented 18 returns:
+sellPrice 11th, itemStackCount 8th); an item the client hasn't loaded answers **nothing** (no values,
+not a nil) and asking again doesn't load it, so an empty answer counts as "not loaded" and the mod
+calls `C_Item.RequestLoadItemDataByID`; `C_Item.GetItemInfoInstant` has no price; and links start
+`|cnIQ2:` rather than `|cffxxxxxx`, so ids are read from `Hitem:(%d+)`. Whether a loaded item's answer
+carries a sell price is still being checked; an answer without one adds no line. Its Prices tab
+(after Automation) has `priceSellLine` (on), `priceStackTotal` (on) and `priceOnlyAwayFromMerchant`
+(off: the line shows at merchants too; on, it stays away while the merchant window is open, by the
+merchant events or `MerchantFrame`); `/ryna prices` lists them and `/ryna prices <name> on|off`
+changes one. It prints nothing unasked (an error caught inside its hook is the one exception: the
+core's `ReportError` line, once) and writes nothing but its settings. The probe is still owed:
+if `/dump select(11, C_Item.GetItemInfo(2589))` (Linen Cloth loaded first) answers 0 or nil away
+from a vendor, the line simply never shows (every item reads as selling for nothing), and the sell price has to come from the served
+table instead.
+
+Chronicle's `merchant` event, as built (`Merchants.lua`, setting `merchants`, on, on the Recording
+tab):
+
+```jsonc
+{ "type": "merchant", "npc": "Creature-0-…", "name": "Innkeeper Gryshka",
+  "zone": "Orgrimmar", "subzone": "Valley of Strength", "filter": 1,
+  "items": [
+    { "id": 4540, "price": 25, "stack": 1, "limited": false },
+    { "currencyId": 1901, "price": 0, "stack": 50, "limited": false },
+    { "id": 18839, "price": 900, "stack": 1, "limited": false,
+      "currency": [ { "amount": 75, "name": "Honor Points", "currencyId": 1901 },
+                    { "amount": 2, "name": "Alterac Valley Mark of Honor", "itemId": 20560 } ] } ] }
+```
+
+`price` is copper for `stack` of the item (the bundle sold at once); `limited` is `numAvailable >= 0`;
+`currency` is there only when `GetMerchantItemCostInfo` says the item costs something besides copper;
+a slot that sells a currency (a currency link, or C_MerchantFrame's `currencyID`) is `{ currencyId,
+price, stack, limited }`. `filter` is `GetMerchantFilter()`: the game opens the window filtered to the
+player's class (`ResetSetMerchantFilter`), so the list is the filtered view, and 1
+(`LE_LOOT_FILTER_ALL`) is the whole one. A list counts once it's complete (every slot has an item or
+currency link). It is written at `MERCHANT_SHOW` when it is, else when `GET_ITEM_INFO_RECEIVED` (what
+the game's own merchant frame waits on) or `MERCHANT_UPDATE` completes it; a visit that never
+completes writes its last reading at `MERCHANT_CLOSED` with `"partial": true`, rather than losing it.
+One event per visit and filter, at most 200 items; the NPC is done for the login only when its
+complete, unfiltered list was written, so a partial or filtered list leaves it to the next visit. So
+the journal doesn't take a list per visit forever, `RynaDB.chronicle.merchants` keeps each complete
+list's fingerprint (`{ hash, at }`, a string hash over the sorted ids, prices and stacks and the
+filter; keyed by GUID, or `GUID#filter` for a filtered list): an unchanged list written in the last 7
+days isn't written again, a changed price or list is, and entries older than 30 days are pruned at
+login. The reads prefer `C_MerchantFrame.GetItemInfo`'s named fields (a table on the Modern engine;
+which of the two the client has is asked at run time, not assumed) and fall back to the 3rd to 5th
+values of `GetMerchantItemInfo` (price, stack, available), which classic and modern clients agree on,
+since Forever's return orders have differed from the wiki's before. The agent passes it through as it
+does every unknown event type; docs/wow.md's row comes with the pool.
 
 ## 8. Identity
 

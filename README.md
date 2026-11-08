@@ -62,9 +62,10 @@ Proton prefixes: Lutris's `~/Games`, Bottles, Steam's `compatdata`, `~/.wine`); 
 elsewhere, *Choose folder…* and pick the `World of Warcraft` folder (on Linux, the one under the
 prefix's `drive_c`). Click **Install addon**.
 It copies the addon that came inside the app into the game's `Interface/AddOns`: Ryna itself and
-the mods that are on. Each mod is listed under the install with a switch; there are three so far:
+the mods that are on. Each mod is listed under the install with a switch; there are four so far:
 
-- **Chronicle**: what Ryna records about your characters. On by default.
+- **Chronicle**: what Ryna records about your characters, and what the merchants you visit sell
+  (for vendor prices; merchants are NPCs). On by default.
 - **Automation**: does the chores you tick in game (`/ryna`, its Automation tab, or `/ryna auto`).
   At quest givers: accepting and turning in quests, opening the one quest an NPC who offers nothing
   else has, leaving low-level quests alone, taking the reward that sells for the most (otherwise a
@@ -78,6 +79,10 @@ the mods that are on. Each mod is listed under the install with a switch; there 
   your group sees them). It's off by default, and turning it on in the app still does nothing until
   you tick a chore: every one starts unticked. Hold Shift (at an NPC, or as a cinematic starts) and
   nothing happens by itself; nothing happens in combat either.
+- **Prices**: what a vendor pays for an item, and for its stack, on every item tooltip ("Sells for
+  13s 50c (2g 70s for 20)"), in your bags and bank, in chat links and loot, away from vendors too.
+  Its Prices tab (or `/ryna prices`) turns the stack total off or keeps the line away while a
+  merchant window is open. It only reads the game's item data. Off by default.
 - **Settings**: your addons' settings (ElvUI and every other addon's, found from their own files),
   copied from one character to another and backed up to ryna.io, stored encrypted for you. It
   works in the app with the game closed and puts nothing in the game, so there's no addon folder for
@@ -151,7 +156,7 @@ workspace (`Cargo.toml` at the root) holds the agent and the cores' Rust halves.
   the mod API); and the scrubbed test fixtures in `cores/wow/fixtures`. Its mods are in `mods/wow`:
   Chronicle (`mods/wow/chronicle`), everything recorded about a character, Automation
   (`mods/wow/automation`), the chores (quests, vendors, trainers, mail, rolls, invites and the like),
-  each off until ticked, and Settings (`mods/wow/settings`, `kind: "agent"`: no addon folder; the
+  each off until ticked, Prices (`mods/wow/prices`), vendor prices on item tooltips, and Settings (`mods/wow/settings`, `kind: "agent"`: no addon folder; the
   core's `settings` module), addon settings copied between characters and backed up encrypted.
 - `mods/`: each core's mods (`mods/wow`), from stage 2 of the design.
 - `scripts/`: version checks, the release manifest, the CLI smoke test, and `capture.sh`, which

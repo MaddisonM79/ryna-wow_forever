@@ -2,7 +2,7 @@
 
 World of Warcraft: Forever addons that record what your characters have and do into one
 account-wide SavedVariable, `RynaDB`, for the Ryna companion app (the agent) to read and upload.
-There are two, installed side by side by the companion app:
+The core's addon and its mods' addons are installed side by side by the companion app:
 
 - **Ryna** (`cores/wow/addon/Ryna`), the WoW core's in-game half and only the plumbing: `RynaDB`
   and its schema, the event dispatcher, the settings and their defaults, the journal (append,
@@ -19,10 +19,15 @@ There are two, installed side by side by the companion app:
   quest givers, vendors, trainers and the mailbox and around the world, each its own setting that
   starts off, with its own Automation tab and `/ryna auto` (`mods/wow/README.md`). Holding Shift
   pauses it.
+- **Ryna Prices** (`mods/wow/prices/addon/Ryna_Prices`), off by default: what a vendor pays for an
+  item and its stack on every item tooltip, with its own Prices tab and `/ryna prices`
+  (`mods/wow/README.md`). It only reads the game's item data.
 
 Together they have a small settings panel (in tabs) and a minimap button. Nothing is printed to chat
 unless you ask: the login line and the combat-logging notices are a setting under Advanced, off by
-default, and `/ryna` answers only when typed.
+default, and `/ryna` answers only when typed. The one exception is an error: one caught inside any
+Ryna addon's handler or hook prints one "an error in … was caught (reported once)" line, once per
+kind of error per session (`ReportError`).
 
 The game writes SavedVariables at logout and `/reload`. Addons can't reach the network or the
 filesystem, so that file is the only way the data leaves the game. The addon never depends on
@@ -74,7 +79,8 @@ A **journal** of events, kept for 30 days and at most 100,000 events (when it go
 oldest are dropped). The cap is high on purpose: the addon may be installed days before the companion
 app first uploads, and the journal has to hold several days of heavy play until then. It records
 logins and logouts, zone changes, quests accepted and turned in, level-ups, deaths, gold changes of a
-gold or more, group changes, and **sightings** of other players (see the census settings below).
+gold or more, group changes, the merchants you open (`merchant`: what they sell and for how much;
+mods/wow/README.md has the shape), and **sightings** of other players (see the census settings below).
 
 A sighting records only *who* and *where*: the other player's GUID, name, and level, class, race,
 guild and zone where the client gives them. Sightings come from your group, from your guild roster
@@ -166,8 +172,8 @@ names match the JSON the agent uploads one for one.
 
 `/ryna`, or a click on the minimap button, opens **Settings → AddOns → Ryna** (on older clients,
 Interface Options → AddOns → Ryna). Under its title is a row of tabs (Status, Recording, Census,
-Automation, Messages, Mods, Advanced; Recording and Census are Chronicle's and Automation is
-Automation's, and each goes when its mod is off); a click on one shows that
+Automation, Prices, Messages, Mods, Advanced; Recording and Census are Chronicle's, Automation is
+Automation's and Prices is Prices', and each goes when its mod is off); a click on one shows that
 tab (the content scrolls when it's taller than the window), and the panel opens on the tab you last
 had (`RynaDB.settings.panelTab`). The tabs use the game's own tab style where the client has it, and
 plain buttons with the selected one lit where it doesn't.
@@ -183,7 +189,7 @@ companion app.", its version, and "Update available" when the app knows of a new
 Signing in happens in the companion app, never in the game: an addon can't reach the network.
 
 **Recording** (Chronicle's): one line on what is recorded about your own characters, Record kills
-and loot, and Show my numbers on tooltips; then **In game**: Show the session strip, Lock the strip
+and loot, Show my numbers on tooltips, and Record the merchants I visit; then **In game**: Show the session strip, Lock the strip
 (greyed while the strip is hidden), a **Reset position** button (the strip back to the top of the
 screen) and an **Open the Chronicle window** button.
 
@@ -222,6 +228,7 @@ The settings (saved in `RynaDB.settings`; if the game loses them, the defaults c
 | Advanced combat logging | Advanced | on | Sets the game's `advancedCombatLogging`, so fights are logged with positions and health (see below). |
 | Record kills and loot | Recording | on | Counts kills, the experience they give, and loot into the character record (see "Kills and loot"). Off: nothing is counted; the totals so far are kept. |
 | Show my numbers on tooltips | Recording | on | Adds your own kill and loot numbers to creature and item tooltips. |
+| Record the merchants I visit | Recording | on | A `merchant` journal event when you open a merchant: the NPC, where, and what it sells for how much (`merchants`; mods/wow/README.md has the shape and rules). Once its whole list is written, the NPC is done for the login, and an unchanged list isn't written again for 7 days. Off: merchants aren't looked at. |
 | Show the session strip | Recording | on | The session strip on screen (`sessionStrip`; see "The session strip"). Off: hidden; the session is still counted, and the window and the Status line still show it. |
 | Lock the strip | Recording | off | Locked, the strip can't be dragged (`sessionStripLocked`). Right-clicking the strip switches it too. Its place is `sessionStripPos` (Reset position clears it); the panel's Defaults keeps it. |
 | Take part in the census | Census | on | Records the other players you see. Off: **no** `seen` events at all, from chat, players nearby, your group, your guild roster or your own `/who`; the addon records only your own characters (and still your guild's roster, which is your guild's own list). |
@@ -230,6 +237,9 @@ The settings (saved in `RynaDB.settings`; if the game loses them, the defaults c
 | Record players I see nearby | Census | on | Part of the census. Players whose nameplates, target or mouseover you see, of either faction: their level, class, guild and faction, and where. Off: those three sources are ignored. Friendly nameplates are the game's own setting (Shift+V); the button under this one turns them on. |
 | Debug messages | Advanced | off | Prints what Ryna is doing to the chat window, one dimmed `Ryna debug:` line each: scans as they run (played time, gear, professions, reputations, bags and bank, quest log, group, guild roster), every journal event, every sighting and every sighting skipped (by the 10-minute window or a census setting; nearby players print at most one line per 5 seconds, a count with the names when there are 5 or fewer), each answer to your own `/who`, combat-log decisions and settings changes. For checking that it works. Same as `/ryna debug`. |
 | Show the minimap button | Advanced | on | Hides or shows the button. `/ryna` still opens the panel. |
+| Show what a vendor pays on item tooltips | Prices | on | "Sells for 13s 50c" on every item tooltip (`priceSellLine`; Prices' own, there only while the mod is). |
+| Add what the whole stack sells for | Prices | on | "(2g 70s for 20)" after it: the stack in that slot, or a full stack (`priceStackTotal`). |
+| Not while a merchant window is open | Prices | off | Keeps the line away at merchants, where the game shows its own price (`priceOnlyAwayFromMerchant`). |
 
 The settings are for the whole game account (`RynaDB` is account-wide), not per character.
 

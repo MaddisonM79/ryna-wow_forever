@@ -120,6 +120,9 @@ L["Counts the creatures you and your group kill, the experience they give and wh
 L["Show my numbers on tooltips"] = nil
 L["Adds your own kills and drops to creature and item tooltips: how many you killed, what they dropped "
   .. "for you and how often."] = nil
+L["Record the merchants I visit"] = nil
+L["When you open a merchant, records what that NPC sells and for how much, once per NPC each time you "
+  .. "log in, for vendor prices on ryna.io. Merchants are NPCs: nothing here is about a player."] = nil
 
 -- Session.lua, Strip.lua, Window.lua: the session strip and the Chronicle window.
 -- Durations: "under a minute", "2d 3h" (days, hours), "1h 12m" (hours, minutes), "12m" (minutes).

@@ -859,22 +859,57 @@ mod tests {
 
     /// The app carries the core's addon and every bundled mod's addon folders beside it
     /// (`addon/<folder>`, where `mods::addon_source` looks), so turning a mod on can install it.
+    /// Each is a directory key, never a glob: Tauri walks a directory and keeps its structure
+    /// (`Locales/enUS.lua` lands at `addon/<folder>/Locales/enUS.lua`), while a glob in the map
+    /// form puts every match straight under the target by file name, and `<folder>/*` skips the
+    /// subfolders altogether (the 0.3.8 app shipped without `Locales/`).
     #[test]
-    fn the_bundle_carries_every_bundled_mods_folders() {
+    fn the_bundle_carries_every_bundled_mods_folders_whole() {
         let conf: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
-        let resources = &conf["bundle"]["resources"];
-        assert_eq!(
-            resources["../../../cores/wow/addon/Ryna/*"],
-            json!("addon/Ryna/")
-        );
+        let resources = conf["bundle"]["resources"].as_object().unwrap();
+        for key in resources.keys() {
+            assert!(
+                !key.contains('*'),
+                "{key}: a glob loses the addon's subfolders"
+            );
+        }
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut folders = vec![(
+            "../../../cores/wow/addon/Ryna".to_string(),
+            "Ryna".to_string(),
+        )];
         for m in core_mods::bundled() {
             for folder in &m.addons {
-                let from = format!("../../../mods/wow/{}/addon/{folder}/*", m.id);
-                assert_eq!(
-                    resources[from.as_str()],
-                    json!(format!("addon/{folder}/")),
-                    "tauri.conf.json's bundle.resources lacks {from}"
+                folders.push((
+                    format!("../../../mods/wow/{}/addon/{folder}", m.id),
+                    folder.clone(),
+                ));
+            }
+        }
+        for (from, folder) in folders {
+            assert_eq!(
+                resources.get(&from),
+                Some(&json!(format!("addon/{folder}/"))),
+                "tauri.conf.json's bundle.resources lacks {from}"
+            );
+            // Every file its TOC loads is under that directory, Locales\ included.
+            let dir = manifest.join(&from);
+            let toc = std::fs::read_to_string(dir.join(format!("{folder}.toc"))).unwrap();
+            let files: Vec<_> = toc
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                .collect();
+            assert!(
+                files.iter().any(|f| f.starts_with("Locales")),
+                "{folder}.toc loads its Locales"
+            );
+            for file in files {
+                let rel = file.replace('\\', "/");
+                assert!(
+                    dir.join(&rel).is_file(),
+                    "{folder}: the TOC loads {rel}, which isn't there"
                 );
             }
         }

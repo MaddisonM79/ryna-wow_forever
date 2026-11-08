@@ -43,7 +43,10 @@ function T.SourceName(key)
     local loot = recMap("loot")
     local e = loot and loot[id]
     local name = type(e) == "table" and ns.NonEmpty(e.name)
-    if not name then name = ns.NonEmpty(ns.Try(ns.Fn("GetItemInfo"), tonumber(id))) end
+    -- Forever has no global GetItemInfo; C_Item's is the one there.
+    if not name then
+      name = ns.NonEmpty(ns.Try(ns.Fn("C_Item", "GetItemInfo") or ns.Fn("GetItemInfo"), tonumber(id)))
+    end
     return name or string.format(L["item %s"], id)
   end
   return tostring(key)

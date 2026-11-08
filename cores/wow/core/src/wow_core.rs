@@ -438,6 +438,7 @@ mod tests {
                 "Addon",
                 "Chronicle",
                 "Automation",
+                "Prices",
                 "Settings",
                 "Log",
                 "Fights, last 12 h",
@@ -447,6 +448,7 @@ mod tests {
         assert_eq!(rows[1].value, "Addon not installed");
         assert_eq!(rows[2].value, "On · not installed yet: install the addon");
         assert_eq!(rows[3].value, "Off", "Automation is off by default");
+        assert_eq!(rows[4].value, "Off", "Prices is off by default");
 
         let hb = core.heartbeat(&ctx);
         assert_eq!(
