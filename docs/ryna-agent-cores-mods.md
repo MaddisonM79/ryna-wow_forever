@@ -422,8 +422,11 @@ carried by the app and the release zip like Automation's. The line is "Sells for
 20)" in the core's `MoneyText`, on every item tooltip (TooltipDataProcessor's item post call, else
 `OnTooltipSetItem` on GameTooltip and ItemRefTooltip). The stack's count is the tooltip's own: the
 getter that filled it (`GetBagItem`, `GetInventoryItem` for the bank, `GetLootItem`) or the slot
-button's `count`; with neither (a chat link, a merchant's item) it is a full stack of a stackable
-item, and a slot holding one shows the single price. A sell price of 0, or none, adds nothing; an
+button's `count` (never for a link, `GetHyperlink`, and clamped to the item's stack size); with
+neither (a chat link, a merchant's item) it is a full stack of a stackable item, and a slot holding
+one shows the single price. The item is the post call's own data first (`data.id`,
+`data.hyperlink`), since a tooltip that appends a second item still answers `GetItem` with the
+first; a line added by hand is never added twice. A sell price of 0, or none, adds nothing; an
 uncached item adds nothing and, when `ITEM_DATA_LOAD_RESULT` or `GET_ITEM_INFO_RECEIVED` names it
 while the same tooltip still shows it, the tooltip is refreshed (`RefreshData`, else the line added
 by hand). What the game said (Maddison's client, 2026-11-08), which the code follows: the global
@@ -436,10 +439,10 @@ carries a sell price is still being checked; an answer without one adds no line.
 (after Automation) has `priceSellLine` (on), `priceStackTotal` (on) and `priceOnlyAwayFromMerchant`
 (off: the line shows at merchants too; on, it stays away while the merchant window is open, by the
 merchant events or `MerchantFrame`); `/ryna prices` lists them and `/ryna prices <name> on|off`
-changes one. It prints nothing unasked and writes nothing but its settings. The probe is still owed:
+changes one. It prints nothing unasked (an error caught inside its hook is the one exception: the
+core's `ReportError` line, once) and writes nothing but its settings. The probe is still owed:
 if `/dump select(11, C_Item.GetItemInfo(2589))` (Linen Cloth loaded first) answers 0 or nil away
-from a vendor, the line simply never
-shows (every item reads as selling for nothing), and the sell price has to come from the served
+from a vendor, the line simply never shows (every item reads as selling for nothing), and the sell price has to come from the served
 table instead.
 
 Chronicle's `merchant` event, as built (`Merchants.lua`, setting `merchants`, on, on the Recording
@@ -447,23 +450,35 @@ tab):
 
 ```jsonc
 { "type": "merchant", "npc": "Creature-0-…", "name": "Innkeeper Gryshka",
-  "zone": "Orgrimmar", "subzone": "Valley of Strength",
+  "zone": "Orgrimmar", "subzone": "Valley of Strength", "filter": 1,
   "items": [
     { "id": 4540, "price": 25, "stack": 1, "limited": false },
+    { "currencyId": 1901, "price": 0, "stack": 50, "limited": false },
     { "id": 18839, "price": 900, "stack": 1, "limited": false,
       "currency": [ { "amount": 75, "name": "Honor Points", "currencyId": 1901 },
                     { "amount": 2, "name": "Alterac Valley Mark of Honor", "itemId": 20560 } ] } ] }
 ```
 
 `price` is copper for `stack` of the item (the bundle sold at once); `limited` is `numAvailable >= 0`;
-`currency` is there only when `GetMerchantItemCostInfo` says the item costs something besides copper.
-It is written at `MERCHANT_SHOW` when every slot's link has loaded, else at the visit's first
-`MERCHANT_UPDATE` that finds any (items without a link are left out), once per NPC per login and at
-most 200 items. The reads prefer `C_MerchantFrame.GetItemInfo`'s named fields (a table on the
-Modern engine; which of the two the client has is asked at run time, not assumed) and fall back to the
-3rd to 5th values of `GetMerchantItemInfo` (price, stack, available), which classic and modern
-clients agree on, since Forever's return orders have differed from the wiki's before. The agent
-passes it through as it does every unknown event type; docs/wow.md's row comes with the pool.
+`currency` is there only when `GetMerchantItemCostInfo` says the item costs something besides copper;
+a slot that sells a currency (a currency link, or C_MerchantFrame's `currencyID`) is `{ currencyId,
+price, stack, limited }`. `filter` is `GetMerchantFilter()`: the game opens the window filtered to the
+player's class (`ResetSetMerchantFilter`), so the list is the filtered view, and 1
+(`LE_LOOT_FILTER_ALL`) is the whole one. A list counts once it's complete (every slot has an item or
+currency link). It is written at `MERCHANT_SHOW` when it is, else when `GET_ITEM_INFO_RECEIVED` (what
+the game's own merchant frame waits on) or `MERCHANT_UPDATE` completes it; a visit that never
+completes writes its last reading at `MERCHANT_CLOSED` with `"partial": true`, rather than losing it.
+One event per visit and filter, at most 200 items; the NPC is done for the login only when its
+complete, unfiltered list was written, so a partial or filtered list leaves it to the next visit. So
+the journal doesn't take a list per visit forever, `RynaDB.chronicle.merchants` keeps each complete
+list's fingerprint (`{ hash, at }`, a string hash over the sorted ids, prices and stacks and the
+filter; keyed by GUID, or `GUID#filter` for a filtered list): an unchanged list written in the last 7
+days isn't written again, a changed price or list is, and entries older than 30 days are pruned at
+login. The reads prefer `C_MerchantFrame.GetItemInfo`'s named fields (a table on the Modern engine;
+which of the two the client has is asked at run time, not assumed) and fall back to the 3rd to 5th
+values of `GetMerchantItemInfo` (price, stack, available), which classic and modern clients agree on,
+since Forever's return orders have differed from the wiki's before. The agent passes it through as it
+does every unknown event type; docs/wow.md's row comes with the pool.
 
 ## 8. Identity
 

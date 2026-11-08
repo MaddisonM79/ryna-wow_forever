@@ -25,7 +25,9 @@ The core's addon and its mods' addons are installed side by side by the companio
 
 Together they have a small settings panel (in tabs) and a minimap button. Nothing is printed to chat
 unless you ask: the login line and the combat-logging notices are a setting under Advanced, off by
-default, and `/ryna` answers only when typed.
+default, and `/ryna` answers only when typed. The one exception is an error: one caught inside any
+Ryna addon's handler or hook prints one "an error in … was caught (reported once)" line, once per
+kind of error per session (`ReportError`).
 
 The game writes SavedVariables at logout and `/reload`. Addons can't reach the network or the
 filesystem, so that file is the only way the data leaves the game. The addon never depends on
@@ -226,7 +228,7 @@ The settings (saved in `RynaDB.settings`; if the game loses them, the defaults c
 | Advanced combat logging | Advanced | on | Sets the game's `advancedCombatLogging`, so fights are logged with positions and health (see below). |
 | Record kills and loot | Recording | on | Counts kills, the experience they give, and loot into the character record (see "Kills and loot"). Off: nothing is counted; the totals so far are kept. |
 | Show my numbers on tooltips | Recording | on | Adds your own kill and loot numbers to creature and item tooltips. |
-| Record the merchants I visit | Recording | on | A `merchant` journal event when you open a merchant: the NPC, where, and what it sells for how much (`merchants`; mods/wow/README.md has the shape). Once per NPC per login. Off: merchants aren't looked at. |
+| Record the merchants I visit | Recording | on | A `merchant` journal event when you open a merchant: the NPC, where, and what it sells for how much (`merchants`; mods/wow/README.md has the shape and rules). Once its whole list is written, the NPC is done for the login, and an unchanged list isn't written again for 7 days. Off: merchants aren't looked at. |
 | Show the session strip | Recording | on | The session strip on screen (`sessionStrip`; see "The session strip"). Off: hidden; the session is still counted, and the window and the Status line still show it. |
 | Lock the strip | Recording | off | Locked, the strip can't be dragged (`sessionStripLocked`). Right-clicking the strip switches it too. Its place is `sessionStripPos` (Reset position clears it); the panel's Defaults keeps it. |
 | Take part in the census | Census | on | Records the other players you see. Off: **no** `seen` events at all, from chat, players nearby, your group, your guild roster or your own `/who`; the addon records only your own characters (and still your guild's roster, which is your guild's own list). |

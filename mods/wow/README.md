@@ -15,12 +15,22 @@ is the whole of it).
   Recording and Census tabs. It writes the same `RynaDB` the single addon wrote before stage 2.
   Among its journal events is `merchant` (`Merchants.lua`, the `merchants` setting, on, on the
   Recording tab; docs/ryna-agent-cores-mods.md 7.3): when the player opens a merchant, `{ npc
-  (GUID), name, zone, subzone, items: [ { id, price, stack, limited, currency? } ] }`, where `price`
-  is copper for `stack` of the item, `limited` is `numAvailable >= 0`, and `currency` (`[ { amount,
-  name, itemId | currencyId } ]`) is there only when the item costs something besides copper. Once
-  per NPC per login, at most 200 items; written at `MERCHANT_SHOW`, or at the visit's first
-  `MERCHANT_UPDATE` when links were still loading. It reads `C_MerchantFrame.GetItemInfo` (a table)
-  where the client has it, else the classic positional `GetMerchantItemInfo`. `test/chronicle_merchant_test.lua` covers it.
+  (GUID), name, zone, subzone, filter, partial?, items: [ { id | currencyId, price, stack, limited,
+  currency? } ] }`. `price` is copper for `stack` of the item; `limited` is `numAvailable >= 0`;
+  `currency` (`[ { amount, name, itemId | currencyId } ]`) is there only when the item costs
+  something besides copper; a slot that sells a currency is `{ currencyId, price, stack, limited }`.
+  `filter` is `GetMerchantFilter()`'s value: the window lists only what its filter shows (the game
+  sets it to your class when it opens), and 1 (`LE_LOOT_FILTER_ALL`) is the whole list. A list is
+  written once it's complete (every slot has an item or currency link): at `MERCHANT_SHOW`, or when
+  `GET_ITEM_INFO_RECEIVED` or `MERCHANT_UPDATE` completes it; a visit that never completes writes
+  what had loaded at `MERCHANT_CLOSED`, with `partial: true`. One event per visit and filter, at
+  most 200 items, and the NPC is done for the login only once its complete, unfiltered list was
+  written. Each complete list's fingerprint (a hash over item ids, prices, stacks and the filter)
+  is kept in `RynaDB.chronicle.merchants` (`{ hash, at }` by GUID, `GUID#filter` for a filtered
+  list): an unchanged list written in the last 7 days isn't written again, a changed one is, and
+  fingerprints older than 30 days go at login. It reads `C_MerchantFrame.GetItemInfo` (a table)
+  where the client has it, else the classic positional `GetMerchantItemInfo`.
+  `test/chronicle_merchant_test.lua` covers it.
 - `automation/`: **Automation**, off by default (`defaultOn: false`, `actsInGame: true`): chores at
   quest givers (accept, turn in, quest-only gossip, leave low-level quests, optionally take the
   best-selling reward), vendors (sell greys and marked junk, repair, optionally from the guild bank
@@ -47,8 +57,11 @@ is the whole of it).
   start `|cnIQ2:`. Its settings, on its own Prices tab: `priceSellLine` (on), `priceStackTotal` (on)
   and `priceOnlyAwayFromMerchant` (off; on, the line stays away while a merchant window is open,
   where the game shows its own price). `/ryna prices` lists them, `/ryna prices <name> on|off`
-  (`sellLine`, `stackTotal`, `awayFromMerchant`) changes one; nothing goes to chat otherwise. It
-  writes only its settings. **Owed in game**: `/dump select(11, C_Item.GetItemInfo(2589))` away
+  (`sellLine`, `stackTotal`, `awayFromMerchant`) changes one; nothing goes to chat otherwise, with
+  one exception every Ryna addon shares: an error inside its tooltip hook is caught, and the core's
+  `ReportError` prints one "an error in … was caught (reported once)" line for it, once per kind
+  of error per session. A slot's count is clamped to the item's stack size, and a link never takes
+  a button's count. It writes only its settings. **Owed in game**: `/dump select(11, C_Item.GetItemInfo(2589))` away
   from a vendor, once Linen Cloth is loaded (hover one first: a bare id query doesn't load it), should
   print 13 (its sell price in copper); the global `GetItemInfo(2589)` is nil on Forever. If the
   engine answers 0 or nil there, the line never shows (every item reads as selling for nothing;
