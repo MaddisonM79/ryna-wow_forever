@@ -295,18 +295,36 @@ the chosen files, uploads them to R2 under the person's `sub` through the API (`
 /v1/wow/settings/backups`, a route section for `docs/wow.md`), keeps the last N, and restores through
 the app with the same closed-game rule. The person's backups are theirs alone: other addons' files hold
 other players' names and chat, so they never feed the census or any pooled table, and the app's copy
-says so. Recommended: a size cap (50 MB a backup, keep 10; Details and WeakAuras run to tens of
-megabytes) and encryption at rest only, person-scoped, since client-side encryption loses the backup
-with the key on a new machine, which is the case backups exist for.
+says so. A size cap (50 MB a backup, keep 10; Details and WeakAuras run to tens of megabytes).
+
+**Encryption (decided 2026-11-08, Maddison: "option b"; the WoW app is open to the internet, not
+friends and family, so this has to hold for strangers).** Server-side envelope encryption per person,
+tied to the account:
+
+- One master sealing key, `WOW_BACKUP_KEY`, in the `api (lmam)` 1Password Environment, on the API's
+  never-regenerate list beside `FF_CRED_KEY` and the others (a new one makes every backup unreadable).
+- Each backup gets its own random 256-bit data key. The API wraps it (AES-256-GCM) under a key derived
+  with HKDF-SHA256 from the master and the person's `sub`, and stores the wrapped key, its nonce and a
+  key version beside the object, so a rotation re-wraps data keys without touching the objects.
+- The bulk work is the agent's, not the Worker's: the agent asks the API for a fresh data key (it
+  comes back plain over TLS with its wrapped form), encrypts the zip with AES-256-GCM locally, and
+  uploads ciphertext plus the wrapped key. Restore is the reverse: the signed-in agent asks the API to
+  unwrap, downloads the ciphertext and decrypts on the machine. The Worker never holds a plaintext
+  backup, and a 50 MB zip never passes through its memory.
+- Honest limit, said in the app's copy: ryna.io holds the master key, so its operator could decrypt a
+  backup; it is "stored encrypted for you on ryna.io", not end to end. A passphrase mode (the person's
+  own key, unrecoverable if lost) can be an opt-in later.
+- Not the device key: the Ed25519 identity key is for signing, and is per device, so it couldn't
+  restore on a new machine anyway.
 
 **UI.** In the agent, under the WoW core: a Settings section listing addons with their scope
 (account, per character), size and last-written time; per addon the characters that have settings for
 it; "Copy from <character>" on a character, "Back up now", "Restore", a history. Each copy and
 restore writes a `.bak` of what it replaced beside the file, kept until the next one.
 
-Settled 2026-11-08, Maddison: **backup and copy are one mod.** Still open: copies between accounts in
-v1 or only between characters; cross-machine sync automatic ("restore here" on a new machine, or on
-every sync) or manual only; and how the backups are encrypted (the options are with her).
+Settled 2026-11-08, Maddison: **backup and copy are one mod**, encrypted as above. Still open: copies
+between accounts in v1 or only between characters; cross-machine sync automatic ("restore here" on a
+new machine, or on every sync) or manual only.
 
 ## 8. Identity
 
