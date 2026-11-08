@@ -4,7 +4,9 @@
 //! `/v1/wow/census` with no token at all.
 //!
 //! Every POST also carries the device key's three headers (docs/wow.md section 13.1: the
-//! submission ID, the public key, and the signature over the exact body bytes sent).
+//! submission ID, the public key, and the signature over the exact body bytes sent), and so do the
+//! Settings mod's PUTs and DELETEs to `/v1/wow/settings/backups` (section 15); a fight's PUTs and
+//! the GETs don't.
 //!
 //! Every answer is the envelope `{ ok: true, data } | { ok: false, error: { code, message, detail } }`.
 //! A refusal is a 200 with `ok:false`; `SCHEMA_UNSUPPORTED` means the agent and addon need
@@ -30,6 +32,10 @@ pub const INGEST_PATH: &str = "/v1/wow/agent/ingest";
 pub const HEARTBEAT_PATH: &str = "/v1/wow/agent/heartbeat";
 pub const ENCOUNTERS_PATH: &str = "/v1/wow/agent/encounters";
 pub const CENSUS_PATH: &str = "/v1/wow/census";
+/// The Settings mod's backups (docs/wow.md section 15).
+pub const SETTINGS_BACKUPS_PATH: &str = "/v1/wow/settings/backups";
+/// A backup's JSON bodies (`POST /backups` with up to 2,000 files, `complete`).
+pub const SETTINGS_JSON_LIMIT: usize = 1024 * 1024;
 pub const TRIES: u32 = 3;
 /// The API refuses bodies over these.
 pub const INGEST_LIMIT: usize = 16 * 1024 * 1024;
@@ -215,7 +221,82 @@ impl<'a> Api<'a> {
             CENSUS_LIMIT,
             Duration::from_secs(60),
             Bearer::None,
+            true,
         )
+    }
+
+    /// A Settings-mod call answered with the envelope: `GET`, `POST` (a JSON body, `{}` when none)
+    /// or `DELETE` to `path`, as the person; every one but the GET signed. Returns `data`.
+    pub fn settings_call(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&Value>,
+        timeout: Duration,
+    ) -> Result<Value, PushError> {
+        let bytes = match (method, body) {
+            (Method::Get, _) => Vec::new(),
+            (_, Some(b)) => serde_json::to_vec(b).expect("a value always serialises"),
+            (Method::Post, None) => b"{}".to_vec(),
+            (_, None) => Vec::new(),
+        };
+        self.send(
+            method,
+            path,
+            "application/json",
+            None,
+            bytes,
+            SETTINGS_JSON_LIMIT,
+            timeout,
+            Bearer::Person,
+            method != Method::Get,
+        )
+    }
+
+    /// `PUT` raw bytes (a backup's part) to `path`, as the person, signed over those bytes.
+    pub fn settings_put(
+        &self,
+        path: &str,
+        bytes: Vec<u8>,
+        limit: usize,
+        timeout: Duration,
+    ) -> Result<Value, PushError> {
+        self.send(
+            Method::Put,
+            path,
+            "application/octet-stream",
+            None,
+            bytes,
+            limit,
+            timeout,
+            Bearer::Person,
+            true,
+        )
+    }
+
+    /// `GET` raw bytes (a backup's ciphertext) from `path`, as the person. An answer in the
+    /// envelope (a refusal) is that refusal.
+    pub fn settings_download(&self, path: &str, timeout: Duration) -> Result<Vec<u8>, PushError> {
+        let res = self.send_raw(
+            Method::Get,
+            path,
+            "application/octet-stream",
+            None,
+            Vec::new(),
+            usize::MAX,
+            timeout,
+            Bearer::Person,
+            false,
+        )?;
+        let is_json = res.content_type.starts_with("application/json");
+        if (200..300).contains(&res.status) && !is_json {
+            return Ok(res.body);
+        }
+        read_envelope(&res)?;
+        Err(PushError::NotAnEnvelope {
+            status: res.status,
+            body: "expected the backup's bytes, got JSON".into(),
+        })
     }
 
     /// Post fights (`{ encounters: [...] }`, at most `ENCOUNTERS_PER_CALL`); returns the
@@ -322,6 +403,7 @@ impl<'a> Api<'a> {
             limit,
             timeout,
             Bearer::Person,
+            method == Method::Post,
         )
     }
 
@@ -336,7 +418,37 @@ impl<'a> Api<'a> {
         limit: usize,
         timeout: Duration,
         bearer: Bearer,
+        signed: bool,
     ) -> Result<Value, PushError> {
+        let res = self.send_raw(
+            method,
+            path,
+            content_type,
+            content_encoding,
+            body,
+            limit,
+            timeout,
+            bearer,
+            signed,
+        )?;
+        read_envelope(&res)
+    }
+
+    /// Send with the retries (5xx and no answer, 3 tries; one fresh token after a 401) and return
+    /// the answer that ended it, whatever its status.
+    #[allow(clippy::too_many_arguments)]
+    fn send_raw(
+        &self,
+        method: Method,
+        path: &str,
+        content_type: &'static str,
+        content_encoding: Option<&'static str>,
+        body: Vec<u8>,
+        limit: usize,
+        timeout: Duration,
+        bearer: Bearer,
+        signed: bool,
+    ) -> Result<Response, PushError> {
         if body.len() > limit {
             return Err(PushError::TooLarge {
                 size: body.len(),
@@ -345,8 +457,8 @@ impl<'a> Api<'a> {
         }
         let url = format!("{}{path}", self.origin);
         // Signed once, over the very bytes every try sends.
-        let headers = match (method, self.key) {
-            (Method::Post, Some(key)) => key.headers(&body),
+        let headers = match (signed, self.key) {
+            (true, Some(key)) => key.headers(&body),
             _ => Vec::new(),
         };
         let mut last = String::new();
@@ -389,14 +501,14 @@ impl<'a> Api<'a> {
                 last = format!("HTTP {}: {}", res.status, res.excerpt());
                 continue;
             }
-            return read_envelope(&res);
+            return Ok(res);
         }
         Err(PushError::Unavailable(last))
     }
 }
 
 /// A path or query part, percent-encoded (ids and keys are plain, but never trust that).
-fn path_segment(s: &str) -> String {
+pub fn path_segment(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {

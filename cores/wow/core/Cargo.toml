@@ -1,6 +1,6 @@
 [package]
 name = "ryna-wow-core"
-description = "The World of Warcraft: Forever core for Ryna: SavedVariables reader, snapshot builder, install discovery, combat-log tail, addon installer and pusher."
+description = "The World of Warcraft: Forever core for Ryna: SavedVariables reader and writer, snapshot builder, install discovery, combat-log tail, addon installer, pusher, and the Settings mod."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,12 +9,15 @@ rust-version.workspace = true
 
 [dependencies]
 ryna-agent = { path = "../../../agent/host" }
+aes-gcm.workspace = true
 anyhow.workspace = true
+base64.workspace = true
 flate2.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+zip.workspace = true
 
 [dev-dependencies]
 ryna-agent = { path = "../../../agent/host", features = ["testing"] }
