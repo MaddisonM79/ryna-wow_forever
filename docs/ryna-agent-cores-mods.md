@@ -545,22 +545,25 @@ then what the Prices mod's own auction store has seen; each id once, most useful
 and `Data/auctions.lua`: one plain global each (`RynaData_vendors`, `RynaData_auctions`; the
 SavedVariables form the agent's own reader reads back), `{ version = 1, writtenAt, flavor, items }`,
 vendors as up to three rows `{ npcId, name, zone, price, stack, observers, currency }` per item
-(cheapest confirmed first, as the API orders them) and auctions as one row `{ min, med, listings,
+(the API's order: confirmed first, then copper-only, then cheapest per piece) and auctions as one row `{ min, med, listings,
 snapshots, observers, asOf, weekMed, weekDays, weekSnapshots }` per item (0 for none). Names are
 escaped and stripped of `|` and control characters whatever arrived. Each file is budgeted at 256 KB:
 over it, the vendor file first drops every item's third seller, then its second, then items from the
-end of the id order (the auction store's ids go before loot, loot before what's held); the auction
-file drops items from the end. Written through a temp file and a rename, and only when the rows
+end of the id order (the auction store's ids are dropped first, then loot, then what's held); the
+auction file drops items from the end. Written through a temp file and a rename, and only when the rows
 changed (`writtenAt` alone doesn't count), so a quiet sync writes nothing; a reinstall of the addon
 carries `Data/` over the release's stubs. When no account file changed, the tables are refreshed
-anyway every 6 hours (the account files are read for their ids then), since the pools move as
-others play. A failed read or write is reported in the run's `prices_data` and never fails the run;
-none is attempted while the sign-in is gone or the API is unreachable. The core addon loads the two
+anyway every 6 hours, since the pools move as others play; either way every account under the
+install counts (the ones not pushed this run are read for their ids), and an account file that can't
+be read skips the install rather than rewriting its tables without that account's items. A failed
+read, call or write is reported in the run's `prices_data`, never fails the run, and puts the
+install off for 30 minutes; none is attempted while the sign-in is gone or the API is unreachable.
+The tables' `writtenAt` is when their rows last changed, which is what `/ryna prices` shows. The core addon loads the two
 files from its TOC (shipped as stubs, the global `nil`) and hands them out through `Ryna.Data.Get(name,
 version)` (`Data.lua`): the table only when it carries the version asked for, else nil and "absent"
 or "version". `Ryna_Prices` reads both at login (`Pooled.lua`) and adds two lines in `Tooltip.lua`:
-`priceVendorLine` (on), "Sold by Kiro, Durotar: 20c (+2 more)", the cheapest known seller and how
-many more, "20c for 5" for a bundle, "· unconfirmed" when one person alone saw the price, "· + other
+`priceVendorLine` (on), "Sold by Kiro, Durotar: 20c (+2 more)", the best known seller (confirmed first,
+then copper-only, then cheapest, as the API orders them) and how many more, "20c for 5" for a bundle, "· unconfirmed" when one person alone saw the price, "· + other
 costs" when it also costs something besides copper; and `pricePooledAuctionLine` (on), "AH (everyone):
 1s 10c each (22s for 20) · 3 listed · as of 2 hours ago" (today's median, else the agreed min; the
 mean listings per snapshot; the age of that day's newest snapshot, which is the data's time, not the

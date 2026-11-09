@@ -570,6 +570,116 @@ mod tests {
     }
 
     #[test]
+    fn the_pooled_prices_count_every_account_and_back_off_after_a_failure() {
+        // Two accounts on one install; the second holds an item the first doesn't.
+        let other = FIXTURE.replacen("[\"itemId\"] = 6948", "[\"itemId\"] = 424242", 1);
+        let mut e = env(&[("FAKEACCOUNT1", FIXTURE), ("FAKEACCOUNT2", &other)]);
+        e.store = MemoryStore::with_access("tok", NOW + 100_000);
+        let addon = e.root.join("_forever_/Interface/AddOns/Ryna");
+        std::fs::create_dir_all(&addon).unwrap();
+        let empty = || json!({ "ok": true, "data": { "flavor": "wowf", "items": [] } });
+        let http = ScriptedTransport::new();
+        http.json(200, ingested())
+            .json(200, ingested())
+            .json(200, ok())
+            .json(200, empty());
+        assert!(run(&e, &http, false).ok());
+        let prices = http.urls()[3].clone();
+        assert!(
+            prices.contains("6948") && prices.contains("424242"),
+            "{prices}"
+        );
+
+        // Only the first account changes: the second's ids are still asked for (read from its file).
+        touch(
+            &e.root
+                .join("_forever_/WTF/Account/FAKEACCOUNT1/SavedVariables/Ryna.lua"),
+            5,
+        );
+        let http = ScriptedTransport::new();
+        http.json(200, ingested())
+            .json(200, ok())
+            .json(200, empty());
+        let r = run(&e, &http, false);
+        assert!(r.ok(), "{r:?}");
+        let prices = http.urls()[2].clone();
+        assert!(
+            prices.contains("424242"),
+            "the unchanged account's items too: {prices}"
+        );
+
+        // A refused page: the run is fine, the install waits RETRY_AFTER_S, then tries again.
+        touch(
+            &e.root
+                .join("_forever_/WTF/Account/FAKEACCOUNT1/SavedVariables/Ryna.lua"),
+            10,
+        );
+        let http = ScriptedTransport::new();
+        http.json(200, ingested()).json(200, ok()).json(
+            400,
+            json!({ "ok": false, "error": { "code": "BAD_REQUEST", "message": "no" } }),
+        );
+        let r = run(&e, &http, false);
+        assert!(r.ok() && r.prices_data[0].is_err(), "{r:?}");
+        let st = State::load(&e.state);
+        assert_eq!(
+            st.prices_data_retry_at
+                .values()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![NOW + crate::prices_data::RETRY_AFTER_S]
+        );
+        touch(
+            &e.root
+                .join("_forever_/WTF/Account/FAKEACCOUNT1/SavedVariables/Ryna.lua"),
+            15,
+        );
+        let http = ScriptedTransport::new();
+        http.json(200, ingested()).json(200, ok());
+        let r = run(&e, &http, false);
+        assert!(r.prices_data.is_empty(), "not tried again yet: {r:?}");
+        // Once the wait is over, the next push (or the 6-hour mark) tries again.
+        e.clock.now.set(NOW + crate::prices_data::RETRY_AFTER_S);
+        touch(
+            &e.root
+                .join("_forever_/WTF/Account/FAKEACCOUNT1/SavedVariables/Ryna.lua"),
+            20,
+        );
+        let http = ScriptedTransport::new();
+        http.json(200, ingested())
+            .json(200, ok())
+            .json(200, empty());
+        let r = run(&e, &http, false);
+        assert!(r.prices_data[0].is_ok(), "{r:?}");
+        assert!(State::load(&e.state).prices_data_retry_at.is_empty());
+
+        // An account file that can't be read: nothing asked, nothing written, the install put off.
+        let tables_before = std::fs::read_to_string(addon.join("Data/vendors.lua")).unwrap();
+        e.clock
+            .now
+            .set(NOW + crate::prices_data::REFRESH_EVERY_S * 2);
+        std::fs::write(
+            e.root
+                .join("_forever_/WTF/Account/FAKEACCOUNT2/SavedVariables/Ryna.lua"),
+            "RynaDB = { broken",
+        )
+        .unwrap();
+        let http = ScriptedTransport::new();
+        http.json(200, ok());
+        let r = run(&e, &http, false);
+        // The broken file never reaches the API (a parse failure), and neither does a price page.
+        assert_eq!(
+            http.urls(),
+            vec!["https://api.test/v1/wow/agent/heartbeat".to_string()]
+        );
+        assert!(r.prices_data[0].is_err(), "{r:?}");
+        assert_eq!(
+            std::fs::read_to_string(addon.join("Data/vendors.lua")).unwrap(),
+            tables_before
+        );
+    }
+
+    #[test]
     fn offline_keeps_the_file_unpushed() {
         let e = env(&[("FAKEACCOUNT1", FIXTURE)]);
         let http = ScriptedTransport::new();

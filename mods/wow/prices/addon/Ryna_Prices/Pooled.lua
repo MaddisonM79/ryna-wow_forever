@@ -4,7 +4,7 @@
 -- and /reload and hands out through Ryna.Data.Get(name, version). This file reads the two tables
 -- Prices knows (version 1) once at login and answers the tooltip's questions:
 --
---   vendors[itemId]  = { { npcId, name, zone, price, stack, observers, currency }, ... }  cheapest first
+--   vendors[itemId]  = { { npcId, name, zone, price, stack, observers, currency }, ... }  best first
 --   auctions[itemId] = { min, med, listings, snapshots, observers, asOf, weekMed, weekDays, weekSnapshots }
 --
 -- A table from another version (an older app, or a newer one than this addon) is ignored whole, and
@@ -51,7 +51,8 @@ local function vendorOf(row)
   }
 end
 
--- The vendors known to sell item `id`, cheapest first, or nil when the table has none.
+-- The vendors known to sell item `id`, best first (confirmed by two people, then copper-only, then
+-- cheapest per piece, as the API orders them), or nil when the table has none.
 function P.Vendors(id)
   local t = P.vendors
   if not t or type(id) ~= "number" then return nil end
@@ -90,7 +91,8 @@ function P.WrittenAt()
   return a or b
 end
 
--- The status line's piece: "pooled prices as of 2 hours ago: 312 items with a vendor, 1204 with auction prices".
+-- The status line's piece: "pooled prices last changed 2 hours ago: 312 items with a vendor, 1204 with auction
+-- prices" (the app rewrites a table only when its rows change, so the age is the data's, not the sync's).
 function P.Status()
   local L = ns.L
   if P.vendorsWhy == "core" then return L["no pooled prices: the Ryna addon is too old for them"] end
@@ -99,6 +101,6 @@ function P.Status()
   end
   if not P.vendors and not P.auctions then return L["no pooled prices yet: sync the companion app, then /reload"] end
   local D = ns.API.Data
-  return string.format(L["pooled prices as of %s: %d items with a vendor, %d with auction prices"],
+  return string.format(L["pooled prices last changed %s: %d items with a vendor, %d with auction prices"],
     ns.Ago(P.WrittenAt()) or "?", D.Count(P.vendors), D.Count(P.auctions))
 end

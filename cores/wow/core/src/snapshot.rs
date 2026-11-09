@@ -506,13 +506,13 @@ pub struct Built {
 /// The item ids an account's `RynaDB` knows, in the order the data layer wants them when it has
 /// to cut: what the characters hold (`containers`: bags, bank, keyring), then what they have
 /// looted (Chronicle's `loot` keys), then what the Prices mod's own auction store has seen
-/// (`prices.auction` keys). Each id once, at its first place; anything that isn't a positive
-/// integer is skipped.
+/// (`prices.auction` keys). Each id once, at its first place; anything that isn't an item id the
+/// API takes (1 to 10,000,000; one odd key would otherwise refuse a whole page) is skipped.
 pub fn item_ids(db: &Map<String, Value>) -> Vec<i64> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     let mut push = |id: i64| {
-        if id > 0 && seen.insert(id) {
+        if (1..=10_000_000).contains(&id) && seen.insert(id) {
             out.push(id);
         }
     };

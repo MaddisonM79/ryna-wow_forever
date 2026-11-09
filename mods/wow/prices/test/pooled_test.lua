@@ -85,7 +85,7 @@ end
 local coreNs = {}
 assert(loadfile(CORE .. "Data.lua"))("Ryna", coreNs)
 
-local settings, defaults, registered, statusSlash, postCalls
+local settings, defaults, registered, statusSlash, postCalls, db
 local function installClient()
   _G.GetLocale = function() return "enUS" end
   _G.SELL_PRICE = "Sell Price"
@@ -105,6 +105,7 @@ end
 
 local function installApi(withData)
   settings, defaults, registered, statusSlash = {}, {}, nil, {}
+  db = { settings = settings, prices = { auction = {}, auctionAt = {} } }
   _G.Ryna = {
     API = 1, VERSION = "test", L = setmetatable({}, { __index = function(_, k) return k end }),
     Try = try, Fn = fn,
@@ -122,7 +123,7 @@ local function installApi(withData)
     Journal = { Add = function() return {} end, ShortLived = true, Events = function() return {} end,
       Remove = function() end },
     On = function() return true end,
-    DB = function() return { settings = settings, prices = { auction = {}, auctionAt = {} } } end,
+    DB = function() return db end,
     RegisterMod = function(spec) registered = spec return true end,
     Settings = {
       Get = function(key)
@@ -292,8 +293,41 @@ check(v == "Sold by a vendor: 1s", "a nameless vendor, no zone, three observers:
 check(lineStarting(tip, "AH (everyone)") == nil, "a malformed auction row is skipped")
 tip:Fill(6948, 1)
 check(lineStarting(tip, "Sold by") == nil, "malformed vendor rows are skipped")
-check(status() == "Prices: pooled prices as of 7200s ago: 4 items with a vendor, 4 with auction prices",
+check(status() == "Prices: pooled prices last changed 7200s ago: 4 items with a vendor, 4 with auction prices",
   "status counts the tables and takes the older age: " .. tostring(status()))
+
+-- Both auction lines at once: the own one (white) above everyone's (blue), and a refresh by hand
+-- replaces each rather than adding a second. ----------------------------------------------------
+local own = _G.Ryna.DB().prices.auction
+own[2589] = { min = 90, q25 = 100, med = 120, n = 5, q = 40, at = 1700000000 - 300 }
+tip = newTooltip()
+tip:Fill(2589, 1)
+local ownAt, pooledAt
+for i, l in ipairs(tip.lines) do
+  if plain(l):sub(1, 4) == "AH: " then ownAt = i end
+  if plain(l):sub(1, 13) == "AH (everyone)" then pooledAt = i end
+end
+check(ownAt and pooledAt and ownAt < pooledAt,
+  "both lines, the own one first: " .. tostring(ownAt) .. " " .. tostring(pooledAt))
+check(tip.lines[ownAt]:sub(1, 10) == "|cffffffff" and tip.lines[pooledAt]:sub(1, 10) == "|cffa8d8ff",
+  "white, then blue")
+-- The by-hand path (no RefreshData): the lines are set over the ones there, with a new count.
+tip.owner = { count = 20 }
+for i = 1, #tip.lines do
+  local line = tip.lines[i]
+  _G[tip.name .. "TextLeft" .. i].SetText = function(_, t) tip.lines[i] = t end
+  _G[tip.name .. "TextLeft" .. i].GetText = function() return tip.lines[i] end
+  tip.lines[i] = line
+end
+ns.Tooltip.OnItem(tip, nil, true)
+local blue = 0
+for _, l in ipairs(tip.lines) do
+  if plain(l):sub(1, 13) == "AH (everyone)" then blue = blue + 1 end
+end
+check(blue == 1, "one pooled line after a refresh by hand, not " .. blue)
+check(plain(tip.lines[pooledAt]) == "AH (everyone): 1s 10c each (22s for 20) · 3 listed · as of 1800s ago",
+  "replaced in place with the new count: " .. plain(tip.lines[pooledAt]))
+own[2589] = nil
 
 -- The auction house showing the item: everyone's line stays away like the own one. ------------
 _G.AuctionHouseFrame = { IsShown = function() return true end }

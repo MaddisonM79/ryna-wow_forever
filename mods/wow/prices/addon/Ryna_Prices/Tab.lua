@@ -32,8 +32,8 @@ local HELP = {
     .. "who posted them) go to your Ryna journal, so the companion app can pool them. Off: no snapshot and "
     .. "nothing sent; searches still update the line."],
   priceVendorLine = L["Adds which vendor sells the item and for how much, from everyone's merchant visits "
-    .. "pooled by the companion app: the cheapest known seller and how many more there are. The app brings "
-    .. "the table down with each sync; the game reads it at login or /reload."],
+    .. "pooled by the companion app: the best known seller (confirmed, then cheapest) and how many more there are. "
+    .. "The app brings the table down with each sync; the game reads it at login or /reload."],
   pricePooledAuctionLine = L["Adds everyone's auction house numbers for the item, in its own colour under "
     .. "your own line: today's median price, how many were listed and how old the newest snapshot is. From "
     .. "the snapshots everyone's Prices mod took, pooled by the companion app and brought down with each "

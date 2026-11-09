@@ -38,8 +38,9 @@
 -- the id.
 --
 -- Everyone's lines (Pooled.lua, the companion app's Data/ tables, read at login or /reload): the
--- vendor line (`priceVendorLine`), "Sold by Kiro, Durotar: 20c (+2 more)", the cheapest known seller
--- and how many more there are, "20c for 5" when the vendor sells a bundle, "· unconfirmed" when one
+-- vendor line (`priceVendorLine`), "Sold by Kiro, Durotar: 20c (+2 more)", the best known seller (the
+-- API's order: confirmed by two people, then copper-only, then cheapest) and how many more there are,
+-- "20c for 5" when the vendor sells a bundle, "· unconfirmed" when one
 -- person alone saw the price, "· + other costs" when it also costs something besides copper; and the
 -- pooled auction line (`pricePooledAuctionLine`), "AH (everyone): 1s 10c each (22s for 20) · 3 listed
 -- · as of 2 hours ago" (today's median, else the agreed min; the mean listings per snapshot; the
@@ -345,16 +346,26 @@ local function prefixes()
   return out
 end
 
--- Puts the auction line on the tooltip: over an auction line of ours already on it (a refresh by
--- hand after the item loaded: the count may be clamped now, or the age moved on, so the text
--- differs), else as a new line. Returns whether it added one.
-function T.SetAuctionLine(tooltip, line)
+-- What everyone's auction lines start with, in this client's language, in their colour.
+local function pooledPrefixes()
+  local out = {}
+  local forms = { L["AH (everyone): %s · %d listed · as of %s"], L["AH (everyone): %s each this week · %d snapshots"] }
+  for _, form in ipairs(forms) do
+    local p = form:match("^(.-)%%s")
+    if p and p ~= "" then out[#out + 1] = POOLED .. p end
+  end
+  return out
+end
+
+-- Puts an auction line on the tooltip: over a line of ours already on it that starts with one of
+-- `starts` (a refresh by hand after the item loaded: the count may be clamped now, or the age moved
+-- on, so the text differs), else as a new line in `color`. Returns whether it added one.
+local function setLine(tooltip, line, starts, color)
   if not line then return false end
-  local text = COLOR .. line .. "|r"
+  local text = color .. line .. "|r"
   if type(tooltip.NumLines) == "function" and type(tooltip.GetName) == "function" then
     local n, name = ns.Try(tooltip.NumLines, tooltip), ns.Try(tooltip.GetName, tooltip)
     if type(n) == "number" and type(name) == "string" then
-      local starts = prefixes()
       for i = 1, n do
         local region = _G[name .. "TextLeft" .. i]
         local old = type(region) == "table" and type(region.GetText) == "function" and ns.Try(region.GetText, region)
@@ -371,6 +382,16 @@ function T.SetAuctionLine(tooltip, line)
   end
   tooltip:AddLine(text)
   return true
+end
+
+-- This account's own auction line, over the one already there or as a new one.
+function T.SetAuctionLine(tooltip, line)
+  return setLine(tooltip, line, prefixes(), COLOR)
+end
+
+-- Everyone's auction line, the same way, in its own colour.
+function T.SetPooledAuctionLine(tooltip, line)
+  return setLine(tooltip, line, pooledPrefixes(), POOLED)
 end
 
 -- Adds the lines to `tooltip`; `show` re-shows it (the script hooks, and a refresh by hand).
@@ -407,7 +428,7 @@ function T.OnItem(tooltip, data, show)
   if vendor and id then added = add(tooltip, T.VendorLine(id), show) or added end
   if id and (auction or pooled) and not ns.Auction.HouseShows(tooltip, id) then
     if auction then added = T.SetAuctionLine(tooltip, T.AuctionLine(id, slotCount())) or added end
-    if pooled then added = add(tooltip, T.PooledAuctionLine(id, slotCount()), show, POOLED) or added end
+    if pooled then added = T.SetPooledAuctionLine(tooltip, T.PooledAuctionLine(id, slotCount())) or added end
   end
   if added and show and type(tooltip.Show) == "function" then tooltip:Show() end
 end

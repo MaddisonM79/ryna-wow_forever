@@ -97,8 +97,8 @@ L["When you open the auction house, at most once every 15 minutes, reads the who
   .. "Ryna journal, so the companion app can pool them. Off: no snapshot and nothing sent; searches still "
   .. "update the line."] = nil
 L["Adds which vendor sells the item and for how much, from everyone's merchant visits pooled by the companion "
-  .. "app: the cheapest known seller and how many more there are. The app brings the table down with each sync; "
-  .. "the game reads it at login or /reload."] = nil
+  .. "app: the best known seller (confirmed, then cheapest) and how many more there are. The app brings the table "
+  .. "down with each sync; the game reads it at login or /reload."] = nil
 L["Adds everyone's auction house numbers for the item, in its own colour under your own line: today's median "
   .. "price, how many were listed and how old the newest snapshot is. From the snapshots everyone's Prices mod "
   .. "took, pooled by the companion app and brought down with each sync; the game reads it at login or /reload."] = nil
@@ -115,8 +115,8 @@ L["nothing sent: the Ryna addon is too old for it"] = nil
 L["no pooled prices: the Ryna addon is too old for them"] = nil
 L["pooled prices from another version: update the companion app and the addon"] = nil
 L["no pooled prices yet: sync the companion app, then /reload"] = nil
--- %s: how long ago the tables were written; %d: items with a vendor; %d: items with auction prices.
-L["pooled prices as of %s: %d items with a vendor, %d with auction prices"] = nil
+-- %s: how long ago the tables' rows last changed; %d: items with a vendor; %d: items with auction prices.
+L["pooled prices last changed %s: %d items with a vendor, %d with auction prices"] = nil
 -- /ryna prices. %s: on or off, then a setting's name (sellLine).
 L["%s (but %s is off)"] = nil
 L["/ryna prices <name> on||off changes one."] = nil

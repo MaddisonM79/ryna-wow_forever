@@ -34,6 +34,8 @@ pub const HEARTBEAT_PATH: &str = "/v1/wow/agent/heartbeat";
 pub const AGENT_PRICES_PATH: &str = "/v1/wow/agent/prices";
 /// Ids per `/agent/prices` call, the API's page.
 pub const AGENT_PRICES_PAGE: usize = 200;
+/// The (empty) request body's limit for that GET; the answer isn't held to it.
+pub const AGENT_PRICES_LIMIT: usize = 64 * 1024;
 pub const ENCOUNTERS_PATH: &str = "/v1/wow/agent/encounters";
 pub const CENSUS_PATH: &str = "/v1/wow/census";
 /// The Settings mod's backups (docs/wow.md section 15).
@@ -372,7 +374,7 @@ impl<'a> Api<'a> {
             "application/json",
             None,
             Vec::new(),
-            HEARTBEAT_LIMIT,
+            AGENT_PRICES_LIMIT,
             Duration::from_secs(60),
             Bearer::Person,
             false,

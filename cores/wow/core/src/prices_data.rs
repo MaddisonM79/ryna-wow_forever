@@ -377,10 +377,17 @@ pub fn merge_ids<'a>(lists: impl Iterator<Item = &'a [i64]>) -> Vec<i64> {
     out
 }
 
-/// Refresh every install that has the addon: with the ids this run parsed for its accounts
-/// (`ids_by_account`, by account file path), or, when none of them changed and the install's
-/// tables are `REFRESH_EVERY_S` old, by reading its account files for their ids. Each install's
-/// failure is returned, never raised: the run itself isn't the worse for a stale price table.
+/// After a failed refresh (a refused page, an unreadable account file, a write error), an install
+/// waits this long before the next try, so a lasting cause doesn't cost a parse and a call every
+/// watch pass.
+pub const RETRY_AFTER_S: i64 = 30 * 60;
+
+/// Refresh every install that has the addon, when something new is known or its tables are
+/// `REFRESH_EVERY_S` old: the ids of every account under it, from this run's parse where it pushed
+/// one (`ids_by_account`, by account file path) and from the file otherwise, merged. An account
+/// file that can't be read skips the install (its tables keep what they had, rather than being
+/// rewritten without that account's items). Each install's failure is returned, never raised, and
+/// puts it off for `RETRY_AFTER_S`: the run itself isn't the worse for a stale price table.
 pub fn refresh(
     discovery: &Discovery,
     state: &mut State,
@@ -395,62 +402,87 @@ pub fn refresh(
             continue;
         }
         let key = i.path.to_string_lossy().into_owned();
+        if state
+            .prices_data_retry_at
+            .get(&key)
+            .is_some_and(|at| now < *at)
+        {
+            continue;
+        }
         let accounts: Vec<_> = discovery
             .accounts
             .iter()
             .filter(|a| a.install == i.path)
             .collect();
-        let fresh: Vec<&[i64]> = accounts
+        let fresh = accounts
             .iter()
-            .filter_map(|a| ids_by_account.get(&a.path).map(Vec::as_slice))
-            .collect();
-        let ids = if !fresh.is_empty() {
-            merge_ids(fresh.into_iter())
-        } else {
-            let due = state
-                .prices_data_at
-                .get(&key)
-                .is_none_or(|at| now - at >= REFRESH_EVERY_S);
-            if !due {
-                continue;
-            }
-            let mut lists = Vec::new();
-            for a in &accounts {
-                match snapshot::read_file(&a.path, &a.account, None, a.flavor.as_deref()) {
-                    Ok(b) => lists.push(b.item_ids),
-                    Err(e) => {
-                        out.push(Err((i.path.clone(), e.to_string())));
-                    }
-                }
-            }
-            merge_ids(lists.iter().map(Vec::as_slice))
-        };
-        let flavor = i.flavor.as_deref().unwrap_or("wowf");
-        let pooled = match fetch(api, &ids, flavor) {
-            Ok(p) => p,
-            Err(e) => {
-                out.push(Err((i.path.clone(), e.to_string())));
-                continue;
-            }
-        };
-        let dir = addon.join(DIR);
-        let (vendors, vendor_items) = vendors_lua(&pooled, &ids, now, flavor);
-        let (auctions, auction_items) = auctions_lua(&pooled, &ids, now, flavor);
-        let mut written = Vec::new();
-        let mut failed = None;
-        for (name, text) in [(VENDORS_FILE, vendors), (AUCTIONS_FILE, auctions)] {
-            let path = dir.join(name);
-            match write_if_changed(&path, &text) {
-                Ok(true) => written.push(path),
-                Ok(false) => {}
-                Err(e) => failed = Some(format!("couldn't write {}: {e}", path.display())),
-            }
-        }
-        if let Some(e) = failed {
-            out.push(Err((i.path.clone(), e)));
+            .any(|a| ids_by_account.contains_key(&a.path));
+        let due = state
+            .prices_data_at
+            .get(&key)
+            .is_none_or(|at| now - at >= REFRESH_EVERY_S);
+        if !fresh && !due {
             continue;
         }
-        state.prices_data_at.insert(key, now);
+        let fail = |out: &mut Vec<_>, state: &mut State, msg: String| {
+            state
+                .prices_data_retry_at
+                .insert(key.clone(), now + RETRY_AFTER_S);
+            out.push(Err((i.path.clone(), msg)));
+        };
+        let mut lists: Vec<Vec<i64>> = Vec::new();
+        let mut unread = None;
+        for a in &accounts {
+            if let Some(ids) = ids_by_account.get(&a.path) {
+                lists.push(ids.clone());
+                continue;
+            }
+            match snapshot::read_file(&a.path, &a.account, None, a.flavor.as_deref()) {
+                Ok(b) => lists.push(b.item_ids),
+                Err(e) => {
+                    unread = Some(e.to_string());
+                    break;
+                }
+            }
+        }
+        if let Some(e) = unread {
+            fail(&mut out, state, e);
+            continue;
+        }
+        let ids = merge_ids(lists.iter().map(Vec::as_slice));
+        let flavor = i.flavor.as_deref().unwrap_or("wowf");
+        let dir = addon.join(DIR);
+        let mut written = Vec::new();
+        let (mut vendor_items, mut auction_items) = (0, 0);
+        // No items at all (a new account): nothing to ask, and nothing on disk is touched.
+        if !ids.is_empty() {
+            let pooled = match fetch(api, &ids, flavor) {
+                Ok(p) => p,
+                Err(e) => {
+                    fail(&mut out, state, e.to_string());
+                    continue;
+                }
+            };
+            let (vendors, nv) = vendors_lua(&pooled, &ids, now, flavor);
+            let (auctions, na) = auctions_lua(&pooled, &ids, now, flavor);
+            vendor_items = nv;
+            auction_items = na;
+            let mut failed = None;
+            for (name, text) in [(VENDORS_FILE, vendors), (AUCTIONS_FILE, auctions)] {
+                let path = dir.join(name);
+                match write_if_changed(&path, &text) {
+                    Ok(true) => written.push(path),
+                    Ok(false) => {}
+                    Err(e) => failed = Some(format!("couldn't write {}: {e}", path.display())),
+                }
+            }
+            if let Some(e) = failed {
+                fail(&mut out, state, e);
+                continue;
+            }
+        }
+        state.prices_data_at.insert(key.clone(), now);
+        state.prices_data_retry_at.remove(&key);
         out.push(Ok(Refreshed {
             install: i.path.clone(),
             asked: ids.len(),
@@ -584,7 +616,7 @@ mod tests {
         let read = lua::parse(&v).unwrap();
         let items = read["RynaData_vendors"]["items"].as_object().unwrap();
         assert_eq!(items.len(), n);
-        // One seller each (the cheapest), and the first ids kept.
+        // One seller each (the first, the API's best), and the first ids kept.
         assert_eq!(items["1001"].as_array().unwrap().len(), 1);
         assert_eq!(items["1001"][0][0], json!(1000));
         assert!(items.contains_key("1001") && items.contains_key(&(1000 + n).to_string()));

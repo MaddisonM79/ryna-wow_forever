@@ -232,7 +232,10 @@ pub fn install_named(source: &Path, install: &Install, name: &str) -> Result<Pat
             if kept.is_dir() {
                 let into = target.join(crate::prices_data::DIR);
                 let _ = std::fs::remove_dir_all(&into);
-                let _ = std::fs::rename(&kept, &into);
+                if let Err(e) = std::fs::rename(&kept, &into) {
+                    // Lost until the next sync rewrites it; the stubs are gone with the old copy.
+                    eprintln!("couldn't keep {}: {e}", into.display());
+                }
             }
         }
         std::fs::remove_dir_all(&old).with_context(|| format!("removing {}", old.display()))?;
