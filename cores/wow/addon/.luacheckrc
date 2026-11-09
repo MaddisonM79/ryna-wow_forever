@@ -11,6 +11,8 @@ globals = {
   "StaticPopupDialogs", -- the reload prompt is added to the client's dialog table
   "Ryna",
   "RynaAgentStatus",
+  "RynaData_auctions", -- the companion app's data-layer tables (Data.lua, Data/*.lua)
+  "RynaData_vendors",
   "RynaDB",
   "SLASH_RYNA1",
   "SLASH_RYNACHRONICLE1", -- Chronicle's /chronicle (mods/wow/chronicle, Window.lua)
