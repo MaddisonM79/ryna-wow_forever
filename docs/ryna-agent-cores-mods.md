@@ -606,13 +606,12 @@ Three consequences:
   Chronicle already records. Where a missing recipe comes from is not in the table, but two pools
   already answer most of it: the merchant pool (recipes vendors sell) and Chronicle's loot (recipes
   that drop); `AcquireMethod` marks the ones that come with the skill itself.
-- **Mounts and pets have journals** (checked in game 2026-11-09, docs/forever-client-api.md):
-  `C_MountJournal.GetNumMounts()` answers 136 and `C_PetJournal.GetNumPets()` 5, though Blizzard's
-  Collections window is not allowed to load on Forever. So Chronicle reads the journals
-  (`C_MountJournal.GetMountIDs`, `GetMountInfoByID`'s collected flag) rather than guessing from bag
-  items, and the Journal's list is the game's own, with the `Mount` and `BattlePetSpecies` tables
-  only for names and icons out of game. Owed: that the collected flag is where retail has it, and
-  what the pet count of 5 counts (the table has 121 species).
+- **Mounts and pets have journals** (checked in game 2026-11-09, docs/forever-client-api.md),
+  though Blizzard's Collections window is not allowed to load on Forever. Mounts: the journal lists
+  136 and says which are collected (`C_MountJournal.GetMountIDs`, `GetMountInfoByID`'s 11th value),
+  so both the set and the record come from the game. Pets: `C_PetJournal.GetNumPets()` answers
+  listed and owned, and lists owned pets only by default, so the record is the journal and the set
+  is the `BattlePetSpecies` table (121). Chronicle records both; no guessing from bag items.
 - **Dungeons and quests are grown, not shipped.** Doud's Journal carries 35 MB because the client has
   no journal data to read. Ryna's comes from everyone's play: loot per boss from Chronicle's tallies,
   abilities and the boss's creature ids from the agent's fights (the digest names the actors inside
@@ -697,20 +696,14 @@ prints nothing in chat, and does nothing for the player.
 - **J3. Quests.** With data layer v1 (section 11, stage 3): quests by zone, done or not, and the
   count nobody has named yet.
 
-**Answered in game 2026-11-09** (Maddison): the mount and pet journals exist; load on demand
-works; `Blizzard_EncounterJournal` is loadable (`true, ""`). The last one reopens a question: the
-tables behind the encounter journal are not served for this build, but if the game's own journal
-answers (`EJ_GetNumTiers`, `EJ_GetInstanceByIndex`), the Dungeons section takes its boss loot and
-abilities from the game, and the pools add only rates and what this character has seen. If it is
-empty, the plan above stands.
+**Answered in game 2026-11-09** (Maddison; details in docs/forever-client-api.md): the mount and
+pet journals exist and tell collected from not; load on demand works; and the game's own encounter
+journal is loadable but empty (`EJ_GetNumTiers()` is 0), so boss loot and abilities are pooled from
+play, as planned above.
 
-**Still owed in game** (the commands are 10 to 12 in docs/forever-client-api.md, "Still owed"):
-
-1. Mounts listed and collected, by the collected flag.
-2. `C_PetJournal.GetNumPets()` on its own: listed and owned.
-3. Whether the encounter journal holds anything.
-4. In a dungeon, after a boss dies: does Chronicle's kills tab count the boss's creature id (it does
-   for open-world kills), and does the app show the fight under its encounter name?
+**Still owed in game:** in a dungeon, after a boss dies, does Chronicle's kills tab count the
+boss's creature id (it does for open-world kills), and does the app show the fight under its
+encounter name?
 
 **Open, Maddison's:** the name ("Journal" is a working title; the Chronicle name is taken by the
 data product); its own mod or sections inside Chronicle (recommended: its own); on or off by
@@ -797,6 +790,6 @@ Maddison's; the agent can carry both old and new clients for a release or two.
   whether the agent simply takes over managing the addon when it finds a CurseForge copy.
 - Windows signing (unchanged: Azure Artifact Signing is the recommendation).
 - **The Journal (7.4), asked 2026-11-09:** its name; its own mod or sections inside Chronicle; on or
-  off by default; whether quests belong in it or stay Questie's; and the in-game probes it still lists.
+  off by default; whether quests belong in it or stay Questie's; and the one dungeon check it still lists.
 - Settled 2026-11-07: the repository (A, `ryna_agent`); the Palworld agent goes MIT barring anything
   sensitive; Palworld mods are undefined for now; Chronicle is the first WoW mod.
