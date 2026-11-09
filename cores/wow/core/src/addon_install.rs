@@ -224,6 +224,20 @@ pub fn install_named(source: &Path, install: &Install, name: &str) -> Result<Pat
         return Err(e).with_context(|| format!("putting the addon in {}", target.display()));
     }
     if old.exists() {
+        // The core's Data/ folder is the agent's, not the release's (prices_data): carry it over,
+        // so a reinstall doesn't lose the pooled prices until the next sync. The stubs the release
+        // ships under Data/ go; the agent's files take their place.
+        if name == ADDON_NAME {
+            let kept = old.join(crate::prices_data::DIR);
+            if kept.is_dir() {
+                let into = target.join(crate::prices_data::DIR);
+                let _ = std::fs::remove_dir_all(&into);
+                if let Err(e) = std::fs::rename(&kept, &into) {
+                    // Lost until the next sync rewrites it; the stubs are gone with the old copy.
+                    eprintln!("couldn't keep {}: {e}", into.display());
+                }
+            }
+        }
         std::fs::remove_dir_all(&old).with_context(|| format!("removing {}", old.display()))?;
     }
     Ok(target)
@@ -397,6 +411,15 @@ mod tests {
         let product = dir.path().join("_forever_");
         std::fs::create_dir_all(product.join("Interface/AddOns/Ryna")).unwrap();
         std::fs::write(product.join("Interface/AddOns/Ryna/Stale.lua"), "old").unwrap();
+        // The agent's price tables (prices_data) live under the core's Data/: kept across a reinstall.
+        std::fs::create_dir_all(product.join("Interface/AddOns/Ryna/Data")).unwrap();
+        std::fs::write(
+            product.join("Interface/AddOns/Ryna/Data/vendors.lua"),
+            "RynaData_vendors = { version = 1 }",
+        )
+        .unwrap();
+        std::fs::create_dir_all(a.join("Data")).unwrap();
+        std::fs::write(a.join("Data/vendors.lua"), "-- stub\n").unwrap();
         std::fs::create_dir_all(product.join("Interface/AddOns/Other")).unwrap();
         let inst = Install {
             path: product.clone(),
@@ -413,6 +436,11 @@ mod tests {
         assert!(
             !target.join("Stale.lua").exists(),
             "the old copy is replaced, not merged"
+        );
+        assert_eq!(
+            std::fs::read_to_string(target.join("Data/vendors.lua")).unwrap(),
+            "RynaData_vendors = { version = 1 }",
+            "the agent's Data/ tables survive a reinstall, over the release's stubs"
         );
         assert!(
             product.join("Interface/AddOns/Other").is_dir(),

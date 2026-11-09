@@ -27,6 +27,9 @@
 --                                     arg is the next word, rest the whole line after <word>
 --                                     (cores after 0.3.4; 0.3.4 passes arg only)
 --   Ryna.Slash.AddStatusLines(order, fn)   fn() -> lines for /ryna status, at `order`
+--   Ryna.Data.Get(name, version)      a data-layer table the companion app wrote (Data.lua): the
+--                                     table, or nil and "absent" or "version"; .WrittenAt(t), .Count(t)
+--                                     (cores after 0.3.9; a mod checks `Ryna.Data` before using it)
 --   Ryna.L                            the core's strings (a mod's own L falls back to it)
 --   Ryna.Try, .Fn, .IsSecret, .NonEmpty, .Now, .Locale, .Print, .PrintRaw, .Debug, .DebugChanged,
 --   .Debugging, .Plural, .N, .Run, .After, .Debounce, .ReportError, .CanonicalName, .MoneyText,
@@ -54,6 +57,7 @@ for _, name in ipairs({ "Try", "Fn", "IsSecret", "NonEmpty", "Now", "Locale", "P
 end
 R.Ago = ns.Status.Ago
 R.Plain = ns.Status.Plain
+R.Data = ns.Data
 
 function R.DB()
   return ns.db
