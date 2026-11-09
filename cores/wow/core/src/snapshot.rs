@@ -498,6 +498,54 @@ pub struct Built {
     pub account_id: Option<String>,
     /// The newest journal event's `at` in this file: what a push of it has carried.
     pub journal_through: Option<i64>,
+    /// The item ids this account knows, most useful first (`item_ids`): what the agent asks the
+    /// pooled prices for (`prices_data`). Not sent anywhere.
+    pub item_ids: Vec<i64>,
+}
+
+/// The item ids an account's `RynaDB` knows, in the order the data layer wants them when it has
+/// to cut: what the characters hold (`containers`: bags, bank, keyring), then what they have
+/// looted (Chronicle's `loot` keys), then what the Prices mod's own auction store has seen
+/// (`prices.auction` keys). Each id once, at its first place; anything that isn't a positive
+/// integer is skipped.
+pub fn item_ids(db: &Map<String, Value>) -> Vec<i64> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    let mut push = |id: i64| {
+        if id > 0 && seen.insert(id) {
+            out.push(id);
+        }
+    };
+    let key_id = |k: &str| k.parse::<i64>().ok();
+    let characters: Vec<Value> = match db.get("characters") {
+        Some(Value::Object(m)) => m.values().cloned().collect(),
+        Some(Value::Array(a)) => a.clone(),
+        _ => Vec::new(),
+    };
+    for c in &characters {
+        for item in values_in_order(c.get("containers").cloned().unwrap_or(Value::Null)) {
+            if let Some(id) = item.get("itemId").and_then(Value::as_i64) {
+                push(id);
+            }
+        }
+    }
+    for c in &characters {
+        if let Some(Value::Object(loot)) = c.get("loot") {
+            for k in loot.keys() {
+                if let Some(id) = key_id(k) {
+                    push(id);
+                }
+            }
+        }
+    }
+    if let Some(Value::Object(auction)) = db.get("prices").and_then(|p| p.get("auction")) {
+        for k in auction.keys() {
+            if let Some(id) = key_id(k) {
+                push(id);
+            }
+        }
+    }
+    out
 }
 
 /// `RynaDB.meta.accountId`, when it is the 16 hex digits the core writes.
@@ -684,6 +732,7 @@ pub fn build(parsed: &Value, source: &Source<'_>) -> Result<Built, SnapshotError
     Ok(Built {
         account_id: meta_account_id(db),
         journal_through,
+        item_ids: item_ids(db),
         snapshot: Snapshot {
             schema: SCHEMA_MAJOR,
             addon,
