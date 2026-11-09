@@ -565,13 +565,14 @@ values of `GetMerchantItemInfo` (price, stack, available), which classic and mod
 since Forever's return orders have differed from the wiki's before. The agent passes it through as it
 does every unknown event type; docs/wow.md's row comes with the pool.
 
-### 7.4 Journal: what exists, against what you've done (asked 2026-11-09)
+### 7.4 Chronicle's journal: what exists, against what you've done (asked 2026-11-09)
 
 Maddison, after looking at what she runs beside Ryna (AllTheThings, 71 MB; Doud's Dungeon Journal,
 35 MB; Questie and its database, 211 MB): "Journal and ATT, there is a HUGE amount of overlap there.
 Those are both heavier lifts but one tool for it", then the point that decides the design: "ATT and
 Questie both have something we don't then: what isn't done." And: "an enhanced UI in game so as more
-items are added we have one window to review things."
+items are added we have one window to review things." Where it is heading, in her words: "like
+an ATT but our style and portaled."
 
 **The gap.** Three kinds of knowledge make a journal, and Ryna has two:
 
@@ -581,7 +582,7 @@ items are added we have one window to review things."
 3. *What exists*: the whole set, which "missing" is measured against. This is what ATT and Questie
    ship as hand-built Lua, and what Ryna doesn't have.
 
-The Journal is the third, joined to the first two. It isn't hand-built: each set comes from the
+Chronicle's journal is the third, joined to the first two. It isn't hand-built: each set comes from the
 client's own tables where they hold it, and from play, pooled, where they don't.
 
 **What exists, by source** (checked 2026-11-09 against build 1.60.1.70790 through the same
@@ -617,29 +618,43 @@ Three consequences:
   abilities and the boss's creature ids from the agent's fights (the digest names the actors inside
   an `ENCOUNTER_START`/`END`), and quest titles, zones and objectives from the client's
   `questcache.wdb` (section 7's first source, stage 3). The quest count is honest from the start:
-  6,616 ids exist, and the Journal can say how many of them nobody has named yet. This side is thin
+  6,616 ids exist, and the journal can say how many of them nobody has named yet. This side is thin
   while few people play and gets better without a release.
 
 What Ryna will not have: Questie's map pins and objective locations, and ATT's hand-curated
-"how to get it" notes. The Journal says where something came from when a pool has seen it, and
+"how to get it" notes. The journal says where something came from when a pool has seen it, and
 "not seen yet" otherwise. Questie stays installed for the map.
 
-**Chronicle or its own mod.** Recommended, Maddison's to confirm (she offered the other reading too:
-"part of Chronicle and then have settings to enable or disable certain things"): its own mod,
-`journal` (`Ryna_Journal`, `kind: "addon"`, `actsInGame: false`, off by default), which requires the
-core and nothing else.
+**One mod, under the Chronicle name** (Maddison, 2026-11-09: "I feel like one mod, using the
+chronicle name"; a mod of its own was the recommendation, and she chose this). There is no `journal`
+mod. Chronicle grows a journal side:
 
-- *Recording stays Chronicle's.* Anything new the Journal needs about a character (mounts and pets
-  owned, flight points) is a Chronicle record, by the line in section 12.
-- *The Journal reads, never records.* It reads this character's record through the core
-  (`Ryna.DB().characters[guid]`, the saved file the core owns and Chronicle fills) and the reference
-  tables from the data layer. Neither addon calls the other.
-- *Without Chronicle* the reference side still works (every list, every pooled rate) and the "done"
-  marks are absent, with one line saying Chronicle fills them in. With it, they are live: a boss
-  killed is marked the moment Chronicle counts it, no sync or reload in between.
-- *Why not inside Chronicle:* Chronicle is on by default and earns that by recording and touching
-  nothing. A browsing window and its data files, on for everyone, change what installing it means.
-  The cost of separating is one more toggle.
+- *Recording* is Chronicle as it is, on by default, touching nothing. It gains two records: mounts
+  and pets owned.
+- *The journal* is three sections of Chronicle's window, **Collections**, **Dungeons** and
+  **Quests**, each a Chronicle setting (`journalCollections`, `journalDungeons`, `journalQuests`)
+  that starts **off**. Off, a section isn't built and its data isn't loaded; on, it reads the record
+  Chronicle already keeps, so a boss killed is marked the moment it is counted.
+- So installing Chronicle still means what it meant: it records. The journal is something a person
+  turns on, section by section, in the Recording tab or from the notice below.
+
+**The first-dungeon notice** (Maddison: off, "but can we alert them at the first dungeon like hey,
+this is here"). The first time a character enters a dungeon or raid with the Dungeons section off,
+Chronicle shows one small notice frame, never a chat line: "Chronicle can show this dungeon's
+bosses, what they drop and what you've already seen. Turn it on?" with **Turn on** and **Not now**.
+Rules: once per account, whichever button is pressed (`journalNoticeSeen`); never in combat (it
+waits for the first moment out of it); nothing if the section is already on; and it ships with the
+Dungeons section, not before, so it never points at an empty page. It is the one thing Chronicle
+says unasked, and the section's own setting is where to find it afterwards.
+
+**Quests: tracking in, the map out** (Maddison: "tracking it should go in"). The Quests section is
+quests by zone, done or not, and how many in a zone remain, measured against the pooled quest
+table. Where to go for an objective, and pins on the map, stay Questie's.
+
+**And portaled.** Every list here is served by the API, so ryna.io shows the same sets: per
+character, and across all of a person's characters at once (the account-wide view that costs ATT its
+size in game costs nothing on a page), shared the way a profile already is. The in-game sections
+answer "what am I missing right here"; the portal is where the whole collection is browsed.
 
 **One window.** Chronicle already has the window (`RynaChronicleWindow`: Session, Kills, Loot,
 Levels, a search box, and lists that fill only the rows on screen, so 2,000 creatures cost what 15
@@ -649,9 +664,9 @@ do). It moves into the core as `Ryna.Window`, beside `Ryna.Panel`:
 - A mod registers a section: `Ryna.Window.AddSection({ key, label, order, tabs = { { key, label,
   columns, rows = function(filter) … end, tooltip = function(row) … end } } })`. The core owns the
   frame, the virtual list, sorting, the search box and the row tooltip; a mod supplies rows.
-- Chronicle registers "Chronicle" with its four tabs, unchanged. The Journal adds "Collections" and
-  "Dungeons", later "Quests". Prices can add "Auctions" over its own snapshot. The panel
-  (`/ryna`) stays for settings; the window is for data.
+- Chronicle registers its four tabs as one section, unchanged, and its journal sections
+  ("Collections", "Dungeons", later "Quests") when their settings are on. Prices can add "Auctions"
+  over its own snapshot. The panel (`/ryna`) stays for settings; the window is for data.
 - `/chronicle` and `/ryna chronicle` keep working and open the window on Chronicle's section. A
   section's rows are built when it is first shown and rebuilt only when its data's version changes,
   as the Chronicle views are today.
@@ -660,12 +675,12 @@ This is a move, not a feature: one release with nothing new in it, the Chronicle
 moved with it.
 
 **Data files and their cost.** AllTheThings and Questie cost what they do because the client parses
-their tables at every login. The Journal's tables are small because they hold ids and numbers, not
+their tables at every login. The journal's tables are small because they hold ids and numbers, not
 prose, and they are loaded late:
 
-- The agent writes them as a load-on-demand addon folder beside the others (`Ryna_JournalData`:
-  a TOC with `## LoadOnDemand: 1` and one Lua file per table), and the Journal loads it the first
-  time its section is shown (`C_AddOns.LoadAddOn`). Nothing is parsed at login. Checked in game
+- The agent writes them as a load-on-demand addon folder beside the others (`Ryna_ChronicleData`:
+  a TOC with `## LoadOnDemand: 1` and one Lua file per table), and Chronicle loads it the first
+  time a journal section is shown (`C_AddOns.LoadAddOn`). Nothing is parsed at login. Checked in game
   2026-11-09: a load-on-demand addon folder loads on that call (`ElvUI_Options`).
 - Budget: 2 MB for everything, with the quest table (the largest, perhaps 800 KB at 6,616 quests)
   optional. Recipes are about 110 KB, the boss list and pooled loot (at most 40 items a boss) under
@@ -682,16 +697,16 @@ the agent each table by version, the shape the Prices mod's agent read sets. The
 same lists and "missing" views from the same routes, which is the web half of this.
 
 **Privacy and manners.** Every table here is about the game: items, spells, NPCs, bosses, quests.
-The pools are counts. Nothing about a person is read, pooled or shown, the Journal sends nothing,
+The pools are counts. Nothing about a person is read, pooled or shown, the journal sends nothing new,
 prints nothing in chat, and does nothing for the player.
 
 **Stages.**
 
 - **J0. The window into the core.** `Ryna.Window`, Chronicle's tabs moved onto it. One release.
-- **J1. Collections.** The game tables, the agent read and the data folder; the `journal` mod with
-  its Collections section: recipes by profession (known, missing, and where a pool has seen the
+- **J1. Collections.** The game tables, the agent read and the data folder; Chronicle's mount and
+  pet records and its Collections section: recipes by profession (known, missing, and where a pool has seen the
   missing ones), reputations, then mounts and pets once the probe says how they are owned.
-- **J2. Dungeons.** The two pools; a Dungeons section: instances, bosses (killed or not), each
+- **J2. Dungeons.** The two pools; the first-dungeon notice; a Dungeons section: instances, bosses (killed or not), each
   boss's loot with its pooled rate and whether this character has looted it, and its abilities.
 - **J3. Quests.** With data layer v1 (section 11, stage 3): quests by zone, done or not, and the
   count nobody has named yet.
@@ -705,10 +720,9 @@ play, as planned above.
 boss's creature id (it does for open-world kills), and does the app show the fight under its
 encounter name?
 
-**Open, Maddison's:** the name ("Journal" is a working title; the Chronicle name is taken by the
-data product); its own mod or sections inside Chronicle (recommended: its own); on or off by
-default (recommended: off until J2 makes it worth opening); whether quests belong here at all or
-stay Questie's; whether flight points are worth a Chronicle record.
+**Settled 2026-11-09, Maddison:** one mod under the Chronicle name; the journal sections off by
+default, with the first-dungeon notice; quest tracking in. **Open, hers:** whether flight points
+are worth a Chronicle record; whether the notice's wording above is the one she wants.
 
 ## 8. Identity
 
@@ -765,12 +779,12 @@ Maddison's; the agent can carry both old and new clients for a release or two.
    (never Need); off by default, every chore its own toggle that starts off, Shift pauses it.
    Then the Settings mod (7.2): backup of addon settings and copies between characters, agent side.
    Then the Prices mod (7.3): the sell line first, merchant pooling second, the auction line third.
-   Then the Journal (7.4): the Chronicle window moves into the core as `Ryna.Window` (J0), then
-   collections (J1) and dungeons (J2) as a mod of their own; its quest side (J3) waits for stage 3.
+   Then Chronicle's journal (7.4): the Chronicle window moves into the core as `Ryna.Window` (J0),
+   then collections (J1) and dungeons (J2) as sections of Chronicle; quests (J3) wait for stage 3.
 3. **Data layer v1.** Parse the three caches, upload them, pool them, write `Data/names.lua` and
    `Data/quests.lua` back down; the kills table gains names for creatures never targeted; the
    Chronicle window (0.2.x plan) reads community numbers from the same files, and the quest pool
-   is what the Journal's Quests section (7.4, J3) is measured against.
+   is what Chronicle's Quests section (7.4, J3) is measured against.
 4. **The Palworld core.** The Node agent as a sidecar, the identity change, the launchd job retired.
 5. **Palworld mods**, per the reading Maddison picks.
 6. **Git-fetched mods and a mods index**, once someone outside wants to write one.
@@ -789,7 +803,8 @@ Maddison's; the agent can carry both old and new clients for a release or two.
   (the core addon, Chronicle, every mod?), how a CurseForge installer learns they need the agent, and
   whether the agent simply takes over managing the addon when it finds a CurseForge copy.
 - Windows signing (unchanged: Azure Artifact Signing is the recommendation).
-- **The Journal (7.4), asked 2026-11-09:** its name; its own mod or sections inside Chronicle; on or
-  off by default; whether quests belong in it or stay Questie's; and the one dungeon check it still lists.
+- Settled 2026-11-09 (7.4): the journal is part of Chronicle, not a mod of its own; its sections
+  start off, with one notice at the first dungeon; quest tracking is in, the map stays Questie's.
+  Open: flight points, and the notice's wording.
 - Settled 2026-11-07: the repository (A, `ryna_agent`); the Palworld agent goes MIT barring anything
   sensitive; Palworld mods are undefined for now; Chronicle is the first WoW mod.
