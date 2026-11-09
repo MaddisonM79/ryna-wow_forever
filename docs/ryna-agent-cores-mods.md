@@ -685,9 +685,25 @@ do). It moves into the core as `Ryna.Window`, beside `Ryna.Panel`:
   section's rows are built when it is first shown and rebuilt only when its data's version changes,
   as the Chronicle views are today.
 
-The move comes with a design pass, since this window is what Ryna looks like in game: a mockup
-agreed with Maddison first (the rail, a section's header with its progress bar, icon rows, the
-empty and "as of" states), then the move, with the Chronicle window's tests moved with it.
+The layout, from the mockup Maddison approved on 2026-11-09 ("Your mock is good. in game will be
+different but lets see it"; the mockup fixed layout and content, the game's own look decides
+colours, fonts and icons):
+
+- *The rail*, in three groups: **Me** (Session, Characters, Items, History), **World** (Census,
+  Dungeons, Collections, Quests), **Combat and gold** (Fights, Auctions, Chores). Only sections
+  that exist are listed; nothing greyed out or "coming soon".
+- *The header*, the same on every section: the section's title, a character picker ("All
+  characters" and each character on the account), and the search box.
+- *The body*: summary tiles where a section has headline numbers, then rows; a row may carry an
+  icon, a name in the game's quality colour, a progress bar and a right-aligned number, and shows
+  the game's own tooltip on hover.
+- *The footer*, on every section: where the numbers came from and how old they are ("From your
+  saved file", "Global contributions as of 2 hours ago").
+
+First build: the window in the core, Chronicle's Session, Kills and Loot and its levels (as
+History) moved onto it, and the two sections that need only the saved file, **Characters** and
+**Items** (with the tooltip line that says which character holds an item). The Chronicle window's
+tests move with it.
 
 **Data files and their cost.** AllTheThings and Questie cost what they do because the client parses
 their tables at every login. The journal's tables are small because they hold ids and numbers, not
