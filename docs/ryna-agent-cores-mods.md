@@ -565,6 +565,155 @@ values of `GetMerchantItemInfo` (price, stack, available), which classic and mod
 since Forever's return orders have differed from the wiki's before. The agent passes it through as it
 does every unknown event type; docs/wow.md's row comes with the pool.
 
+### 7.4 Journal: what exists, against what you've done (asked 2026-11-09)
+
+Maddison, after looking at what she runs beside Ryna (AllTheThings, 71 MB; Doud's Dungeon Journal,
+35 MB; Questie and its database, 211 MB): "Journal and ATT, there is a HUGE amount of overlap there.
+Those are both heavier lifts but one tool for it", then the point that decides the design: "ATT and
+Questie both have something we don't then: what isn't done." And: "an enhanced UI in game so as more
+items are added we have one window to review things."
+
+**The gap.** Three kinds of knowledge make a journal, and Ryna has two:
+
+1. *What this character has done*: Chronicle's record (kills, loot and where it came from, completed
+   quests, known recipes, reputations, bags and bank).
+2. *What anyone has seen*: the pools (drop rates, kill counts, merchants, auctions).
+3. *What exists*: the whole set, which "missing" is measured against. This is what ATT and Questie
+   ship as hand-built Lua, and what Ryna doesn't have.
+
+The Journal is the third, joined to the first two. It isn't hand-built: each set comes from the
+client's own tables where they hold it, and from play, pooled, where they don't.
+
+**What exists, by source** (checked 2026-11-09 against build 1.60.1.70790 through the same
+wago.tools route `scripts/wow-gamedata` uses, and against Blizzard's `forever` UI branch):
+
+| Set | Source | Whole? | The record today |
+|---|---|---|---|
+| Recipes | `SkillLineAbility`, 2,775 rows in the profession lines (Leatherworking 616, Blacksmithing 527, Tailoring 486, Engineering 295, Enchanting 273, Alchemy 212, Cooking 141, First Aid 40, …) | Yes | Chronicle: `professions[].recipes` (ids from `C_TradeSkillUI.GetAllRecipeIDs`; check they are the table's `Spell` before joining) |
+| Reputations | `Faction`: 75 of its 253 rows have a reputation | Yes | Chronicle: `reputations` (what the pane lists) |
+| Mounts | `Mount`, 144 rows, with the spell each teaches; the source columns are empty | The list, not where from | Nothing yet (below) |
+| Companion pets | `BattlePetSpecies`, 121 rows; sources empty | The list, not where from | Nothing yet (below) |
+| Flight points | `TaxiNodes`, 101 rows | Yes | Nothing; readable only with the flight map open |
+| Dungeons and bosses | `DungeonEncounter`, 342 encounters on 42 maps (served already as `encounters`); Forever has **no** `JournalEncounter`, `JournalInstance`, `JournalEncounterItem`, `JournalEncounterSection` or `JournalEncounterCreature` (wago.tools serves all five for retail and none for this build) | The boss list only: no loot, no abilities, no boss-to-creature link | Chronicle: `kills` by creature id; the agent's fights by encounter id |
+| Boss loot | Nothing in the client | No: pooled from play | Chronicle: `loot[*].from["c:<id>"]`, pooled as `/chronicle/creatures/:npcId` |
+| Boss abilities | Nothing in the client; cast info of other units is secret to addons (docs/forever-client-api.md) | No: pooled from play | The agent's combat-log digests already count casts per actor and spell |
+| Quests | `QuestV2`: 6,616 ids and nothing else (no title, zone or objective); `QuestSort` 39 category names; `QuestLine` 3 lines over 22 quests | The ids only | Chronicle: `quests.completed` |
+| Achievements | `Achievement`: 440 rows, 14 with points, most of them statistics; Blizzard's achievement window is not allowed on this game type | Not a set here | Out of scope |
+
+Three consequences:
+
+- **Collections are whole on day one.** Recipes and reputations are a subtraction against what
+  Chronicle already records. Where a missing recipe comes from is not in the table, but two pools
+  already answer most of it: the merchant pool (recipes vendors sell) and Chronicle's loot (recipes
+  that drop); `AcquireMethod` marks the ones that come with the skill itself.
+- **Mounts and pets need one answer first.** Blizzard's Collections window is not allowed to load on
+  Forever (`Blizzard_Collections.toc`: `AllowLoadGameType: wrath, cata, mists, mainline`), so they are
+  probably items in bags, as in Classic, and "owned" is then the item in Chronicle's bags and bank,
+  joined to the list through `ItemEffect` (item to spell) and `Mount.SourceSpellID` /
+  `BattlePetSpecies.SummonSpellID`. If `C_MountJournal` and `C_PetJournal` answer in game instead,
+  Chronicle reads those. Probe below.
+- **Dungeons and quests are grown, not shipped.** Doud's Journal carries 35 MB because the client has
+  no journal data to read. Ryna's comes from everyone's play: loot per boss from Chronicle's tallies,
+  abilities and the boss's creature ids from the agent's fights (the digest names the actors inside
+  an `ENCOUNTER_START`/`END`), and quest titles, zones and objectives from the client's
+  `questcache.wdb` (section 7's first source, stage 3). The quest count is honest from the start:
+  6,616 ids exist, and the Journal can say how many of them nobody has named yet. This side is thin
+  while few people play and gets better without a release.
+
+What Ryna will not have: Questie's map pins and objective locations, and ATT's hand-curated
+"how to get it" notes. The Journal says where something came from when a pool has seen it, and
+"not seen yet" otherwise. Questie stays installed for the map.
+
+**Chronicle or its own mod.** Recommended, Maddison's to confirm (she offered the other reading too:
+"part of Chronicle and then have settings to enable or disable certain things"): its own mod,
+`journal` (`Ryna_Journal`, `kind: "addon"`, `actsInGame: false`, off by default), which requires the
+core and nothing else.
+
+- *Recording stays Chronicle's.* Anything new the Journal needs about a character (mounts and pets
+  owned, flight points) is a Chronicle record, by the line in section 12.
+- *The Journal reads, never records.* It reads this character's record through the core
+  (`Ryna.DB().characters[guid]`, the saved file the core owns and Chronicle fills) and the reference
+  tables from the data layer. Neither addon calls the other.
+- *Without Chronicle* the reference side still works (every list, every pooled rate) and the "done"
+  marks are absent, with one line saying Chronicle fills them in. With it, they are live: a boss
+  killed is marked the moment Chronicle counts it, no sync or reload in between.
+- *Why not inside Chronicle:* Chronicle is on by default and earns that by recording and touching
+  nothing. A browsing window and its data files, on for everyone, change what installing it means.
+  The cost of separating is one more toggle.
+
+**One window.** Chronicle already has the window (`RynaChronicleWindow`: Session, Kills, Loot,
+Levels, a search box, and lists that fill only the rows on screen, so 2,000 creatures cost what 15
+do). It moves into the core as `Ryna.Window`, beside `Ryna.Panel`:
+
+- One frame. A rail of sections down the left, tabs inside a section, one search box, Escape closes.
+- A mod registers a section: `Ryna.Window.AddSection({ key, label, order, tabs = { { key, label,
+  columns, rows = function(filter) … end, tooltip = function(row) … end } } })`. The core owns the
+  frame, the virtual list, sorting, the search box and the row tooltip; a mod supplies rows.
+- Chronicle registers "Chronicle" with its four tabs, unchanged. The Journal adds "Collections" and
+  "Dungeons", later "Quests". Prices can add "Auctions" over its own snapshot. The panel
+  (`/ryna`) stays for settings; the window is for data.
+- `/chronicle` and `/ryna chronicle` keep working and open the window on Chronicle's section. A
+  section's rows are built when it is first shown and rebuilt only when its data's version changes,
+  as the Chronicle views are today.
+
+This is a move, not a feature: one release with nothing new in it, the Chronicle window's tests
+moved with it.
+
+**Data files and their cost.** AllTheThings and Questie cost what they do because the client parses
+their tables at every login. The Journal's tables are small because they hold ids and numbers, not
+prose, and they are loaded late:
+
+- The agent writes them as a load-on-demand addon folder beside the others (`Ryna_JournalData`:
+  a TOC with `## LoadOnDemand: 1` and one Lua file per table), and the Journal loads it the first
+  time its section is shown (`C_AddOns.LoadAddOn`). Nothing is parsed at login. To check in game
+  before relying on it (probe below); the fallback is `Data/` files in the core's TOC, held to a
+  smaller budget.
+- Budget: 2 MB for everything, with the quest table (the largest, perhaps 800 KB at 6,616 quests)
+  optional. Recipes are about 110 KB, the boss list and pooled loot (at most 40 items a boss) under
+  300 KB, mounts, pets and factions a few KB.
+- Each table carries its version and written-at time, like every data-layer file, and the window
+  shows "as of". The agent refreshes by version on sync.
+
+**The API's side**, to be written into docs/wow.md before it's built: new served game tables from
+`scripts/wow-gamedata` (`recipes`, `factions`, `mounts`, `pets`, the item-to-spell links, and
+`DungeonEncounter` as it is); two new pools, both aggregates about no one (creatures and spell casts
+per encounter, from the fights the agent already uploads; loot per encounter, from Chronicle's
+tallies joined through those creatures); the quest pool with stage 3; and one agent read that hands
+the agent each table by version, the shape the Prices mod's agent read sets. The portal gets the
+same lists and "missing" views from the same routes, which is the web half of this.
+
+**Privacy and manners.** Every table here is about the game: items, spells, NPCs, bosses, quests.
+The pools are counts. Nothing about a person is read, pooled or shown, the Journal sends nothing,
+prints nothing in chat, and does nothing for the player.
+
+**Stages.**
+
+- **J0. The window into the core.** `Ryna.Window`, Chronicle's tabs moved onto it. One release.
+- **J1. Collections.** The game tables, the agent read and the data folder; the `journal` mod with
+  its Collections section: recipes by profession (known, missing, and where a pool has seen the
+  missing ones), reputations, then mounts and pets once the probe says how they are owned.
+- **J2. Dungeons.** The two pools; a Dungeons section: instances, bosses (killed or not), each
+  boss's loot with its pooled rate and whether this character has looted it, and its abilities.
+- **J3. Quests.** With data layer v1 (section 11, stage 3): quests by zone, done or not, and the
+  count nobody has named yet.
+
+**Owed in game** (Maddison's, one line each; answers go into docs/forever-client-api.md):
+
+1. `/dump C_MountJournal ~= nil, C_MountJournal and C_MountJournal.GetNumMounts()` and
+   `/dump C_PetJournal ~= nil, C_PetJournal and C_PetJournal.GetNumPets()` (is there a journal, or
+   are mounts and pets items?)
+2. `/dump C_AddOns.IsAddOnLoadOnDemand("ElvUI_Options"), C_AddOns.LoadAddOn("ElvUI_Options")`
+   (does load-on-demand work for an addon's own folder here?)
+3. `/dump C_AddOns.IsAddOnLoadable("Blizzard_EncounterJournal")` (its TOC allows `standard, classic`;
+   is Forever's game type inside `classic`? With no journal tables it would be empty either way.)
+4. In a dungeon, after a boss dies: does Chronicle's kills tab count the boss's creature id (it does
+   for open-world kills), and does the app show the fight under its encounter name?
+
+**Open, Maddison's:** the name ("Journal" is a working title; the Chronicle name is taken by the
+data product); its own mod or sections inside Chronicle (recommended: its own); on or off by
+default (recommended: off until J2 makes it worth opening); whether quests belong here at all or
+stay Questie's; whether flight points are worth a Chronicle record.
+
 ## 8. Identity
 
 Today: one device client per game (`ryna-wow`, the Palworld agent's), each a public client at
@@ -620,9 +769,12 @@ Maddison's; the agent can carry both old and new clients for a release or two.
    (never Need); off by default, every chore its own toggle that starts off, Shift pauses it.
    Then the Settings mod (7.2): backup of addon settings and copies between characters, agent side.
    Then the Prices mod (7.3): the sell line first, merchant pooling second, the auction line third.
+   Then the Journal (7.4): the Chronicle window moves into the core as `Ryna.Window` (J0), then
+   collections (J1) and dungeons (J2) as a mod of their own; its quest side (J3) waits for stage 3.
 3. **Data layer v1.** Parse the three caches, upload them, pool them, write `Data/names.lua` and
    `Data/quests.lua` back down; the kills table gains names for creatures never targeted; the
-   Chronicle window (0.2.x plan) reads community numbers from the same files.
+   Chronicle window (0.2.x plan) reads community numbers from the same files, and the quest pool
+   is what the Journal's Quests section (7.4, J3) is measured against.
 4. **The Palworld core.** The Node agent as a sidecar, the identity change, the launchd job retired.
 5. **Palworld mods**, per the reading Maddison picks.
 6. **Git-fetched mods and a mods index**, once someone outside wants to write one.
@@ -641,5 +793,7 @@ Maddison's; the agent can carry both old and new clients for a release or two.
   (the core addon, Chronicle, every mod?), how a CurseForge installer learns they need the agent, and
   whether the agent simply takes over managing the addon when it finds a CurseForge copy.
 - Windows signing (unchanged: Azure Artifact Signing is the recommendation).
+- **The Journal (7.4), asked 2026-11-09:** its name; its own mod or sections inside Chronicle; on or
+  off by default; whether quests belong in it or stay Questie's; and the four in-game probes it lists.
 - Settled 2026-11-07: the repository (A, `ryna_agent`); the Palworld agent goes MIT barring anything
   sensitive; Palworld mods are undefined for now; Chronicle is the first WoW mod.
