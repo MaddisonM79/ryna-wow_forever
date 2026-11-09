@@ -9,10 +9,15 @@
 --   priceAuctionLine           the "AH: 4g 20s each · 31 listed · 2 hours ago" line (on), from this
 --                              account's own snapshots and searches; never where the auction house
 --                              window shows the item's price itself
---   priceAuctionStackTotal     the stack's total in it (on)
+--   priceAuctionStackTotal     the stack's total in it, and in everyone's line (on)
 --   priceAuctionSnapshot       one snapshot of the house per visit, at most one per 15 minutes per
 --                              character, and the `auction` journal event it makes (on; off: no
 --                              ReplicateItems() and no event)
+--   priceVendorLine            "Sold by Kiro, Durotar: 20c (+2 more)", which vendor sells the item,
+--                              from everyone's visits (the app's Data/vendors.lua; on)
+--   pricePooledAuctionLine     "AH (everyone): 1s 10c each · 3 listed · as of 2 hours ago", everyone's
+--                              auction numbers (the app's Data/auctions.lua; on), apart from this
+--                              account's own line and in another colour
 --
 -- Each has the short name `/ryna prices <name> on|off` takes, and the one it sits under (`under`).
 
@@ -29,10 +34,14 @@ S.FEATURES = {
     label = L["Add what the whole stack sells for"] },
   { name = "awayFromMerchant", key = "priceOnlyAwayFromMerchant", default = false, under = "priceSellLine",
     label = L["Not while a merchant window is open"] },
+  { name = "vendorLine", key = "priceVendorLine", default = true,
+    label = L["Show which vendor sells it, from everyone's visits"] },
   { name = "auctionLine", key = "priceAuctionLine", default = true,
     label = L["Show auction house prices on item tooltips"] },
   { name = "auctionStackTotal", key = "priceAuctionStackTotal", default = true, under = "priceAuctionLine",
     label = L["Add what the whole stack goes for"] },
+  { name = "pooledAuctionLine", key = "pricePooledAuctionLine", default = true,
+    label = L["Show everyone's auction house prices on item tooltips"] },
   { name = "auctionSnapshot", key = "priceAuctionSnapshot", default = true,
     label = L["Take a snapshot of the auction house when you open it"] },
 }
