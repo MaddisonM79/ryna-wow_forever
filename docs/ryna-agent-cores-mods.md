@@ -862,6 +862,31 @@ Maddison's; the agent can carry both old and new clients for a release or two.
 - **Data**: per table, per sync, no release.
 - **The addon**: still inside the agent; a new agent brings the matching addon, as today.
 
+**Supported versions, channels and notices (owed; Maddison, 2026-11-09).** "We need to add to the
+agent/portal/api, minimum versions supported (think RFM from CrowdStrike), ideal versions, and
+current version... which means we need version channeling and notifications when someone is in RFM
+or out in the cold." Not designed yet; this is the requirement as understood, to be confirmed
+before a design note:
+
+- *Three marks per thing that ships* (the agent, the addon and its mods, and the contract the API
+  speaks): **minimum** supported, **ideal**, and **current** (the newest released).
+- *Three states a person can be in.* At or above ideal: everything works. Between minimum and
+  ideal: **reduced functionality** (CrowdStrike's RFM: it keeps running and keeps what is safe, the
+  newer features are off, and it says so). Below minimum: **out in the cold** (the API refuses, with
+  a reason and the way back).
+- *The policy is data the API serves*, not a build constant, so a mark moves without a release:
+  every agent call already names its version, the answer carries the caller's state, and a refusal
+  is an envelope `ok: false` with its own code, never a broken upload.
+- *Channels.* Today there is one: the updater reads `releases/latest/download/latest.json`, and a
+  pre-release tag is kept out of it. Channeling means a manifest per channel (stable, and at least
+  one ahead of it), a person's choice of channel in the agent, and the three marks kept per channel.
+- *Notices, in every place the person looks*, per 7.5: the agent's window, the game (the core's
+  Status tab, from the file the agent writes; a notice frame for out in the cold; never chat), and
+  the portal's Agent page; and Admin sees who is in each state.
+
+Today the pieces report versions (the ingest body's `agent`, the TOCs, `mod.json`) and nothing
+judges them.
+
 ## 10. Security
 
 - Sources are allow-listed in the agent (today: this repository and ryna.io, the same list the About
