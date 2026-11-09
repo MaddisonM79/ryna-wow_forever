@@ -259,7 +259,8 @@ local function professionRow(id, name, rank, max)
 end
 
 -- Professions: GetProfessions/GetProfessionInfo where the client has them (ids included),
--- otherwise the classic skill list, where the id comes from the English name.
+-- otherwise the classic skill list, where the id comes from the English name. Forever has
+-- GetProfessions and no global GetSkillLineInfo (docs/forever-client-api.md), so it takes the first.
 function C.ScanProfessions()
   local rec = ns.rec
   if not rec then return end

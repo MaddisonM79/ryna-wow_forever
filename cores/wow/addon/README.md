@@ -385,8 +385,9 @@ once and loads nothing, so nothing is ever recorded twice.
 
 ## The Interface number
 
-`Ryna.toc` says `## Interface: 16001`, our best reading of Forever's 1.60.x client; it is **not
-verified**. The game loads only addons whose Interface number it accepts for Forever. If the addon
+`Ryna.toc` says `## Interface: 16001`, Forever's number: the game's own `GetBuildInfo()` gave
+16001 on build 1.60.1 (70862) on 2026-11-08 (see `docs/forever-client-api.md`). The game loads only
+addons whose Interface number it accepts for Forever, so a later patch may raise it. If the addon
 shows as out of date, check the client's number with
 `/run print((select(4, GetBuildInfo())))` and put that number in the TOC (or tick "Load out of date
 AddOns" on the character screen). `/ryna status` prints it too once the addon is loaded.

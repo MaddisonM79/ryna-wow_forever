@@ -32,7 +32,9 @@
 -- Forever's return orders differ from the wiki's in places (its trainer API did), so the item reads
 -- prefer C_MerchantFrame.GetItemInfo's named fields where the client has it (asked at run time), and
 -- from GetMerchantItemInfo take only the values classic and modern clients put in the same place
--- (price, stack and numAvailable, the 3rd to 5th). Every client call goes through ns.Try.
+-- (price, stack and numAvailable, the 3rd to 5th). Forever has C_MerchantFrame and no global
+-- GetMerchantItemInfo (probed in game, docs/forever-client-api.md), so the global is only the classic
+-- fallback. Every client call goes through ns.Try.
 
 local _, ns = ...
 if ns.off then return end
