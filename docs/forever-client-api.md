@@ -342,6 +342,40 @@ Each entry: what we expected, what Forever does, how we know, what to do.
   is **nil**, and `C_SkillInfo.GetNumSkillLines()` is 21. Chronicle takes the `GetProfessions` path
   (its skill-line fallback is for classic clients). What `GetProfessions()` returns is not yet checked.
 
+### The game's damage meter
+
+- **Forever**: `Blizzard_DamageMeter` is allowed (`AllowLoadGameType: standard, camelot`), and
+  `C_DamageMeter` is documented with `Environment = "All"` (Docs `DamageMeterDocumentation.lua`):
+  `IsDamageMeterAvailable`, `GetAvailableCombatSessions` (id, name, duration),
+  `GetCombatSessionFromID` / `FromType` (sources with `totalAmount`, `amountPerSecond`,
+  `classFilename`, `isLocalPlayer`, deaths), `GetCombatSessionSourceFromID` / `FromType` (a source's
+  spells), `GetSessionDurationSeconds`, `ResetAllCombatSessions`; events
+  `DAMAGE_METER_COMBAT_SESSION_UPDATED`, `DAMAGE_METER_CURRENT_SESSION_UPDATED`, `DAMAGE_METER_RESET`.
+  Meter types: damage done, dps, healing done, hps, absorbs, interrupts, dispels, damage taken,
+  avoidable damage taken, deaths, enemy damage taken. Session types: overall 0, current 1, expired 2.
+- **Watch**: the session reads are `SecretWhenInCombat`; a source's `name` and `sourceGUID` are
+  conditionally secret and `specIconID` always is.
+- **Unknown**: that an addon's calls answer on Forever, and what a finished session returns.
+- **Do instead of CLEU**: read finished fights from here; leave live bars to the game's meter.
+
+### Collections, the encounter journal and load on demand
+
+- **Blizzard's UI**: `Blizzard_Collections` and `Blizzard_AchievementUI` are not allowed on Forever's
+  game type (their TOCs on the `forever` branch list `wrath, cata, mists, mainline` and `mainline,
+  tbc, wrath, cata, mists`); `Blizzard_EncounterJournal` lists `standard, classic`.
+- **Verified in game (Team, 2026-11-09)**: the journals answer without that UI.
+  `C_MountJournal.GetMountIDs()` lists 136 (the `Mount` table has 144 rows) and the 11th value of
+  `GetMountInfoByID` is the collected flag, as on retail (2 collected on a level 17 character).
+  `C_PetJournal.GetNumPets()` returns listed and owned, `5, 5`: under the journal's default filters
+  it lists owned pets only, so the whole set is the `BattlePetSpecies` table (121 rows).
+- **The encounter journal is empty.** `C_AddOns.IsAddOnLoadable("Blizzard_EncounterJournal")` is
+  `true, ""` (Forever's game type is inside `classic` for TOC purposes), but `EJ_GetNumTiers()` is 0
+  and `EJ_GetInstanceByIndex(1, false)` returns nothing, matching wago.tools serving no
+  `JournalEncounter*` or `JournalInstance` table for build 1.60.1.70790. Boss loot and abilities are
+  not in the client.
+- **Load on demand works** for an addon's own folder: `C_AddOns.IsAddOnLoadOnDemand("ElvUI_Options")`
+  is true and `C_AddOns.LoadAddOn("ElvUI_Options")` returned true (Team, 2026-11-09).
+
 ### CVars
 
 - `C_CVar.SetCVar` requires a public, writable, non-secure CVar and refuses secret arguments (Docs
@@ -413,6 +447,7 @@ docs; "Addons" means seen in the installed Forever addons. All dated 2026-11-08 
 | Names are First plus Last-as-realm | Addons | ElvUI `Core.lua:70`; Pawn `Pawn.lua:588` |
 | Unknown event name errors on register | Addons | Doud `Core.lua:845` |
 | `/dump` prints nothing for zero values | Game | Team |
+| `C_MountJournal` lists 136, collected flag is `GetMountInfoByID`'s 11th value; `C_PetJournal.GetNumPets()` is listed, owned (owned only by default); the encounter journal is loadable and empty (`EJ_GetNumTiers()` 0); `C_AddOns.LoadAddOn` loads a load-on-demand addon | Game (2026-11-09); Blz | Team; Blz TOCs on `forever` |
 
 ## How to probe
 
@@ -431,7 +466,7 @@ docs; "Addons" means seen in the installed Forever addons. All dated 2026-11-08 
 
 ### Still owed
 
-The first fourteen were answered on 2026-11-08 and folded in above. Next, one line each:
+The first fourteen were answered on 2026-11-08 and the journal probes on 2026-11-09, all folded in above. Next, one line each:
 
 1. Talent points per tree (what Chronicle now reads; zeros before the first point), then `/dump C_SpecializationInfo.GetSpecializationInfo(1)`:
    `/run local c=C_ClassTalents.GetActiveConfigID() local t=C_Traits.GetConfigInfo(c).treeIDs[1] for _,d in ipairs(C_Traits.GetGroupDisplayInfoByTreeID(t)) do local g=C_Traits.GetGroupCurrencyInfo(c,{d.groupID})[1] local i=g and g.currencyInfos and g.currencyInfos[1] print(d.displayName, i and i.spent, i and i.spentInTree) end`
@@ -443,6 +478,9 @@ The first fourteen were answered on 2026-11-08 and folded in above. Next, one li
 7. `/dump C_MerchantFrame.GetItemInfo(1).isPurchasable` at a vendor with enough money for item 1 (does it mean "can afford"?)
 8. With Prices on and `/ryna debug on`, open the auction house: a "prices: auction snapshot: ..." line within a minute means `REPLICATE_ITEM_LIST_UPDATE` fired; note any stutter
 9. `/run local f=CreateFrame("Frame") f:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED") f:SetScript("OnEvent",function(_,e) local r=C_AuctionHouse.GetBrowseResults() print(e,#r,r[1] and r[1].minPrice,r[1] and r[1].totalQuantity) end)`, then search for a stackable item whose cheapest listing you can see (is `minPrice` per unit?)
+10. `/dump C_DamageMeter ~= nil, C_DamageMeter and C_DamageMeter.IsDamageMeterAvailable()`
+11. After a fight, out of combat: `/dump C_DamageMeter.GetAvailableCombatSessions()`
+12. Then: `/run local s=C_DamageMeter.GetCombatSessionFromType(1,0) print(#s.combatSources, s.totalAmount, s.durationSeconds) local c=s.combatSources[1] print(c and c.name, c and c.totalAmount, c and c.amountPerSecond)` (the current session's damage done: readable out of combat?)
 
 ## Links
 

@@ -50,6 +50,11 @@ Agent (`.github/workflows/agent.yml`): `cargo fmt --all --check`, `cargo clippy 
 
 ## Rules for this repo
 
+- **Seen in game, richer on the portal.** Every feature that records, pools or does something has
+  a whole view in the game (a section of the window, a tooltip line, the strip), and the addon
+  never says "see ryna.io". A feature isn't done until that view exists; a design names it first.
+  The portal is the more robust form of the same thing. `docs/ryna-agent-cores-mods.md` 7.5 has
+  the rule, the audit of what is owed and the order. UI gets a mockup Maddison agrees to first.
 - **The game install is read only.** Never write under `/Applications/World of Warcraft/`, and
   never run the game. Maddison runs the in-game probes.
 - **Don't open `WTF/Account/*/SavedVariables`** or other personal files in the install.
