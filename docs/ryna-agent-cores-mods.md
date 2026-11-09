@@ -777,7 +777,7 @@ pages):
 | Bags and bank | Nothing | Bags, Items search | An **Items** search across every character, and a tooltip line ("Maddiepally: 12 in the bank") |
 | Quests | Nothing | Quests | 7.4's Quests section; the completed count per character meanwhile |
 | History: levels, deaths, zones, sessions | Levels tab only | History, Trends | A **History** tab: deaths, zones, sessions by day, with the week's totals |
-| Census | Four checkboxes | Population | A **Census** section: what this account has seen (counts by faction, class and level band, never names) and the realm's pooled picture from a data file |
+| Census | Four checkboxes | Population | A **Census** section in two halves, Maddison's words for them: **Your contributions** (what this account has seen and sent: counts by faction, class and level band, never names) and **Global contributions** (the realm's pooled picture, from a data file) |
 | Guild roster | Nothing (the game's own guild pane) | Guilds | With the guild stage |
 | Fights | Nothing | Logs, Fight | A **Fights** section in the manner of Details (below) |
 | Prices | Tooltip lines; `/ryna prices` | **Nothing** | An **Auctions** section over the snapshot (search, low and median, listed, age) and who sells what; and the portal owes Prices a page |
@@ -832,7 +832,7 @@ the agent's are matched by encounter and start time so a row in game is the page
 Unverified in game (docs/forever-client-api.md, "Still owed"): that the calls answer for an addon
 on Forever and what a finished session returns.
 
-**Order.** (1) The window into the core, with its mockup (7.4, J0). (2) Characters and Items, from
+**Order** (approved by Maddison, 2026-11-09, after Prices is finished). (1) The window into the core, with its mockup (7.4, J0). (2) Characters and Items, from
 the saved file alone. (3) Census, with a pooled summary file. (4) History, and Automation's session
 list. (5) Fights, after the probes. Then 7.4's Collections, Dungeons and Quests, and the Auctions
 section, each landing with its portal page.
