@@ -342,6 +342,22 @@ Each entry: what we expected, what Forever does, how we know, what to do.
   is **nil**, and `C_SkillInfo.GetNumSkillLines()` is 21. Chronicle takes the `GetProfessions` path
   (its skill-line fallback is for classic clients). What `GetProfessions()` returns is not yet checked.
 
+### The game's damage meter
+
+- **Forever**: `Blizzard_DamageMeter` is allowed (`AllowLoadGameType: standard, camelot`), and
+  `C_DamageMeter` is documented with `Environment = "All"` (Docs `DamageMeterDocumentation.lua`):
+  `IsDamageMeterAvailable`, `GetAvailableCombatSessions` (id, name, duration),
+  `GetCombatSessionFromID` / `FromType` (sources with `totalAmount`, `amountPerSecond`,
+  `classFilename`, `isLocalPlayer`, deaths), `GetCombatSessionSourceFromID` / `FromType` (a source's
+  spells), `GetSessionDurationSeconds`, `ResetAllCombatSessions`; events
+  `DAMAGE_METER_COMBAT_SESSION_UPDATED`, `DAMAGE_METER_CURRENT_SESSION_UPDATED`, `DAMAGE_METER_RESET`.
+  Meter types: damage done, dps, healing done, hps, absorbs, interrupts, dispels, damage taken,
+  avoidable damage taken, deaths, enemy damage taken. Session types: overall 0, current 1, expired 2.
+- **Watch**: the session reads are `SecretWhenInCombat`; a source's `name` and `sourceGUID` are
+  conditionally secret and `specIconID` always is.
+- **Unknown**: that an addon's calls answer on Forever, and what a finished session returns.
+- **Do instead of CLEU**: read finished fights from here; leave live bars to the game's meter.
+
 ### Collections, the encounter journal and load on demand
 
 - **Blizzard's UI**: `Blizzard_Collections` and `Blizzard_AchievementUI` are not allowed on Forever's
@@ -462,6 +478,9 @@ The first fourteen were answered on 2026-11-08 and the journal probes on 2026-11
 7. `/dump C_MerchantFrame.GetItemInfo(1).isPurchasable` at a vendor with enough money for item 1 (does it mean "can afford"?)
 8. With Prices on and `/ryna debug on`, open the auction house: a "prices: auction snapshot: ..." line within a minute means `REPLICATE_ITEM_LIST_UPDATE` fired; note any stutter
 9. `/run local f=CreateFrame("Frame") f:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED") f:SetScript("OnEvent",function(_,e) local r=C_AuctionHouse.GetBrowseResults() print(e,#r,r[1] and r[1].minPrice,r[1] and r[1].totalQuantity) end)`, then search for a stackable item whose cheapest listing you can see (is `minPrice` per unit?)
+10. `/dump C_DamageMeter ~= nil, C_DamageMeter and C_DamageMeter.IsDamageMeterAvailable()`
+11. After a fight, out of combat: `/dump C_DamageMeter.GetAvailableCombatSessions()`
+12. Then: `/run local s=C_DamageMeter.GetCombatSessionFromType(1,0) print(#s.combatSources, s.totalAmount, s.durationSeconds) local c=s.combatSources[1] print(c and c.name, c and c.totalAmount, c and c.amountPerSecond)` (the current session's damage done: readable out of combat?)
 
 ## Links
 

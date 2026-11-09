@@ -779,7 +779,7 @@ pages):
 | History: levels, deaths, zones, sessions | Levels tab only | History, Trends | A **History** tab: deaths, zones, sessions by day, with the week's totals |
 | Census | Four checkboxes | Population | A **Census** section: what this account has seen (counts by faction, class and level band, never names) and the realm's pooled picture from a data file |
 | Guild roster | Nothing (the game's own guild pane) | Guilds | With the guild stage |
-| Fights | Nothing | Logs, Fight | A **Fights** section: recent fights with length, damage and healing done, deaths. Blizzard's own meter is allowed on Forever (`Blizzard_DamageMeter.toc`: `standard, camelot`), so live numbers are the game's; whether an addon can read it is a probe (`/dump C_DamageMeter ~= nil`), and otherwise the agent writes its parsed fights down as a data file |
+| Fights | Nothing | Logs, Fight | A **Fights** section in the manner of Details (below) |
 | Prices | Tooltip lines; `/ryna prices` | **Nothing** | An **Auctions** section over the snapshot (search, low and median, listed, age) and who sells what; and the portal owes Prices a page |
 | Automation | A status line (the chat report is off) | none | What it did this session (sold, repaired, accepted, trained), as a list in the window |
 | Settings backups | Nothing | none (the agent's alone) | A status line: the last backup and its age |
@@ -791,9 +791,50 @@ saved file already holds every character on the account: the Characters and Item
 API work at all, only the window. And two features have no portal page either (Prices, and the
 journal sets), so the rule cuts both ways.
 
+**One suite** (Maddison, 2026-11-09: "we are going to unify MULTIPLE tools into one suite"). The
+addons people stack today each do one of these jobs with their own window, settings and saved
+file. Ryna does them as mods of one core, with one window, one settings panel, one saved file and
+one agent behind it:
+
+| The job | What people install for it | In Ryna |
+|---|---|---|
+| Quest and vendor chores | AutoQuests and its kind | Automation |
+| Vendor and auction prices | BetterVendorPrice, Auctionator's price lines | Prices |
+| Collections and what's missing | AllTheThings | Chronicle's journal (7.4) |
+| Dungeon journal | Doud's Dungeon Journal | Chronicle's journal (7.4) |
+| Alts, their bags and bank | Altoholic, BagSync | Chronicle: Characters and Items |
+| Who is playing | CensusPlus | Chronicle: Census |
+| Damage and healing meters | Details | Fights |
+| Logs and their analysis | Warcraft Logs and its uploader | The agent, and the portal's Logs |
+| Settings backup and copy | Hand-copying WTF folders | The Settings mod |
+
+Left alone on purpose: the UI replacement (ElvUI), the quest map (Questie), gear scoring (Pawn).
+
+**Fights, in the manner of Details** ("we are reading combat logs... so don't be surprised when I
+ask to see something like Details from us... imagine one tool for logs and dps"). The combat log
+event is closed to addons on Forever, but the game's own meter is not: `C_DamageMeter` is
+documented for every environment on the `forever` branch (`DamageMeterDocumentation.lua`) and
+`Blizzard_DamageMeter` is allowed on Forever's game type. It gives the sessions the game kept
+(`GetAvailableCombatSessions`: id, name, length), and for each one every source's total and
+per-second amount (`GetCombatSessionFromID`) and a source's spells (`GetCombatSessionSourceFromID`),
+for damage, healing, absorbs, interrupts, dispels, damage taken and deaths, with
+`DAMAGE_METER_COMBAT_SESSION_UPDATED` when one changes. The session reads are marked
+`SecretWhenInCombat`: during a fight the numbers are secret values (they can be shown, not compared
+or summed), and after it they are plain.
+
+So the split is: *during* the fight the live bars are the game's own meter, which Ryna doesn't
+redraw; *the moment it ends*, the Fights section has it: the fight list for the session, each
+fight's players ranked with bars, a player's spells, damage against healing against deaths, this
+pull beside the last one on the same boss. That is most of what Details is used for, with no
+combat log in the addon. The agent's parse of the log file is the same fight in depth (timeline,
+casts, the 5-second series), and the portal's Logs page is its robust form; the addon's fight and
+the agent's are matched by encounter and start time so a row in game is the page on the portal.
+Unverified in game (docs/forever-client-api.md, "Still owed"): that the calls answer for an addon
+on Forever and what a finished session returns.
+
 **Order.** (1) The window into the core, with its mockup (7.4, J0). (2) Characters and Items, from
 the saved file alone. (3) Census, with a pooled summary file. (4) History, and Automation's session
-list. (5) Fights, after the probe. Then 7.4's Collections, Dungeons and Quests, and the Auctions
+list. (5) Fights, after the probes. Then 7.4's Collections, Dungeons and Quests, and the Auctions
 section, each landing with its portal page.
 
 ## 8. Identity
