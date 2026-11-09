@@ -606,12 +606,13 @@ Three consequences:
   Chronicle already records. Where a missing recipe comes from is not in the table, but two pools
   already answer most of it: the merchant pool (recipes vendors sell) and Chronicle's loot (recipes
   that drop); `AcquireMethod` marks the ones that come with the skill itself.
-- **Mounts and pets need one answer first.** Blizzard's Collections window is not allowed to load on
-  Forever (`Blizzard_Collections.toc`: `AllowLoadGameType: wrath, cata, mists, mainline`), so they are
-  probably items in bags, as in Classic, and "owned" is then the item in Chronicle's bags and bank,
-  joined to the list through `ItemEffect` (item to spell) and `Mount.SourceSpellID` /
-  `BattlePetSpecies.SummonSpellID`. If `C_MountJournal` and `C_PetJournal` answer in game instead,
-  Chronicle reads those. Probe below.
+- **Mounts and pets have journals** (checked in game 2026-11-09, docs/forever-client-api.md):
+  `C_MountJournal.GetNumMounts()` answers 136 and `C_PetJournal.GetNumPets()` 5, though Blizzard's
+  Collections window is not allowed to load on Forever. So Chronicle reads the journals
+  (`C_MountJournal.GetMountIDs`, `GetMountInfoByID`'s collected flag) rather than guessing from bag
+  items, and the Journal's list is the game's own, with the `Mount` and `BattlePetSpecies` tables
+  only for names and icons out of game. Owed: that the collected flag is where retail has it, and
+  what the pet count of 5 counts (the table has 121 species).
 - **Dungeons and quests are grown, not shipped.** Doud's Journal carries 35 MB because the client has
   no journal data to read. Ryna's comes from everyone's play: loot per boss from Chronicle's tallies,
   abilities and the boss's creature ids from the agent's fights (the digest names the actors inside
@@ -665,9 +666,8 @@ prose, and they are loaded late:
 
 - The agent writes them as a load-on-demand addon folder beside the others (`Ryna_JournalData`:
   a TOC with `## LoadOnDemand: 1` and one Lua file per table), and the Journal loads it the first
-  time its section is shown (`C_AddOns.LoadAddOn`). Nothing is parsed at login. To check in game
-  before relying on it (probe below); the fallback is `Data/` files in the core's TOC, held to a
-  smaller budget.
+  time its section is shown (`C_AddOns.LoadAddOn`). Nothing is parsed at login. Checked in game
+  2026-11-09: a load-on-demand addon folder loads on that call (`ElvUI_Options`).
 - Budget: 2 MB for everything, with the quest table (the largest, perhaps 800 KB at 6,616 quests)
   optional. Recipes are about 110 KB, the boss list and pooled loot (at most 40 items a boss) under
   300 KB, mounts, pets and factions a few KB.
@@ -697,15 +697,18 @@ prints nothing in chat, and does nothing for the player.
 - **J3. Quests.** With data layer v1 (section 11, stage 3): quests by zone, done or not, and the
   count nobody has named yet.
 
-**Owed in game** (Maddison's, one line each; answers go into docs/forever-client-api.md):
+**Answered in game 2026-11-09** (Maddison): the mount and pet journals exist; load on demand
+works; `Blizzard_EncounterJournal` is loadable (`true, ""`). The last one reopens a question: the
+tables behind the encounter journal are not served for this build, but if the game's own journal
+answers (`EJ_GetNumTiers`, `EJ_GetInstanceByIndex`), the Dungeons section takes its boss loot and
+abilities from the game, and the pools add only rates and what this character has seen. If it is
+empty, the plan above stands.
 
-1. `/dump C_MountJournal ~= nil, C_MountJournal and C_MountJournal.GetNumMounts()` and
-   `/dump C_PetJournal ~= nil, C_PetJournal and C_PetJournal.GetNumPets()` (is there a journal, or
-   are mounts and pets items?)
-2. `/dump C_AddOns.IsAddOnLoadOnDemand("ElvUI_Options"), C_AddOns.LoadAddOn("ElvUI_Options")`
-   (does load-on-demand work for an addon's own folder here?)
-3. `/dump C_AddOns.IsAddOnLoadable("Blizzard_EncounterJournal")` (its TOC allows `standard, classic`;
-   is Forever's game type inside `classic`? With no journal tables it would be empty either way.)
+**Still owed in game** (the commands are 10 to 12 in docs/forever-client-api.md, "Still owed"):
+
+1. Mounts listed and collected, by the collected flag.
+2. `C_PetJournal.GetNumPets()` on its own: listed and owned.
+3. Whether the encounter journal holds anything.
 4. In a dungeon, after a boss dies: does Chronicle's kills tab count the boss's creature id (it does
    for open-world kills), and does the app show the fight under its encounter name?
 
@@ -794,6 +797,6 @@ Maddison's; the agent can carry both old and new clients for a release or two.
   whether the agent simply takes over managing the addon when it finds a CurseForge copy.
 - Windows signing (unchanged: Azure Artifact Signing is the recommendation).
 - **The Journal (7.4), asked 2026-11-09:** its name; its own mod or sections inside Chronicle; on or
-  off by default; whether quests belong in it or stay Questie's; and the four in-game probes it lists.
+  off by default; whether quests belong in it or stay Questie's; and the in-game probes it still lists.
 - Settled 2026-11-07: the repository (A, `ryna_agent`); the Palworld agent goes MIT barring anything
   sensitive; Palworld mods are undefined for now; Chronicle is the first WoW mod.

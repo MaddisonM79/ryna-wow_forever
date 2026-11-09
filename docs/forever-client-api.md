@@ -342,6 +342,21 @@ Each entry: what we expected, what Forever does, how we know, what to do.
   is **nil**, and `C_SkillInfo.GetNumSkillLines()` is 21. Chronicle takes the `GetProfessions` path
   (its skill-line fallback is for classic clients). What `GetProfessions()` returns is not yet checked.
 
+### Collections, the encounter journal and load on demand
+
+- **Blizzard's UI**: `Blizzard_Collections` and `Blizzard_AchievementUI` are not allowed on Forever's
+  game type (their TOCs on the `forever` branch list `wrath, cata, mists, mainline` and `mainline,
+  tbc, wrath, cata, mists`); `Blizzard_EncounterJournal` lists `standard, classic`.
+- **Verified in game (Team, 2026-11-09)**: the journals answer without that UI.
+  `C_MountJournal.GetNumMounts()` is 136 (the `Mount` table has 144 rows) and
+  `C_PetJournal.GetNumPets()` is 5 on a level 17 character (`BattlePetSpecies` has 121 rows; the
+  count follows the journal's filters, so what 5 counts is **unknown**).
+  `C_AddOns.IsAddOnLoadable("Blizzard_EncounterJournal")` is `true, ""`, so Forever's game type is
+  inside `classic` for TOC purposes. **Unknown**: whether the journal holds any data (wago.tools
+  serves no `JournalEncounter*` or `JournalInstance` table for build 1.60.1.70790).
+- **Load on demand works** for an addon's own folder: `C_AddOns.IsAddOnLoadOnDemand("ElvUI_Options")`
+  is true and `C_AddOns.LoadAddOn("ElvUI_Options")` returned true (Team, 2026-11-09).
+
 ### CVars
 
 - `C_CVar.SetCVar` requires a public, writable, non-secure CVar and refuses secret arguments (Docs
@@ -413,6 +428,7 @@ docs; "Addons" means seen in the installed Forever addons. All dated 2026-11-08 
 | Names are First plus Last-as-realm | Addons | ElvUI `Core.lua:70`; Pawn `Pawn.lua:588` |
 | Unknown event name errors on register | Addons | Doud `Core.lua:845` |
 | `/dump` prints nothing for zero values | Game | Team |
+| `C_MountJournal` and `C_PetJournal` exist (136 mounts; 5 pets under the journal's filters); `Blizzard_EncounterJournal` is loadable; `C_AddOns.LoadAddOn` loads a load-on-demand addon | Game (2026-11-09); Blz | Team; Blz TOCs on `forever` |
 
 ## How to probe
 
@@ -443,6 +459,9 @@ The first fourteen were answered on 2026-11-08 and folded in above. Next, one li
 7. `/dump C_MerchantFrame.GetItemInfo(1).isPurchasable` at a vendor with enough money for item 1 (does it mean "can afford"?)
 8. With Prices on and `/ryna debug on`, open the auction house: a "prices: auction snapshot: ..." line within a minute means `REPLICATE_ITEM_LIST_UPDATE` fired; note any stutter
 9. `/run local f=CreateFrame("Frame") f:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED") f:SetScript("OnEvent",function(_,e) local r=C_AuctionHouse.GetBrowseResults() print(e,#r,r[1] and r[1].minPrice,r[1] and r[1].totalQuantity) end)`, then search for a stackable item whose cheapest listing you can see (is `minPrice` per unit?)
+10. `/run local ids,n=C_MountJournal.GetMountIDs(),0 for _,id in ipairs(ids) do if select(11,C_MountJournal.GetMountInfoByID(id)) then n=n+1 end end print(#ids,n)` (mounts listed and collected: is `isCollected` the 11th value here?)
+11. `/dump C_PetJournal.GetNumPets()` on its own (two values, listed and owned?), with a companion pet known
+12. `/dump EJ_GetNumTiers ~= nil, EJ_GetNumTiers and EJ_GetNumTiers()` then `/dump EJ_GetInstanceByIndex and EJ_GetInstanceByIndex(1, false)` (does the encounter journal hold anything?)
 
 ## Links
 
