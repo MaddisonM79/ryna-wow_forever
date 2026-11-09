@@ -157,6 +157,8 @@ A mod is a folder with a manifest, installed and toggled by the agent, belonging
 }
 ```
 
+- **Seen in game.** Whatever a mod records, pools or does, it shows in the game, whole; the portal
+  is the richer form of the same thing (section 7.5, the rule for every mod, old and new).
 - **Off by default.** A mod that acts in the game for the player (`actsInGame: true`: automation,
   anything that presses a button) says so, and the toggle's text says so, every time.
 - **Bundled or fetched.** A bundled mod ships inside the agent and versions with it. A fetched mod is
@@ -737,6 +739,63 @@ encounter name?
 default, with the first-dungeon notice; quest tracking in. **Open, hers:** whether flight points
 are worth a Chronicle record; whether the notice's wording above is the one she wants.
 
+### 7.5 Seen in game, richer on the portal (Maddison, 2026-11-09)
+
+The rule, for everything Ryna has built and everything it builds: **the game has to visualize what
+we are doing; the portal adds richness.** Her words: "the portal is the primary path but no one is
+going to use an addon that they cannot visualize in game", and, on what went wrong: "in game there
+is no census information to view. Journal was go look at the web, why?"
+
+What it means in practice:
+
+- **Every feature that records, pools or does something has a place in the game where a person
+  sees it**: a section or tab of the window (7.4's `Ryna.Window`), a tooltip line, or the strip.
+  A settings checkbox is not a view.
+- **In game is whole, not a teaser.** The view answers the question the feature exists for, on its
+  own. The addon never says "see ryna.io".
+- **The portal is the more robust form of the same thing**: history and charts over time, every
+  account and shared profile, bigger tables, links. It never holds a feature the game can't show.
+- **The test for "done"**: a feature is finished when its in-game view exists. API and portal work
+  without it is half a feature. New designs in this document name their in-game view first.
+- **What reaches the game is still bound by the privacy rules.** Pooled data arrives as aggregates
+  through the data layer; nothing about another player is looked up or listed in game (the census's
+  per-character lookup stays on the API, where every lookup is audited).
+
+Honest limits, which are exceptions and not excuses: the game loads the agent's files only at login
+and `/reload`, so pooled numbers in game are "as of" a time, shown; the Settings mod's copy runs
+with the game closed, so its in-game part is a status line; Admin is the portal's alone.
+
+**Where each feature stands** (audited 2026-11-09 against the addon on main and the portal's WoW
+pages):
+
+| Feature | In game today | Portal today | Owed in game |
+|---|---|---|---|
+| Session numbers | Strip; Session tab | none | Nothing |
+| Kills and loot, this character | Kills and Loot tabs; tooltip lines | Character, Chronicle | The same for every character on the account |
+| Pooled drop rates and kill counts | Nothing | Chronicle, Items | Rates on the Loot and Kills rows and on tooltips, from the data layer |
+| The character record: level, gold, played, gear, professions, reputations | Nothing | Characters, Character | A **Characters** section: every character on the account at a glance, and each one's detail |
+| Bags and bank | Nothing | Bags, Items search | An **Items** search across every character, and a tooltip line ("Maddiepally: 12 in the bank") |
+| Quests | Nothing | Quests | 7.4's Quests section; the completed count per character meanwhile |
+| History: levels, deaths, zones, sessions | Levels tab only | History, Trends | A **History** tab: deaths, zones, sessions by day, with the week's totals |
+| Census | Four checkboxes | Population | A **Census** section: what this account has seen (counts by faction, class and level band, never names) and the realm's pooled picture from a data file |
+| Guild roster | Nothing (the game's own guild pane) | Guilds | With the guild stage |
+| Fights | Nothing | Logs, Fight | A **Fights** section: recent fights with length, damage and healing done, deaths. Blizzard's own meter is allowed on Forever (`Blizzard_DamageMeter.toc`: `standard, camelot`), so live numbers are the game's; whether an addon can read it is a probe (`/dump C_DamageMeter ~= nil`), and otherwise the agent writes its parsed fights down as a data file |
+| Prices | Tooltip lines; `/ryna prices` | **Nothing** | An **Auctions** section over the snapshot (search, low and median, listed, age) and who sells what; and the portal owes Prices a page |
+| Automation | A status line (the chat report is off) | none | What it did this session (sold, repaired, accepted, trained), as a list in the window |
+| Settings backups | Nothing | none (the agent's alone) | A status line: the last backup and its age |
+| Agent and sync state | Status tab | Agent | Nothing |
+| Collections, dungeons, quests | Not built | Not built | 7.4 |
+
+Two things the audit shows. The window today is one character's kills, loot and levels, while the
+saved file already holds every character on the account: the Characters and Items sections need no
+API work at all, only the window. And two features have no portal page either (Prices, and the
+journal sets), so the rule cuts both ways.
+
+**Order.** (1) The window into the core, with its mockup (7.4, J0). (2) Characters and Items, from
+the saved file alone. (3) Census, with a pooled summary file. (4) History, and Automation's session
+list. (5) Fights, after the probe. Then 7.4's Collections, Dungeons and Quests, and the Auctions
+section, each landing with its portal page.
+
 ## 8. Identity
 
 Today: one device client per game (`ryna-wow`, the Palworld agent's), each a public client at
@@ -816,6 +875,8 @@ Maddison's; the agent can carry both old and new clients for a release or two.
   (the core addon, Chronicle, every mod?), how a CurseForge installer learns they need the agent, and
   whether the agent simply takes over managing the addon when it finds a CurseForge copy.
 - Windows signing (unchanged: Azure Artifact Signing is the recommendation).
+- Settled 2026-11-09 (7.5), Maddison: **the game visualizes what we do; the portal adds richness.**
+  Every feature, old and new, has a whole in-game view; 7.5 holds the audit and the order.
 - Settled 2026-11-09 (7.4): the journal is part of Chronicle, not a mod of its own; its sections
   start off, with one notice at the first dungeon; quest tracking is in, the map stays Questie's.
   Open: flight points, and the notice's wording.
