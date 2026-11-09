@@ -651,10 +651,22 @@ says unasked, and the section's own setting is where to find it afterwards.
 quests by zone, done or not, and how many in a zone remain, measured against the pooled quest
 table. Where to go for an objective, and pins on the map, stay Questie's.
 
-**And portaled.** Every list here is served by the API, so ryna.io shows the same sets: per
-character, and across all of a person's characters at once (the account-wide view that costs ATT its
-size in game costs nothing on a page), shared the way a profile already is. The in-game sections
-answer "what am I missing right here"; the portal is where the whole collection is browsed.
+**In game it is whole; the portal is the primary path** (Maddison, 2026-11-09: "the portal is the
+primary path but no one is going to use an addon that they cannot visualize in game"). Two rules
+follow, and the rest of this section is held to them:
+
+- *The window is a complete journal, not a pointer to a website.* Every set is browsable in game in
+  full: every dungeon and boss, every recipe, mount, pet and faction, every zone's quests, with
+  icons, the game's quality colours, the item's own tooltip on hover, a progress bar per section
+  and per group ("Deadmines 3 of 6", "Tailoring 41 of 486"), and search. Nothing in it says "see
+  ryna.io". The data budget above is sized for the whole sets for this reason.
+- *All of a person's characters, in game too.* The saved file already holds every character
+  Chronicle has recorded on the account, so the window can show another character's progress, or
+  "any of mine has it", without the portal.
+
+What the portal adds is what a game window can't do well: every set served by the API, history and
+charts over time, the same view across accounts and for the people a profile is shared with, and
+room to browse. It is where most looking will happen; the addon is why anyone installs.
 
 **One window.** Chronicle already has the window (`RynaChronicleWindow`: Session, Kills, Loot,
 Levels, a search box, and lists that fill only the rows on screen, so 2,000 creatures cost what 15
@@ -671,8 +683,9 @@ do). It moves into the core as `Ryna.Window`, beside `Ryna.Panel`:
   section's rows are built when it is first shown and rebuilt only when its data's version changes,
   as the Chronicle views are today.
 
-This is a move, not a feature: one release with nothing new in it, the Chronicle window's tests
-moved with it.
+The move comes with a design pass, since this window is what Ryna looks like in game: a mockup
+agreed with Maddison first (the rail, a section's header with its progress bar, icon rows, the
+empty and "as of" states), then the move, with the Chronicle window's tests moved with it.
 
 **Data files and their cost.** AllTheThings and Questie cost what they do because the client parses
 their tables at every login. The journal's tables are small because they hold ids and numbers, not
