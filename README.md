@@ -14,8 +14,10 @@ and not a goal.
 
 ## Install
 
-You need an account on the backend first. For ryna.io that means Maddison has turned the WoW app on
-for you; if you can open [ryna.io/wow](https://ryna.io/wow) and see a page, you're set.
+No account is needed to install Ryna or to use it in the game: the addon records and shows your own
+numbers with nothing signed in. An account is what puts your characters on a backend. On ryna.io
+anyone can sign in, and [ryna.io/wow/guide](https://ryna.io/wow/guide) is the same walkthrough as a
+page, with what works signed out, what Ryna does and what it doesn't.
 
 **1. Get the app** from the [latest release](https://github.com/MaddisonM79/ryna_agent/releases/latest).
 Pick one file:
@@ -82,7 +84,10 @@ the mods that are on. Each mod is listed under the install with a switch; there 
 - **Prices**: what a vendor pays for an item, and for its stack, on every item tooltip ("Sell
   Price: 13s 50c (2g 70s for 20)", in the game's own words and coins), in your bags and bank, in chat
   links and loot, away from vendors too, and never twice where the game shows its own. Its Prices tab
-  (or `/ryna prices`) turns the stack total off or keeps the line away while a merchant window is open. It only reads the game's item data. Off by default.
+  (or `/ryna prices`) turns the stack total off or keeps the line away while a merchant window is open.
+  It also adds an auction price ("AH: 4g 20s each · 31 listed · 2 hours ago") from one snapshot of the
+  auction house per visit, kept as per-item totals with nothing about a seller, and sent with the rest
+  when you're signed in; the snapshot has its own switch. It never buys, sells or bids. Off by default.
 - **Settings**: your addons' settings (ElvUI and every other addon's, found from their own files),
   copied from one character to another and backed up to ryna.io, stored encrypted for you. It
   works in the app with the game closed and puts nothing in the game, so there's no addon folder for
@@ -92,8 +97,8 @@ the mods that are on. Each mod is listed under the install with a switch; there 
 
 If the game is already running, restart it so it sees the new addon.
 
-**3. Sign in.** Click **Sign in**. Ryna shows a short code and opens a sign-in page in your browser;
-check the page shows the same code, then allow it. Ryna never sees your password: it gets a token
+**3. Sign in** (optional; skip it and everything in the game still works). Click **Sign in**. Ryna
+shows a short code; click *Open sign-in page*, check the page shows the same code, then allow it. Ryna never sees your password: it gets a token
 for itself, kept in your keychain (or Windows credential store), and that's what it signs in with
 from then on.
 

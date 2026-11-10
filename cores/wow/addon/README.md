@@ -20,8 +20,9 @@ The core's addon and its mods' addons are installed side by side by the companio
   starts off, with its own Automation tab and `/ryna auto` (`mods/wow/README.md`). Holding Shift
   pauses it.
 - **Ryna Prices** (`mods/wow/prices/addon/Ryna_Prices`), off by default: what a vendor pays for an
-  item and its stack on every item tooltip, with its own Prices tab and `/ryna prices`
-  (`mods/wow/README.md`). It only reads the game's item data.
+  item and its stack on every item tooltip, and an auction price from one snapshot of the auction
+  house per visit (per-item totals, nothing about a seller), with its own Prices tab and
+  `/ryna prices` (`mods/wow/README.md`).
 
 Together they have a small settings panel (in tabs), one window for what they record (below, "Ryna's
 window") and a minimap button. Nothing is printed to chat
