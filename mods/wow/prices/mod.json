@@ -2,7 +2,7 @@
   "id": "prices",
   "core": "wow",
   "name": "Prices",
-  "version": "0.3.9",
+  "version": "0.4.0",
   "summary": "Puts what a vendor pays for an item, which vendor sells it, and what the auction house asks, on every item tooltip, away from vendors too. Takes one snapshot of the auction house per visit (never anything about a seller). Everyone's pooled prices come down with each sync into Data/vendors.lua and Data/auctions.lua, which the game reads at login or /reload. Nothing in chat, nothing done for you.",
   "kind": "addon",
   "actsInGame": false,
