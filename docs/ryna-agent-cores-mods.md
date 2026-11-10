@@ -910,6 +910,150 @@ the saved file alone. (3) Census, with a pooled summary file. (4) History, and A
 list. (5) Fights, after the probes. Then 7.4's Collections, Dungeons and Quests, and the Auctions
 section, each landing with its portal page.
 
+### 7.6 Chronicle by zone (asked 2026-11-10)
+
+The ask came from the guild Discord, after a preview of Kills & Loot: "Do you have it set up so it keeps track
+in each zone you go to?" Today the answer is "partly".
+
+#### What exists
+
+- **Zones are logged.** `Zone.lua` writes a `zone` journal event on every `ZONE_CHANGED_NEW_AREA` (zone,
+  subzone, instance, difficulty, `mapId`). Quest accepts and turn-ins, levels and deaths carry the zone too.
+- **The tallies are lifetime totals per creature, item and object** (`Chronicle.lua`, wow.md 12.1):
+  - `kills[npcId]` keeps `zone`, but that is only the latest kill's.
+  - `objects[id]` is the same.
+  - `loot[itemId]` has no zone at all; it is split by source (`from`), not by place.
+- **The window shows the same.** The Kills section shows that latest zone as a column, and Loot shows none.
+- **The API mirrors it.** `wow_kills.last_zone` and `wow_objects.last_zone`. The pooled
+  `/chronicle/creatures/:npcId` lists "zones" as the 5 most common `last_zone`s across characters: one vote per
+  character, not a count of kills.
+- **Measured on 2026-11-10:**
+  - Maddison's `Ryna.lua` is 5.8 MB, almost all of it journal and price data.
+  - Its two characters hold 94 kill entries, 206 loot entries and 17 objects.
+  - In prod, all 168 creatures killed so far were killed in one zone each (6 characters).
+  - The pool is young, so "most creatures live in one zone" is likely but not yet proven.
+
+#### Recommendation
+
+**1. Record shape: a small count map on each tally, not a tally per zone.**
+
+```lua
+kills["6"]    = { name = "Kobold Vermin", n = 43, own = 40, xp = 1720, looted = 38, last = …, zone = "Elwynn Forest",
+                  zones = { ["Elwynn Forest"] = 31 } }        -- kills per zone, counted from now on
+loot["2589"]  = { …, n = 30, qty = 45, from = { … }, zones = { ["Elwynn Forest"] = 22, ["Westfall"] = 8 } }  -- drops (n) per zone
+objects["1731"] = { n = 5, last = …, zone = "Elwynn Forest", zones = { ["Elwynn Forest"] = 5 } }
+```
+
+- `zones[z]` counts the same unit as the entry's `n`: kills, loot windows with the item, or objects opened.
+- `zone` stays as it is (the latest), so nothing reading it breaks.
+- At most 8 zones per entry, keeping the biggest, with the same rule as `from` (`MAX_FROM`).
+- Kills don't get per-zone `xp` or `own` counts, and loot doesn't get per-zone `qty`. Those are the obvious extras;
+  each roughly doubles the map for little gain.
+- **Size.** About 27 bytes for the map plus about 30 per zone in the saved file:
+  - roughly +20 KB on today's 5.8 MB file;
+  - about +600 KB per character only if every tally sits at its cap (2,000 kills, 3,000 loot, 2,000 objects)
+    with two zones each.
+- **Logout time** grows in step with that, which won't be noticeable next to the journal.
+
+**2. The zone key is the name the record already holds** (`ns.rec.zone`, from `GetRealZoneText`), not a map id:
+
+- It is the zone, not the subzone. Inside a dungeon it is the dungeon (The Deadmines), which is what a player
+  means by "where".
+- It is what `last_zone`, the quest and death events and the census already use. The API's `areas` fold (wow.md
+  8.x) and any later locale fix then apply to all of them at once.
+- The alternative is `C_Map.GetBestMapForUnit("player")`, which `Zone.lua` already calls for the journal:
+  - **For:** it is locale-proof.
+  - **Against:** it returns the most specific map (a cave, a city floor), so it would need folding up to the zone
+    through `C_Map.GetMapInfo` parents.
+  - **Against:** none of those calls are in `docs/forever-client-api.md`. They would need checking in game first,
+    and the rule is never to code Forever's API from memory.
+  - It is worth doing later, for every zone field at once, not just for this one.
+
+**3. When it counts.**
+- **Kills:** `addKill` adds 1 to `zones[ns.rec.zone]`, beside `e.zone`. A kill that waited for its name (the
+  pending ring) is counted in the zone it happened in, so the zone is captured when the XP line arrives.
+- **Loot:** the zone is captured when the loot window opens (`rememberSlot` stores it in the slot), and
+  `OnSlotCleared` adds 1 to that zone.
+- **Objects:** `countSource` adds the same way.
+- With the `chronicle` setting off, nothing is counted, as today.
+
+**4. Totals from before the change.**
+- Nothing is backfilled or guessed.
+- The difference `n − sum(zones)` is shown as its own line, "before zones were tracked". Once an entry hits the
+  8-zone cap, the line reads "earlier or elsewhere", because the dropped zones fall into it too.
+- Picking a zone filters to entries with `zones[that zone]`. That one number is honest: it is "since the update".
+
+**5. In game first (7.5).** Recommended:
+- **Kills and Loot sections:** a zone picker beside the search ("All zones", "This zone", then the zones the
+  character has counts in). With a zone picked, the numbers are that zone's and the totals tiles follow.
+- **Tooltips:** one line, only when the creature or item has been counted in more than one zone or the current zone
+  differs from the only one: "12 here (Westfall) · 43 in all".
+- Still silent: nothing in chat.
+
+**6. Agent.** Nothing to change. The agent never parses the tallies; it passes the record through as JSON.
+
+**7. API** (api repo; one migration, no new tables):
+- **Migration** `00NN_wow_chronicle_zones.sql` adds `zones TEXT` (JSON `{ zone: n }`) to `wow_kills`, the loot table
+  and `wow_objects`.
+- **Ingest:**
+  - `killEntry` and its siblings in `wow-service/src/schema.ts` gain an optional `zones`. Today's schema is a
+    `looseObject`, so an addon that sends `zones` before the API knows it is accepted and ignored.
+  - Checks: at most 8 keys; names follow the merchant rules (≤ 200 UTF-16 units, no `|`, no control or format
+    characters); counts are whole and non-negative, each at most `n`.
+  - A bad map is dropped with the entry kept, never a 400.
+- **Reads:**
+  - `GET /characters/:guid/kills` and the loot read gain `zones: [{ zone, n }]` per row and an optional `?zone=`
+    filter (`json_each` over at most a few thousand rows of one character).
+  - A small `GET /characters/:guid/zones` lists the zones with counts, for the portal's picker.
+  - The usual character access applies.
+- **Pooled** `/chronicle/creatures/:npcId`: `zones` become real kill counts, summed over `json_each`, with
+  `last_zone` as a fallback for rows not yet carrying `zones`. It stays an aggregate with no person in it, so the
+  census privacy rules (8.1) aren't touched.
+- **Connector:** the MCP's `wow` chronicle tool (`apps/mcp/src/domains/wow/tools/chronicle.ts`) passes `zone`
+  through. It's a read, so there's no `scopes.ts` entry.
+
+**8. Portal.** The character's Kills & Loot tab (`ChronicleSection.vue`) gets the same zone picker as the game,
+plus the "before zones were tracked" line. The pure filter and remainder helpers get tests.
+
+**9. Tests.**
+- **Addon** (`fake_client`):
+  - a kill in A, then B, then A gives `{A=2, B=1}`;
+  - a pending-name kill counts in the zone it happened in, even after the player moves;
+  - loot uses the zone at open;
+  - the 8-zone cap keeps the biggest;
+  - with `chronicle` off, nothing counts.
+- **API:**
+  - ingest keeps a good map and drops a bad one with the entry kept;
+  - `?zone=` filters;
+  - `/zones` lists;
+  - pooled sums with the `last_zone` fallback.
+- **Portal:** the remainder helper.
+
+**10. Order.**
+1. The addon release: counting, plus the in-game picker and tooltip line. It is safe first, because the API
+   ignores `zones` until step 2.
+2. API migration, ingest and reads, deployed before the portal.
+3. Portal picker.
+
+The next agent sync after step 2 fills the columns from the addon's saved counts, so nothing is lost between
+steps.
+
+#### Maddison's calls
+
+1. **In-game surface:** the zone picker plus the tooltip line (recommended), only one of them, or also a **Zones
+   section**. A Zones section would have one row per zone: kills, creatures, drops, quests done, deaths, time spent
+   (from the journal's `zone` events). It would be the full answer to "keeps track in each zone", and a stage of
+   its own.
+2. **Loot by zone:** yes, drops only (recommended); also pieces (`qty`); or kills only.
+3. **The remainder's wording:** "before zones were tracked" or something warmer.
+4. **Release:** with the next Chronicle release, or its own.
+
+#### Not decided here
+
+- **Locale-proof zone keys** for every zone field (map ids folded to zones), once the `C_Map` calls are verified on
+  Forever.
+- **Per-session "this zone"** numbers on the session strip.
+
 ## 8. Identity
 
 Today: one device client per game (`ryna-wow`, the Palworld agent's), each a public client at
