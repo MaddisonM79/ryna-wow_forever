@@ -2,8 +2,11 @@
 //! artifact checked against the minisign public key baked in at build time). The app carries
 //! the addon, so a new app is also a new addon to offer.
 //!
-//! A build made without `agent/app/updater.pub` has an empty `plugins.updater.pubkey` (see
-//! `agent/app/scripts/tauri.mjs`): it never checks, and says updates aren't set up.
+//! `agent/app/updater.pub` is tracked in git, so every build through `pnpm tauri` (dev or build,
+//! from any clone, a developer's included) carries the production public key and will offer, and
+//! install, the releases signed for production. Only a build that never reads it (a plain `cargo
+//! build`, which sees tauri.conf.json's empty `plugins.updater.pubkey`, or a tree with the file
+//! deleted; see `agent/app/scripts/tauri.mjs`) never checks, and says updates aren't set up.
 
 use std::sync::Mutex;
 
