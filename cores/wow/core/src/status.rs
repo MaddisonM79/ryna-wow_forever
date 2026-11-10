@@ -13,6 +13,7 @@ use crate::discovery::{self, Discovery};
 use crate::fix::Fix;
 use crate::snapshot::{account_key, default_label};
 use crate::state::{self, State};
+use crate::support::{self, KnownSupport};
 use crate::util::mtime;
 
 /// The flavor World of Warcraft: Forever's `.flavor.info` names.
@@ -122,6 +123,9 @@ pub struct Status {
     pub last_error: Option<String>,
     pub last_run: Option<LastRunStatus>,
     pub combat: CombatStatus,
+    /// What the API last said about this version (`support.json`), with when; None when it hasn't
+    /// said, or said it about another version of the app. Shown only: None is `current`.
+    pub support: Option<KnownSupport>,
     pub state_dir: Option<String>,
 }
 
@@ -190,6 +194,7 @@ pub fn status_with(
         None
     };
     let st = state_dir.map(State::load).unwrap_or_default();
+    let known = state_dir.and_then(KnownSupport::load);
     let installs = install_statuses(found, addon_bundled.as_deref());
     let accounts = found
         .accounts
@@ -214,7 +219,11 @@ pub fn status_with(
         .collect();
     let last_run = st.last_run.map(|r| {
         let advice = match (&r.error, r.ok) {
-            (Some(e), false) => Some(r.fix.unwrap_or(Fix::Other).message(e)),
+            (Some(e), false) => Some(support::advice(
+                r.fix.unwrap_or(Fix::Other),
+                e,
+                known.as_ref().map(|k| &k.support),
+            )),
             _ => None,
         };
         LastRunStatus {
@@ -245,6 +254,7 @@ pub fn status_with(
         combat: state_dir
             .map(|d| CombatStatus::read(d, crate::util::now_secs()))
             .unwrap_or_default(),
+        support: known,
         state_dir: state_dir.map(display),
     }
 }
@@ -361,5 +371,40 @@ mod tests {
         assert!(s.signed_in && s.sign_in_until_reboot);
         let v = serde_json::to_value(&s).unwrap();
         assert_eq!(v["signInUntilReboot"], serde_json::json!(true));
+    }
+
+    #[test]
+    fn the_api_s_judgment_is_shown_with_its_words() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join("state");
+        let found = Discovery::default();
+        let store = MemoryStore::default();
+        let s = status_with(&test_config(), &store, &found, Some(&state_dir), None);
+        assert_eq!(s.support, None);
+        assert_eq!(serde_json::to_value(&s).unwrap()["support"], json!(null));
+
+        let judged = crate::support::Support::from_value(
+            &json!({ "band": "unsupported", "minimum": "0.3.5", "perfect": "0.3.9" }),
+        )
+        .unwrap();
+        crate::support::record(&state_dir, judged, 40);
+        let st = State {
+            last_run: Some(LastRun {
+                at: 41,
+                ok: false,
+                error: Some(crate::support::UNSUPPORTED_SENTENCE.into()),
+                fix: Some(Fix::Update),
+            }),
+            ..Default::default()
+        };
+        st.save(&state_dir).unwrap();
+        let s = status_with(&test_config(), &store, &found, Some(&state_dir), None);
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["support"]["support"]["band"], json!("unsupported"));
+        assert_eq!(v["support"]["receivedAt"], json!(40));
+        assert_eq!(
+            s.last_run.unwrap().advice.as_deref(),
+            Some(crate::support::UNSUPPORTED_SENTENCE)
+        );
     }
 }

@@ -28,6 +28,14 @@ pub mod util;
 /// workspace takes the one version).
 pub const AGENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// The release channel this build follows, sent as the heartbeat's `channel` and the
+/// `X-Ryna-Channel` header (docs/ryna-agent-cores-mods.md 9.1). Only `stable` exists; beta, with
+/// its setting, is a later stage.
+pub const CHANNEL: &str = "stable";
+
+/// The header that names it on every request.
+pub const CHANNEL_HEADER: &str = "X-Ryna-Channel";
+
 /// The User-Agent every request carries: `ryna-agent/<version>`.
 pub fn user_agent() -> String {
     format!("ryna-agent/{AGENT_VERSION}")

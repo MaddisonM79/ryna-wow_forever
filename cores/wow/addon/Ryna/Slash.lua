@@ -72,9 +72,14 @@ local function debugCommand(arg)
   ns.Run("panel", ns.Panel.Refresh)
 end
 
--- The core's /ryna status lines: versions first (10), the journal (30), the combat log (40), then
--- the rest (50).
+-- The core's /ryna status lines: a reduced or unsupported version first (0), versions (10), the
+-- journal (30), the combat log (40), then the rest (50).
 local statusSources = ns.slashStatusSources
+-- Asked for, so it may print (Ryna says nothing in chat unasked).
+statusSources[#statusSources + 1] = { order = 0, seq = 0, fn = function()
+  return ns.Status.SupportLines()
+end }
+
 statusSources[#statusSources + 1] = { order = 10, seq = 0, fn = function()
   local client = ns.db.client or {}
   return { string.format(L["v%s, schema %d, flavor %s, client %s (interface %s)"],

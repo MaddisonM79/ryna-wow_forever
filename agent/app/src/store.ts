@@ -85,7 +85,11 @@ function onEvent(e: AgentEvent): void {
     lastSignedIn = e.signedIn;
   }
   const text = describe(e);
-  const failed = e.event === "error" || e.event === "fightFailed" || (e.event === "heartbeat" && !e.ok);
+  const failed =
+    e.event === "error" ||
+    e.event === "fightFailed" ||
+    (e.event === "heartbeat" && !e.ok) ||
+    (e.event === "support" && e.support.band === "unsupported");
   if (text) log(text, failed ? "error" : "info");
   switch (e.event) {
     case "pushing":
@@ -105,6 +109,8 @@ function onEvent(e: AgentEvent): void {
     case "combatLogFound":
     case "fightUploaded":
     case "fightFailed":
+    case "support":
+    case "contributionsPaused":
       refreshSoon();
       break;
   }

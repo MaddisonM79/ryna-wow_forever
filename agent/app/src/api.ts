@@ -140,6 +140,36 @@ export interface CombatStatus {
   lastError: string | null;
 }
 
+/** Where this version stands against the API's marks (the core's `support::Band`). */
+export type Band = "current" | "behind" | "reduced" | "unsupported";
+
+/** What the API last said about this version (the core's `support::Support`). */
+export interface Support {
+  band: Band;
+  /** The app's version, as judged. */
+  version: string | null;
+  /** The oldest core addon judged with it (an install's TOC). */
+  addon: string | null;
+  channel: string | null;
+  minimum: string | null;
+  preferred: string | null;
+  /** The newest release on the channel. */
+  perfect: string | null;
+  /** The policy's one line for people. */
+  note: string | null;
+  /** Where to read how to update. */
+  update: string | null;
+}
+
+/** That judgment as kept (the core's `support::KnownSupport`). */
+export interface KnownSupport {
+  support: Support;
+  /** Unix seconds. */
+  receivedAt: number;
+  agent: string;
+  pooled: boolean | null;
+}
+
 export interface Status {
   agentVersion: string;
   appVersion: string;
@@ -164,6 +194,8 @@ export interface Status {
   login: LoginCode | null;
   stateDir: string | null;
   combat: CombatStatus;
+  /** What the API last said about this version, or null when it hasn't (then: current). */
+  support: KnownSupport | null;
   /** Each core's card through the core interface (stage 1: carried, not drawn). */
   cores: CoreView[];
   /** The WoW core's mods. */
@@ -199,6 +231,10 @@ export type AgentEvent =
       advice: string;
     }
   | { event: "heartbeat"; ok: boolean; error: string | null }
+  /** What the API said about this version this pass; `changed` when the band moved. */
+  | { event: "support"; support: Support; receivedAt: number; changed: boolean }
+  /** Reduced mode began: `label` synced, its contributions to the pools paused. Said once. */
+  | { event: "contributionsPaused"; label: string }
   | { event: "passFinished"; ok: boolean; nextInSecs: number }
   | { event: "combatLogFound"; file: string; path: string }
   | {

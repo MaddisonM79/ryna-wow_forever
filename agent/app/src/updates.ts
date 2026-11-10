@@ -8,7 +8,8 @@ export const updateCheck = ref<UpdateCheck | null>(null);
 export const updatePhase = ref<UpdatePhase>("idle");
 export const updateProgress = ref<UpdateProgress | null>(null);
 export const updateError = ref<string | null>(null);
-/** The version "Later" put off; a newer one, or a check from Settings, shows the banner again. */
+/** What "Later" put off (a banner's `key`); a newer release, a new band or a check from Settings
+ * shows the banner again. */
 export const laterFor = ref<string | null>(null);
 
 type Log = (text: string, level?: "info" | "error") => void;
@@ -48,9 +49,10 @@ export async function installUpdate(): Promise<void> {
   }
 }
 
-export function later(): void {
+/** Put the banner off until something changes; `key` is the banner's (`Banner.key`). */
+export function later(key: string): void {
+  laterFor.value = key;
   const version = updateCheck.value?.available?.version ?? null;
-  laterFor.value = version;
   if (version) log(`Ryna ${version} put off until later.`);
 }
 

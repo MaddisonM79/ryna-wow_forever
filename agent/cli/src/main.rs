@@ -29,11 +29,11 @@ use ryna_agent::AGENT_VERSION;
 // directly (each marked).
 use ryna_wow_core::addon_install::AddonState;
 use ryna_wow_core::discovery::{self, Discovery};
-use ryna_wow_core::push::Api;
+use ryna_wow_core::push::{Api, PushError};
 use ryna_wow_core::runner::{self, Outcome, RunError, RunOptions, RunReport};
 use ryna_wow_core::watch::WatchEvent;
 use ryna_wow_core::wow_core::WowCore;
-use ryna_wow_core::{addon_install, lua, mods, snapshot};
+use ryna_wow_core::{addon_install, lua, mods, snapshot, support};
 
 #[derive(Parser)]
 #[command(
@@ -220,6 +220,27 @@ pub(crate) fn with_hint(message: &str, fix: Fix) -> String {
     }
 }
 
+/// What the API last said about this version, in a line: "Ryna 0.3.9 is current", or the band's
+/// sentence (with the note).
+fn support_line(s: &support::Support) -> String {
+    let mut line = match (s.band.sentence(), s.band, s.perfect.as_deref()) {
+        (Some(sentence), _, _) => sentence.to_string(),
+        (None, support::Band::Behind, Some(p)) => format!("Ryna {p} is available."),
+        _ => format!("Ryna {AGENT_VERSION} is up to date."),
+    };
+    if let Some(note) = &s.note {
+        line.push_str(&format!(" ({note})"));
+    }
+    line
+}
+
+/// Keep a judgment that came with a census answer (the state folder's `support.json`).
+fn keep_support(s: support::Support) {
+    if let Some(dir) = state_dir::state_dir() {
+        support::record(&dir, s, now_secs());
+    }
+}
+
 fn auth_error(e: AuthError) -> anyhow::Error {
     anyhow::Error::msg(with_hint(&e.to_string(), e.fix()))
 }
@@ -349,6 +370,13 @@ fn status(config: &Config, install: Option<&Path>, from: Option<&Path>) -> Resul
                 }
             }
         }
+    }
+    if let Some(k) = &s.support {
+        println!(
+            "\nThis version, as of {}: {}",
+            iso_utc(k.received_at),
+            support_line(&k.support)
+        );
     }
     if let Some(r) = &s.last_run {
         let outcome = if r.ok {
@@ -552,13 +580,27 @@ fn census_push(config: &Config, install: Option<&Path>, dry_run: bool) -> Result
         }
         for (i, u) in uploads.iter().enumerate() {
             match api.post_census(u) {
-                Ok(data) => println!(
-                    "  upload {}: stored {}, repeated {}",
-                    i + 1,
-                    data.get("stored").unwrap_or(&serde_json::Value::Null),
-                    data.get("repeated").unwrap_or(&serde_json::Value::Null)
-                ),
+                Ok(data) => {
+                    if let Some(s) = support::Support::in_answer(&data) {
+                        keep_support(s);
+                    }
+                    println!(
+                        "  upload {}: stored {}, repeated {}",
+                        i + 1,
+                        data.get("stored").unwrap_or(&serde_json::Value::Null),
+                        data.get("repeated").unwrap_or(&serde_json::Value::Null)
+                    )
+                }
+                // Reduced mode: no failure, and the rest would be paused too.
+                Err(PushError::ContributionsPaused { message, support }) => {
+                    keep_support(*support);
+                    println!("  upload {}: not sent: {message}", i + 1);
+                    break;
+                }
                 Err(e) => {
+                    if let Some(s) = e.support() {
+                        keep_support(s.clone());
+                    }
                     eprintln!("  upload {}: {e}", i + 1);
                     failed = true;
                 }
@@ -636,6 +678,16 @@ fn watch(
             WatchEvent::Heartbeat { error, .. } => println!(
                 "{stamp} heartbeat: {}",
                 error.as_deref().unwrap_or("failed")
+            ),
+            WatchEvent::Support {
+                support, changed, ..
+            } => {
+                if *changed {
+                    println!("{stamp} {}", support_line(support));
+                }
+            }
+            WatchEvent::ContributionsPaused { label } => println!(
+                "{stamp} {label}: synced; your census and price contributions are paused until you update"
             ),
             WatchEvent::PassFinished { .. } => {}
             WatchEvent::CombatLogFound { file, .. } => println!("{stamp} combat log {file}"),

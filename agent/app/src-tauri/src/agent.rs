@@ -21,6 +21,7 @@ use ryna_wow_core::mods::{self as core_mods, ModChange, ModStatus};
 use ryna_wow_core::status::{
     self as core_status, AccountStatus, CombatStatus, InstallStatus, LastRunStatus,
 };
+use ryna_wow_core::support::KnownSupport;
 use ryna_wow_core::wow_core::WowCore;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -549,6 +550,9 @@ pub struct Status {
     pub state_dir: Option<String>,
     /// The combat log: the newest log, fights uploaded tonight, the last fight.
     pub combat: CombatStatus,
+    /// What the API last said about this version (the band, the marks, the note), with when; null
+    /// when it hasn't said. Shown in the update banner; never a reason to stop syncing.
+    pub support: Option<KnownSupport>,
     /// Each core's status card, as the core lays it out (through the core interface; the window
     /// still draws its own cards from the fields above in stage 1).
     pub cores: Vec<CoreView>,
@@ -613,6 +617,7 @@ pub fn status(app: &AppHandle) -> Status {
         last_error: _,
         last_run,
         combat,
+        support,
         state_dir,
     } = {
         // stage 1: direct; the core interface takes this in stage 2 (the window's own cards read
@@ -663,6 +668,7 @@ pub fn status(app: &AppHandle) -> Status {
         login,
         state_dir,
         combat,
+        support,
         cores,
         mods,
         send_digests: settings.send_digests,

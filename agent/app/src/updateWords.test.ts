@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
-import type { UpdateCheck } from "./api";
-import { bannerText, checkButton, checkLog, progressText, UPDATE_INTERVAL_MS } from "./updateWords";
+import type { Support, UpdateCheck } from "./api";
+import { describe as describeEvent } from "./describe";
+import {
+  banner,
+  bannerText,
+  checkButton,
+  checkLog,
+  progressText,
+  REDUCED_SENTENCE,
+  supportLog,
+  UNSUPPORTED_SENTENCE,
+  UPDATE_INTERVAL_MS,
+} from "./updateWords";
 
 const unset: UpdateCheck = { configured: false, current: "0.2.0", available: null };
 const current: UpdateCheck = { configured: true, current: "0.2.0", available: null };
@@ -48,5 +59,103 @@ describe("updates", () => {
 
   it("checks every 6 hours", () => {
     expect(UPDATE_INTERVAL_MS).toBe(21_600_000);
+  });
+});
+
+function judged(band: Support["band"], extra: Partial<Support> = {}): Support {
+  return {
+    band,
+    version: "0.2.0",
+    addon: "0.2.0",
+    channel: "stable",
+    minimum: "0.1.5",
+    preferred: "0.2.5",
+    perfect: "0.3.0",
+    note: null,
+    update: "https://ryna.io/wow/guide#upkeep",
+    ...extra,
+  };
+}
+
+describe("the banner, by the API's judgment", () => {
+  it("is the updater's alone with no judgment, or current, or behind", () => {
+    expect(banner(newer, null, null)).toEqual({
+      tone: "update",
+      text: "Ryna 0.3.0 is available",
+      note: null,
+      canInstall: true,
+      dismissable: true,
+      key: "0.3.0",
+      guide: null,
+    });
+    expect(banner(newer, null, judged("current"))?.tone).toBe("update");
+    expect(banner(newer, "0.3.0", judged("behind"))).toBeNull();
+    expect(banner(current, null, judged("behind"))).toBeNull();
+    expect(banner(null, null, null)).toBeNull();
+  });
+
+  it("puts the note under the behind line", () => {
+    expect(banner(newer, null, judged("behind", { note: "0.2.0 mis-reads auction prices" }))?.note).toBe(
+      "0.2.0 mis-reads auction prices",
+    );
+    // A note means nothing to someone who is current.
+    expect(banner(newer, null, judged("current", { note: "x" }))?.note).toBeNull();
+  });
+
+  it("says reduced in amber, and Later puts it off until something changes", () => {
+    const b = banner(newer, null, judged("reduced", { note: "0.2.0 mis-reads auction prices" }))!;
+    expect(b).toEqual({
+      tone: "reduced",
+      text: REDUCED_SENTENCE,
+      note: "0.2.0 mis-reads auction prices",
+      canInstall: true,
+      dismissable: true,
+      key: "reduced:0.3.0",
+      guide: null,
+    });
+    expect(banner(newer, b.key, judged("reduced"))).toBeNull();
+    // A newer release brings it back.
+    expect(
+      banner({ ...newer, available: { ...newer.available!, version: "0.3.1" } }, b.key, judged("reduced"))?.tone,
+    ).toBe("reduced");
+  });
+
+  it("says unsupported in red, and Later can't put it off", () => {
+    const b = banner(newer, "unsupported:0.3.0", judged("unsupported"))!;
+    expect(b.tone).toBe("unsupported");
+    expect(b.text).toBe(UNSUPPORTED_SENTENCE);
+    expect(b.dismissable).toBe(false);
+    expect(b.canInstall).toBe(true);
+  });
+
+  it("points at the update steps when the updater has nothing to install", () => {
+    const b = banner(unset, null, judged("unsupported"))!;
+    expect(b.canInstall).toBe(false);
+    expect(b.guide).toBe("https://ryna.io/wow/guide#upkeep");
+    // Only a link the app may open.
+    expect(banner(current, null, judged("reduced", { update: "https://example.test/x" }))?.guide).toBeNull();
+    expect(banner(current, null, judged("reduced", { update: null }))?.guide).toBeNull();
+  });
+
+  it("logs a band only when it moves to reduced or unsupported", () => {
+    expect(supportLog(judged("reduced"), true)).toBe(REDUCED_SENTENCE);
+    expect(supportLog(judged("unsupported", { note: "n" }), true)).toBe(`${UNSUPPORTED_SENTENCE} (n)`);
+    expect(supportLog(judged("unsupported"), false)).toBeNull();
+    expect(supportLog(judged("behind"), true)).toBeNull();
+    expect(describeEvent({ event: "support", support: judged("reduced"), receivedAt: 1, changed: true })).toBe(
+      REDUCED_SENTENCE,
+    );
+    expect(describeEvent({ event: "contributionsPaused", label: "UNT1" })).toBe(
+      "UNT1: synced. What you add to everyone's census and prices is paused until you update.",
+    );
+  });
+
+  it("uses the API's exact words", () => {
+    expect(REDUCED_SENTENCE).toBe(
+      "This version of Ryna is getting old. Your characters still sync, but what you add to everyone's census and prices is paused until you update.",
+    );
+    expect(UNSUPPORTED_SENTENCE).toBe(
+      "This version of Ryna is no longer supported, so nothing syncs to ryna.io. Update to carry on.",
+    );
   });
 });

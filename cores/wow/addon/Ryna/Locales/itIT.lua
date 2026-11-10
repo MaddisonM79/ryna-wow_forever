@@ -41,6 +41,13 @@ L["Signed out now: sign in from the Ryna companion app."] = nil
 L["Not synced yet. Sign in from the Ryna companion app."] = nil
 L["Update available: Ryna addon %s (you have %s)."] = nil
 L["Update available: companion app %s (you have %s)."] = nil
+-- Supported versions: the API's words when this version is old (reduced) or too old (unsupported),
+-- the same sentences as the companion app and ryna.io, then where to update.
+L["This version of Ryna is getting old. Your characters still sync, but what you add to "
+  .. "everyone's census and prices is paused until you update."] = nil
+L["This version of Ryna is no longer supported, so nothing syncs to ryna.io. Update to "
+  .. "carry on."] = nil
+L["Open the Ryna app to update."] = nil
 
 -- CombatLog.lua
 L["combat logging on (instance)"] = nil
@@ -173,6 +180,11 @@ L["Unknown character"] = nil
 -- A list with nothing in it: the search matched nothing, or nothing is recorded yet.
 L["Nothing matches."] = nil
 L["Nothing recorded yet."] = nil
+
+-- Notice.lua
+-- The notice at login when this version is no longer supported, and its button.
+L["Ryna needs updating"] = nil
+L["Close"] = nil
 
 -- Init.lua
 -- The login line, after "Ryna 0.2.1: ".
