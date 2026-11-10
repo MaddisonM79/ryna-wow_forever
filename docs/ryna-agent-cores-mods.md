@@ -940,15 +940,17 @@ in each zone you go to?" Today the answer is "partly".
 ```lua
 kills["6"]    = { name = "Kobold Vermin", n = 43, own = 40, xp = 1720, looted = 38, last = …, zone = "Elwynn Forest",
                   zones = { ["Elwynn Forest"] = 31 } }        -- kills per zone, counted from now on
-loot["2589"]  = { …, n = 30, qty = 45, from = { … }, zones = { ["Elwynn Forest"] = 22, ["Westfall"] = 8 } }  -- drops (n) per zone
+loot["2589"]  = { …, n = 30, qty = 45, from = { … },
+                  zones = { ["Elwynn Forest"] = { n = 22, qty = 31 }, ["Westfall"] = { n = 8, qty = 14 } } }  -- drops and pieces per zone
 objects["1731"] = { n = 5, last = …, zone = "Elwynn Forest", zones = { ["Elwynn Forest"] = 5 } }
 ```
 
-- `zones[z]` counts the same unit as the entry's `n`: kills, loot windows with the item, or objects opened.
+- `zones[z]` counts the same unit as the entry's `n`: kills, or objects opened. On loot it is `{ n, qty }`: loot
+  windows with the item and pieces, both per zone (Maddison, 2026-11-10).
 - `zone` stays as it is (the latest), so nothing reading it breaks.
 - At most 8 zones per entry, keeping the biggest, with the same rule as `from` (`MAX_FROM`).
-- Kills don't get per-zone `xp` or `own` counts, and loot doesn't get per-zone `qty`. Those are the obvious extras;
-  each roughly doubles the map for little gain.
+- Kills don't get per-zone `xp` or `own` counts; each would roughly double the map for little gain. Loot's `qty`
+  per zone was chosen (Maddison, 2026-11-10), so a loot zone costs about twice a kill zone in the file.
 - **Size.** About 27 bytes for the map plus about 30 per zone in the saved file:
   - roughly +20 KB on today's 5.8 MB file;
   - about +600 KB per character only if every tally sits at its cap (2,000 kills, 3,000 loot, 2,000 objects)
@@ -1014,8 +1016,7 @@ Measured on Maddison's Mac on 2026-11-10:
 
 **What still can't be placed** (kills from before logging was on, logs the player deleted, or the dungeon-only
 default of `combatLog = "instances"` missing world kills, which will be most players) stays on one line:
-- **"Earlier travels"**, with a tooltip "counted before Ryna kept zones". This is recommended; the alternatives are
-  "Before Ryna kept zones" or "From before zones were tracked".
+- **"Earlier travels"**, with a tooltip "counted before Ryna kept zones" (Maddison, 2026-11-10).
 - Once an entry hits the 8-zone cap, the line takes in the dropped zones too, and the tooltip says "or in other
   zones".
 
@@ -1024,11 +1025,21 @@ default of `combatLog = "instances"` missing world kills, which will be most pla
 **Check first.** `ZONE_CHANGE`'s name is assumed to be the same text as `GetRealZoneText`. Check this on a real
 log before building; if it's ever the subzone, fold it up through the same `areas` lookup the census uses.
 
-**5. In game first (7.5).** Recommended:
+**5. In game first (7.5).** Decided (Maddison, 2026-11-10): the picker, the tooltip line and a Zones section.
 - **Kills and Loot sections:** a zone picker beside the search ("All zones", "This zone", then the zones the
   character has counts in). With a zone picked, the numbers are that zone's and the totals tiles follow.
 - **Tooltips:** one line, only when the creature or item has been counted in more than one zone or the current zone
   differs from the only one: "12 here (Westfall) · 43 in all".
+- **A Zones section** in Ryna's window: one row per zone the character has been in, with kills, creatures, drops,
+  pieces, quests done, deaths and time spent. Clicking a row opens Kills on that zone.
+  - Kills, creatures, drops and pieces are sums over the tallies' `zones` (and `logZones`).
+  - The rest needs a small lifetime map on the character, because the addon's journal keeps only 30 days
+    (`cores/wow/addon/Ryna/Journal.lua` `Prune`): `places[zone] = { seconds, quests, deaths, first, last }`.
+  - `seconds` grows on each zone change and at logout, from the time the zone was entered. `quests` grows on a quest
+    turned in and `deaths` on `PLAYER_DEAD`, both in the character's zone at the time.
+  - On first run it is seeded from what the journal still holds (up to 30 days of `zone`, `questDone` and `death`
+    events). It is marked `placesSince`, so the window can say "time since <date>" until it covers everything.
+  - The portal can show the full history, because the API keeps every journal event (`wow_journal`).
 - Still silent: nothing in chat.
 
 **6. Agent.** Nothing to change. The agent never parses the tallies; it passes the record through as JSON.
@@ -1045,7 +1056,11 @@ log before building; if it's ever the subzone, fold it up through the same `area
 - **Reads:**
   - `GET /characters/:guid/kills` and the loot read gain `zones: [{ zone, n }]` per row and an optional `?zone=`
     filter (`json_each` over at most a few thousand rows of one character).
-  - A small `GET /characters/:guid/zones` lists the zones with counts, for the portal's picker.
+  - `GET /characters/:guid/zones` lists the character's zones for the portal's picker and its Zones view: kills,
+    creatures, drops and pieces from the tallies, plus quests, deaths and time spent. Time comes from `places` once
+    synced; before that, and for anything older than the addon's 30 days, it is computed from `wow_journal`'s `zone`
+    events, with a session's end as its logout.
+  - The record's `places` map is stored like the tallies: one row per character and zone, replaced on each snapshot.
   - The usual character access applies.
 - **Pooled** `/chronicle/creatures/:npcId`: `zones` become real kill counts, summed over `json_each`, with
   `last_zone` as a fallback for rows not yet carrying `zones`. It stays an aggregate with no person in it, so the
@@ -1071,7 +1086,8 @@ plus the "before zones were tracked" line. The pure filter and remainder helpers
 - **Portal:** the remainder helper.
 
 **10. Order.**
-1. The addon release: counting, plus the in-game picker and tooltip line. It is safe first, because the API
+1. The next Chronicle release (Maddison, 2026-11-10): counting, `places`, the picker, the tooltip line and the Zones
+   section. It is safe first, because the API
    ignores `zones` until step 2.
 2. API migration, ingest and reads, deployed before the portal.
 3. Portal picker.
@@ -1081,18 +1097,15 @@ plus the "before zones were tracked" line. The pure filter and remainder helpers
 The next agent sync after step 2 fills the columns from the addon's saved counts, so nothing is lost between
 steps.
 
-#### Maddison's calls
+#### Maddison's calls (decided 2026-11-10)
 
-1. **In-game surface:** the zone picker plus the tooltip line (recommended), only one of them, or also a **Zones
-   section**. A Zones section would have one row per zone: kills, creatures, drops, quests done, deaths, time spent
-   (from the journal's `zone` events). It would be the full answer to "keeps track in each zone", and a stage of
-   its own.
-2. **Loot by zone:** yes, drops only (recommended); also pieces (`qty`); or kills only.
-3. **The remainder's wording:** "Earlier travels" (recommended), "Before Ryna kept zones", or "From before zones
-   were tracked".
-5. **The backfill's trigger:** the agent runs it by itself the first time it sees `zonesSince` (recommended:
-   nothing to click, and it only ever adds), or a button in the app.
-4. **Release:** with the next Chronicle release, or its own.
+1. **In game:** the zone picker, the tooltip line **and a Zones section** (one row per zone: kills, creatures, drops,
+   pieces, quests done, deaths, time spent).
+2. **Loot by zone:** drops **and pieces** (`zones[z] = { n, qty }`).
+3. **The remainder's wording:** **"Earlier travels"**, with the tooltip "counted before Ryna kept zones".
+4. **Release:** with the **next Chronicle release**.
+5. **The backfill's trigger:** the **agent runs it by itself** the first time it sees `zonesSince`, with the game
+   closed. Nothing to click; it only ever adds.
 
 #### Not decided here
 
