@@ -1236,14 +1236,17 @@ without a release:
 
 - A D1 table, one row per channel: `minimum`, `preferred`, `perfect`, a `note` shown to people (one
   line, optional: "0.3.4 mis-reads auction prices"), `updated_at`, `updated_by`. Perfect is set by
-  hand alongside a release in this build; the Admin page shows the channel's updater manifest beside it
-  so a stale one is visible (reading the manifest automatically is a later step, if forgetting proves
-  real).
-- **`GET /v1/wow/versions`**: the policy, public and tokenless (no person, no grant: it is about no
-  one, and a signed-out app needs it too). One more narrow exemption in `grant-gate.ts`, a GET of one
-  exact path, beside the census upload's.
-- Every agent answer that judges carries `support: { band, version, minimum, preferred, perfect,
-  channel, note, update }`: the heartbeat's, the ingest's.
+  hand alongside a release; the Admin page links the newest release beside it (reading the updater
+  manifest automatically is a later step, if forgetting proves real).
+- **No public read of the policy** (as built, 2026-11-10): api.ryna.io stays closed to the public
+  (the API's grant gate keeps its exemptions to the census upload and the portal's own summary), so
+  instead every answer that judges carries `support: { band, version, addon, minimum, preferred,
+  perfect, channel, note, update }`: the heartbeat's (always answered, so every signed-in app learns
+  its band), the ingest's, and the census upload's (so a signed-out app learns it too).
+- **What the app sends to be judged**: its version in the User-Agent every release already sends
+  (`ryna-agent/0.3.9`), the addon's TOC as the heartbeat's `installs[].addon` (since 0.2.0) and, from
+  the next release, as the snapshot's `addonToc`; its channel as the heartbeat's `channel` and the
+  `X-Ryna-Channel` header (absent is stable).
 - **Who edits it**: Admin only (`wow:admin`), `PUT /v1/wow/admin/versions`, portal-only and audited
   (`wow.admin.versions.put`, the old and new marks in `details`) like the other `/admin` routes; a
   `portalOnly` entry in `scopes.ts`. The editor refuses marks out of order (minimum ≤ preferred ≤
@@ -1291,14 +1294,14 @@ is the manifest, the setting and one row, with no change to the judgment.
 
 **Stages**, API first, each shippable alone:
 
-1. **API and portal** (private repo): the table with the open policy, `GET /v1/wow/versions`, the
-   band on the heartbeat, ingest, encounters, census, prices and backup routes (`AGENT_UNSUPPORTED`,
+1. **API and portal** (private repo; contract in its `docs/wow.md` section 18): the table with the
+   open policy, the band on the heartbeat, ingest, encounters, census, prices and backup routes (`AGENT_UNSUPPORTED`,
    and reduced's `pooled: false` and census refusal), `support` on `GET /agent`, the Admin Versions
    tab and its audited `PUT`, the Agent page's notices, `docs/wow.md` section 18. Live at once; with
    the open policy nothing changes for anyone.
-2. **The app** (ryna_agent): reads `support` from the heartbeat's answer (and `GET /versions` when
-   signed out), the banner's states, `channel` in the heartbeat, `support` and the `messages` line in
-   `AgentStatus.lua`, `latest` filled. Ships with the next release.
+2. **The app** (ryna_agent): reads `support` from the heartbeat's answer (and the census upload's
+   when signed out), the banner's states, `channel` in the heartbeat, `addonToc` in the snapshot,
+   `support` and the `messages` line in `AgentStatus.lua`, `latest` filled. Ships with the next release.
 3. **The addon** (ryna_agent): the Status tab line and the notice frame, from `support`. Same release.
 4. **Channels**: the beta manifest in `release.yml`, the app's channel setting. Its own release.
 
