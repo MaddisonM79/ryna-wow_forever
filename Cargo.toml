@@ -23,7 +23,7 @@ rust-version = "1.89"
 aes-gcm = { version = "0.10", features = ["zeroize"] }
 anyhow = "1"
 # Standard base64 for the device key, its signatures and the seed kept in the keychain.
-base64 = "0.22"
+base64 = "0.23"
 clap = { version = "4", features = ["derive", "env"] }
 directories = "6"
 # The device key (docs/ryna-agent-cores-mods.md 7.1): Ed25519, minted with the OS RNG.
