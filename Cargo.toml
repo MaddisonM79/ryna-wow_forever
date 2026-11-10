@@ -27,7 +27,7 @@ base64 = "0.23"
 clap = { version = "4", features = ["derive", "env"] }
 directories = "6"
 # The device key (docs/ryna-agent-cores-mods.md 7.1): Ed25519, minted with the OS RNG.
-ed25519-dalek = { version = "2", features = ["rand_core"] }
+ed25519-dalek = { version = "3", features = ["rand_core"] }
 # gzip for the combat digests and raw segments (already in the tree through Tauri).
 flate2 = "1"
 # This machine's name for the heartbeat, from the OS in-process (no `hostname` child process,
