@@ -82,6 +82,7 @@ impl Transport for HttpTransport {
         };
         let mut r = builder
             .header("Accept", "application/json")
+            .header(crate::CHANNEL_HEADER, crate::CHANNEL)
             .timeout(req.timeout);
         // A GET has no body to describe.
         if req.method != Method::Get {

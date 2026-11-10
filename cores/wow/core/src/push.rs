@@ -9,8 +9,9 @@
 //! the GETs don't.
 //!
 //! Every answer is the envelope `{ ok: true, data } | { ok: false, error: { code, message, detail } }`.
-//! A refusal is a 200 with `ok:false`; `SCHEMA_UNSUPPORTED` means the agent and addon need
-//! updating. 5xx and no answer are retried with backoff (3 tries in all); 4xx never is, except
+//! A refusal is a 200 with `ok:false`; `SCHEMA_UNSUPPORTED` and `AGENT_UNSUPPORTED` (this version
+//! is below the policy's minimum: docs/wow.md section 18) mean the agent and addon need updating,
+//! and `CONTRIBUTIONS_PAUSED` (a census upload from an app in reduced mode) is no failure at all. 5xx and no answer are retried with backoff (3 tries in all); 4xx never is, except
 //! one resend with a fresh token after a 401.
 
 use std::time::Duration;
@@ -26,6 +27,7 @@ use crate::fix::Fix;
 use crate::http::{Method, Request, Response, Transport};
 use crate::identity::DeviceKey;
 use crate::snapshot::Snapshot;
+use crate::support::Support;
 use crate::util::Clock;
 
 pub const INGEST_PATH: &str = "/v1/wow/agent/ingest";
@@ -63,6 +65,20 @@ pub enum PushError {
     MissingScope,
     #[error("the API doesn't accept this snapshot schema (it accepts {accepted:?}): update the agent and the addon")]
     SchemaUnsupported { accepted: Vec<i64> },
+    /// `AGENT_UNSUPPORTED`: this version is below the minimum; `message` is the API's words for
+    /// the person (Maddison's sentence), `support` its judgment.
+    #[error("{message}")]
+    Unsupported {
+        message: String,
+        support: Box<Support>,
+    },
+    /// `CONTRIBUTIONS_PAUSED`: a census upload from an app in reduced mode. Not a failure: the
+    /// person's own data still syncs, and their contributions wait for an update.
+    #[error("{message}")]
+    ContributionsPaused {
+        message: String,
+        support: Box<Support>,
+    },
     #[error("the API refused it: {code}: {message}")]
     Refused { code: String, message: String },
     #[error("the API answered {status}: {body}")]
@@ -89,7 +105,19 @@ impl PushError {
 
     /// Only a newer agent and addon fix it.
     pub fn needs_update(&self) -> bool {
-        matches!(self, PushError::SchemaUnsupported { .. })
+        matches!(
+            self,
+            PushError::SchemaUnsupported { .. } | PushError::Unsupported { .. }
+        )
+    }
+
+    /// The API's judgment of this version, when the refusal carried one.
+    pub fn support(&self) -> Option<&Support> {
+        match self {
+            PushError::Unsupported { support, .. }
+            | PushError::ContributionsPaused { support, .. } => Some(support),
+            _ => None,
+        }
     }
 
     /// What fixes it.
@@ -118,6 +146,8 @@ impl From<AuthError> for PushError {
 #[serde(rename_all = "camelCase")]
 pub struct Heartbeat {
     pub agent: String,
+    /// The release channel (`stable`; docs/wow.md section 18).
+    pub channel: String,
     pub host: String,
     pub os: String,
     pub installs: Vec<HeartbeatInstall>,
@@ -575,16 +605,42 @@ fn read_envelope(res: &Response) -> Result<Value, PushError> {
                 .unwrap_or_default();
             return Err(PushError::SchemaUnsupported { accepted });
         }
-        if res.status == 403
-            && error.pointer("/detail/scope").and_then(Value::as_str) == Some(INGEST_SCOPE)
-        {
-            return Err(PushError::MissingScope);
-        }
         let message = error
             .get("message")
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_string();
+        if (200..300).contains(&res.status)
+            && matches!(code.as_str(), "AGENT_UNSUPPORTED" | "CONTRIBUTIONS_PAUSED")
+        {
+            // The detail is the judgment; one this side can't read fails open to `current`.
+            let support = Box::new(
+                error
+                    .get("detail")
+                    .and_then(Support::from_value)
+                    .unwrap_or_default(),
+            );
+            return Err(if code == "AGENT_UNSUPPORTED" {
+                let message = if message.is_empty() {
+                    crate::support::UNSUPPORTED_SENTENCE.to_string()
+                } else {
+                    message
+                };
+                PushError::Unsupported { message, support }
+            } else {
+                let message = if message.is_empty() {
+                    crate::support::REDUCED_SENTENCE.to_string()
+                } else {
+                    message
+                };
+                PushError::ContributionsPaused { message, support }
+            });
+        }
+        if res.status == 403
+            && error.pointer("/detail/scope").and_then(Value::as_str) == Some(INGEST_SCOPE)
+        {
+            return Err(PushError::MissingScope);
+        }
         if (200..300).contains(&res.status) {
             return Err(PushError::Refused { code, message });
         }
@@ -627,6 +683,7 @@ mod tests {
     fn hb() -> Heartbeat {
         Heartbeat {
             agent: "0.1.0".into(),
+            channel: "stable".into(),
             host: "test-host".into(),
             os: "macos".into(),
             installs: vec![HeartbeatInstall {
@@ -657,7 +714,7 @@ mod tests {
         let v = serde_json::to_value(hb()).unwrap();
         assert_eq!(
             v,
-            json!({ "agent": "0.1.0", "host": "test-host", "os": "macos",
+            json!({ "agent": "0.1.0", "channel": "stable", "host": "test-host", "os": "macos",
                     "installs": [ { "path": "/Applications/World of Warcraft/_forever_", "flavor": "wowf", "addon": "0.1.0" } ],
                     "accounts": [], "combatLog": { "active": false, "advanced": null, "file": null, "lastEventAt": null, "pending": 0 }, "lastError": null,
                     "submissionId": "21fe31dfa154a261626bf854046fd227" })
@@ -841,6 +898,56 @@ mod tests {
         assert!(e.needs_update());
         assert!(matches!(&e, PushError::SchemaUnsupported { accepted } if accepted == &vec![1]));
         assert!(e.to_string().contains("update the agent"));
+    }
+
+    #[test]
+    fn agent_unsupported_means_update_in_the_api_s_words() {
+        let http = ScriptedTransport::new();
+        let sentence = crate::support::UNSUPPORTED_SENTENCE;
+        http.json(200, json!({ "ok": false, "error": { "code": "AGENT_UNSUPPORTED", "message": sentence,
+            "detail": { "band": "unsupported", "version": "0.3.1", "minimum": "0.3.5", "perfect": "0.3.9" } } }));
+        let store = MemoryStore::with_access("tok", NOW + 3600);
+        let clock = FakeClock::at(NOW);
+        let e = run(&http, &store, &clock).unwrap_err();
+        assert!(e.needs_update());
+        assert_eq!(e.fix(), Fix::Update);
+        assert_eq!(e.to_string(), sentence);
+        let s = e.support().unwrap();
+        assert_eq!(s.band, crate::support::Band::Unsupported);
+        assert_eq!(s.minimum.as_deref(), Some("0.3.5"));
+        // Never retried.
+        assert_eq!(http.requests.borrow().len(), 1);
+
+        // No message, no detail: still the sentence, judged current (failing open).
+        let http = ScriptedTransport::new();
+        http.json(
+            200,
+            json!({ "ok": false, "error": { "code": "AGENT_UNSUPPORTED" } }),
+        );
+        let e = run(&http, &store, &clock).unwrap_err();
+        assert_eq!(e.to_string(), sentence);
+        assert_eq!(e.support().unwrap().band, crate::support::Band::Current);
+    }
+
+    #[test]
+    fn contributions_paused_is_its_own_answer() {
+        let http = ScriptedTransport::new();
+        http.json(
+            200,
+            json!({ "ok": false, "error": { "code": "CONTRIBUTIONS_PAUSED",
+            "message": crate::support::REDUCED_SENTENCE, "detail": { "band": "reduced" } } }),
+        );
+        let store = MemoryStore::default();
+        let clock = FakeClock::at(NOW);
+        let config = test_config();
+        let auth = Auth::new(&config, &http, &store, &clock);
+        let key = test_key();
+        let api = Api::new(&config.api, &http, &auth, Some(&key), &clock);
+        let e = api.post_census(&upload()).unwrap_err();
+        assert!(matches!(e, PushError::ContributionsPaused { .. }), "{e}");
+        assert!(!e.needs_update() && !e.needs_login());
+        assert_eq!(e.to_string(), crate::support::REDUCED_SENTENCE);
+        assert_eq!(e.support().unwrap().band, crate::support::Band::Reduced);
     }
 
     #[test]

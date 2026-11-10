@@ -17,6 +17,7 @@
 //! - [`game_process`]: whether the game is running (a best guess from the process list).
 //! - [`settings`]: the Settings mod: addon settings backed up (encrypted) and copied between characters.
 //! - [`status`]: what a front end shows (installs, accounts, the sign-in, the last run).
+//! - [`support`]: what the API last said about this version (current, behind, reduced, unsupported), kept to show.
 //! - [`combat`]: the combat log: parsing, encounters, digests, the tailer and its upload queue.
 //! - [`zones_backfill`]: Chronicle's earlier kills placed in zones from the combat logs, once per character.
 //!
@@ -40,6 +41,7 @@ pub mod settings;
 pub mod snapshot;
 pub mod state;
 pub mod status;
+pub mod support;
 pub mod watch;
 pub mod wow_core;
 pub mod zones_backfill;

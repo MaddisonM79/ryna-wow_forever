@@ -5,14 +5,21 @@
 //! ```lua
 //! RynaAgentStatus = { agent = "0.1.0", signedIn = true, as = "aerin", lastPush = 1762464060,
 //!   accounts = { { key = "…", label = "UNT1", savedAt = 1762464000, pushedAt = 1762464060, characters = 2 } },
-//!   latest = { addon = nil, agent = nil },
+//!   latest = { addon = "0.3.10", agent = "0.3.10" },
+//!   support = { band = "reduced", version = "0.3.6", addon = "0.3.6", perfect = "0.3.10",
+//!     note = "0.3.4 mis-reads auction prices", update = "https://ryna.io/wow/guide#upkeep" },
 //!   messages = { { at = 1762464060, level = "error", text = "Couldn't reach the API" } },
 //!   combat = { active = true, advanced = true, lastEventAt = 1762464050, fightsTonight = 3 } }
 //! ```
 //!
-//! `accounts` lists that install's accounts only. `messages` carries the last run's error, if any;
-//! `latest` (newest released versions) stays nil until a release feed exists. Written through a
-//! temp file and a rename, so the game never loads half of one.
+//! `accounts` lists that install's accounts only. `messages` carries the last run's error, if any.
+//! `support` is what the API last said about this version (docs/ryna-agent-cores-mods.md 9.1),
+//! absent when it hasn't said; the addon shows it at the top of its Status tab. Addons through
+//! 0.3.9 don't read it, so a reduced or unsupported band is also a `messages` line with the same
+//! sentence (`warn` or `error`), which every released addon shows. `latest` is filled from the
+//! policy's `perfect`: `agent` when this app is older, `addon` only when that install's TOC is
+//! older (an addon through 0.3.9 compares it with its frozen `0.3.2`). Written through a temp file
+//! and a rename, so the game never loads half of one.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -21,6 +28,7 @@ use crate::discovery::Discovery;
 use crate::fix::Fix;
 use crate::snapshot::{account_key, default_label};
 use crate::state::State;
+use crate::support::{self, Support};
 
 pub const FILE_NAME: &str = "AgentStatus.lua";
 pub const VARIABLE: &str = "RynaAgentStatus";
@@ -85,6 +93,11 @@ pub struct AgentStatus {
     pub accounts: Vec<StatusAccount>,
     pub messages: Vec<Message>,
     pub combat: Combat,
+    /// What the API last said about this version (None: it hasn't).
+    pub support: Option<Support>,
+    /// Newer releases to offer (`latest.addon`, `latest.agent`).
+    pub latest_addon: Option<String>,
+    pub latest_agent: Option<String>,
 }
 
 /// A Lua string literal: quotes, backslashes, and every control or non-ASCII byte escaped as
@@ -111,6 +124,10 @@ pub fn lua_string(s: &str) -> String {
 
 fn opt_int(v: Option<i64>) -> String {
     v.map_or_else(|| "nil".to_string(), |n| n.to_string())
+}
+
+fn opt_str(v: Option<&str>) -> String {
+    v.map_or_else(|| "nil".to_string(), lua_string)
 }
 
 impl AgentStatus {
@@ -145,7 +162,24 @@ impl AgentStatus {
             );
         }
         s.push_str("\t},\n");
-        s.push_str("\tlatest = { addon = nil, agent = nil },\n");
+        let _ = writeln!(
+            s,
+            "\tlatest = {{ addon = {}, agent = {} }},",
+            opt_str(self.latest_addon.as_deref()),
+            opt_str(self.latest_agent.as_deref())
+        );
+        if let Some(sup) = &self.support {
+            let _ = writeln!(
+                s,
+                "\tsupport = {{ band = {}, version = {}, addon = {}, perfect = {}, note = {}, update = {} }},",
+                lua_string(sup.band.as_str()),
+                opt_str(sup.version.as_deref()),
+                opt_str(sup.addon.as_deref()),
+                opt_str(sup.perfect.as_deref()),
+                opt_str(sup.note.as_deref()),
+                opt_str(sup.update.as_deref()),
+            );
+        }
         s.push_str("\tmessages = {\n");
         for m in &self.messages {
             let level = match m.level {
@@ -181,15 +215,18 @@ pub fn message_for(failure: Fix, error: &str) -> String {
     failure.message(error)
 }
 
-/// The status for one install: its accounts as `state` knows them.
+/// The status for one install: its accounts as `state` knows them, and `support` with `latest`
+/// for that install's addon (`toc`, its `## Version:`).
 #[allow(clippy::too_many_arguments)]
 pub fn for_install(
     install: &Path,
+    toc: Option<&str>,
     discovery: &Discovery,
     state: &State,
     signed_in: bool,
     signed_in_as: Option<String>,
     failure: Option<(Fix, &str)>,
+    support: Option<&Support>,
     combat: &Combat,
     now: i64,
 ) -> AgentStatus {
@@ -210,21 +247,41 @@ pub fn for_install(
             }
         })
         .collect();
+    let mut messages: Vec<Message> = failure
+        .map(|(f, e)| Message {
+            at: now,
+            level: Level::Error,
+            text: support::advice(f, e, support),
+        })
+        .into_iter()
+        .collect();
+    // For addons that don't read `support` (through 0.3.9): the same sentence as a message, once.
+    if let Some(sup) = support {
+        if let Some(sentence) = sup.band.sentence() {
+            if !messages.iter().any(|m| m.text == sentence) {
+                messages.push(Message {
+                    at: now,
+                    level: if sup.band == support::Band::Unsupported {
+                        Level::Error
+                    } else {
+                        Level::Warn
+                    },
+                    text: sentence.to_string(),
+                });
+            }
+        }
+    }
     AgentStatus {
         agent: crate::AGENT_VERSION.to_string(),
         signed_in,
         signed_in_as,
         last_push: accounts.iter().filter_map(|a| a.pushed_at).max(),
         accounts,
-        messages: failure
-            .map(|(f, e)| Message {
-                at: now,
-                level: Level::Error,
-                text: message_for(f, e),
-            })
-            .into_iter()
-            .collect(),
+        messages,
         combat: combat.clone(),
+        latest_addon: support.and_then(|s| support::latest_addon(s, toc)),
+        latest_agent: support.and_then(support::latest_agent),
+        support: support.cloned(),
     }
 }
 
@@ -247,6 +304,7 @@ pub fn write_all(
     signed_in: bool,
     signed_in_as: Option<String>,
     failure: Option<(Fix, &str)>,
+    support: Option<&Support>,
     combat: &Combat,
     now: i64,
 ) -> (Vec<PathBuf>, Vec<(PathBuf, std::io::Error)>) {
@@ -258,13 +316,16 @@ pub fn write_all(
             continue;
         }
         let path = addon.join(FILE_NAME);
+        let toc = crate::addon_install::installed_addon_version(i);
         let status = for_install(
             &i.path,
+            toc.as_deref(),
             discovery,
             state,
             signed_in,
             signed_in_as.clone(),
             failure,
+            support,
             combat,
             now,
         );
@@ -321,6 +382,9 @@ mod tests {
                 last_event_at: Some(1_762_464_050),
                 fights_tonight: 3,
             },
+            support: None,
+            latest_addon: None,
+            latest_agent: None,
         }
     }
 
@@ -356,6 +420,114 @@ mod tests {
         assert_eq!(v["RynaAgentStatus"]["signedIn"], json!(false));
         assert!(v["RynaAgentStatus"].get("as").is_none());
         assert_eq!(v["RynaAgentStatus"]["accounts"], json!([]));
+    }
+
+    fn judged(band: &str, perfect: &str) -> Support {
+        Support::from_value(&json!({ "band": band, "version": "0.3.5", "addon": "0.3.5",
+            "minimum": "0.3.5", "preferred": "0.3.7", "perfect": perfect,
+            "note": "0.3.4 mis-reads auction prices", "update": "https://ryna.io/wow/guide#upkeep" }))
+        .unwrap()
+    }
+
+    #[test]
+    fn support_and_latest_round_trip() {
+        let mut s = status();
+        s.support = Some(judged("reduced", "0.3.9"));
+        s.latest_addon = Some("0.3.9".into());
+        s.latest_agent = Some("0.3.9".into());
+        let v = lua::parse(&s.to_lua()).unwrap();
+        let a = &v["RynaAgentStatus"];
+        assert_eq!(
+            a["support"],
+            json!({ "band": "reduced", "version": "0.3.5", "addon": "0.3.5", "perfect": "0.3.9",
+                    "note": "0.3.4 mis-reads auction prices", "update": "https://ryna.io/wow/guide#upkeep" })
+        );
+        assert_eq!(a["latest"], json!({ "addon": "0.3.9", "agent": "0.3.9" }));
+        // No judgment: no support table at all, and latest stays empty.
+        let v = lua::parse(&status().to_lua()).unwrap();
+        assert!(v["RynaAgentStatus"].get("support").is_none());
+        assert_eq!(v["RynaAgentStatus"]["latest"], json!([]));
+    }
+
+    /// One install with the addon at `toc`, and its status for `support` after `failure`.
+    fn one(
+        toc: &str,
+        failure: Option<(Fix, &str)>,
+        support: Option<&Support>,
+    ) -> serde_json::Value {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("World of Warcraft");
+        let forever = product(&root, "_forever_", "wowf", &[("FAKEACCOUNT1", "")]);
+        let addon = forever.join("Interface/AddOns/Ryna");
+        std::fs::create_dir_all(&addon).unwrap();
+        std::fs::write(
+            addon.join("Ryna.toc"),
+            format!("## Title: Ryna\n## Version: {toc}\n"),
+        )
+        .unwrap();
+        let d = discover(Some(&root));
+        let (written, _) = write_all(
+            &d,
+            &State::default(),
+            true,
+            None,
+            failure,
+            support,
+            &Combat::default(),
+            50,
+        );
+        let v = lua::parse(&std::fs::read_to_string(&written[0]).unwrap()).unwrap();
+        v["RynaAgentStatus"].clone()
+    }
+
+    #[test]
+    fn reduced_is_a_warn_line_for_old_addons_and_latest_follows_the_toc() {
+        let s = judged("reduced", "999.0.0");
+        let a = one("0.3.9", None, Some(&s));
+        assert_eq!(a["support"]["band"], json!("reduced"));
+        assert_eq!(
+            a["messages"],
+            json!([{ "at": 50, "level": "warn", "text": support::REDUCED_SENTENCE }])
+        );
+        // Both older than perfect: both offered.
+        assert_eq!(
+            a["latest"],
+            json!({ "addon": "999.0.0", "agent": "999.0.0" })
+        );
+        // The TOC already at perfect: no addon update claimed (an old addon would compare it with
+        // its frozen 0.3.2 and offer one that isn't there).
+        let a = one("999.0.0", None, Some(&s));
+        assert_eq!(a["latest"], json!({ "agent": "999.0.0" }));
+    }
+
+    #[test]
+    fn unsupported_says_the_sentence_once() {
+        let s = judged("unsupported", "999.0.0");
+        // The ingest was refused: the failure's line is the sentence, and it isn't repeated.
+        let a = one(
+            "0.3.1",
+            Some((Fix::Update, support::UNSUPPORTED_SENTENCE)),
+            Some(&s),
+        );
+        assert_eq!(
+            a["messages"],
+            json!([{ "at": 50, "level": "error", "text": support::UNSUPPORTED_SENTENCE }])
+        );
+        // Nothing failed this pass (nothing to push): still said, as an error.
+        let a = one("0.3.1", None, Some(&s));
+        assert_eq!(a["messages"][0]["level"], json!("error"));
+        assert_eq!(a["messages"].as_array().unwrap().len(), 1);
+        // Another failure beside it: both.
+        let a = one("0.3.1", Some((Fix::Network, "x")), Some(&s));
+        assert_eq!(a["messages"].as_array().unwrap().len(), 2);
+        // Current and behind add no line; behind still offers the release.
+        let a = one("0.3.1", None, Some(&judged("behind", "999.0.0")));
+        assert_eq!(a["messages"], json!([]));
+        assert_eq!(a["support"]["band"], json!("behind"));
+        assert_eq!(a["latest"]["addon"], json!("999.0.0"));
+        let a = one("0.3.1", None, None);
+        assert!(a.get("support").is_none());
+        assert_eq!(a["messages"], json!([]));
     }
 
     #[test]
@@ -415,6 +587,7 @@ mod tests {
             true,
             Some("aerin".into()),
             Some((Fix::Network, "unreachable")),
+            None,
             &Combat::default(),
             30,
         );
@@ -434,7 +607,7 @@ mod tests {
         assert_eq!(s["messages"][0]["text"], json!("Couldn't reach the API"));
         assert!(!root.join("_retail_/Interface").exists());
         // Rewritten whole the next time, with no temp file left.
-        write_all(&d, &st, false, None, None, &Combat::default(), 40);
+        write_all(&d, &st, false, None, None, None, &Combat::default(), 40);
         let v = lua::parse(&std::fs::read_to_string(&written[0]).unwrap()).unwrap();
         assert_eq!(v["RynaAgentStatus"]["messages"], json!([]));
         assert_eq!(

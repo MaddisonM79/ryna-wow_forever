@@ -90,7 +90,14 @@ impl ReadError {
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     pub schema: i64,
+    /// `RynaDB.addon`, as the addon wrote it. Every release through 0.3.9 says `0.3.2` here, so
+    /// nothing is judged by it; `addon_toc` is the version that counts.
     pub addon: String,
+    /// The installed core addon's `## Version:` in the install this file came from (the TOC on
+    /// disk, which the API judges: docs/wow.md section 18); None when it couldn't be read. Set by
+    /// the runner, which knows the install.
+    #[serde(default)]
+    pub addon_toc: Option<String>,
     pub agent: String,
     pub flavor: String,
     pub account: Account,
@@ -736,6 +743,7 @@ pub fn build(parsed: &Value, source: &Source<'_>) -> Result<Built, SnapshotError
         snapshot: Snapshot {
             schema: SCHEMA_MAJOR,
             addon,
+            addon_toc: None,
             agent: AGENT_VERSION.to_string(),
             flavor,
             account: Account {
@@ -1084,6 +1092,7 @@ mod tests {
         for k in [
             "schema",
             "addon",
+            "addonToc",
             "agent",
             "flavor",
             "account",
@@ -1094,7 +1103,8 @@ mod tests {
         ] {
             assert!(v.get(k).is_some(), "missing {k}");
         }
-        assert_eq!(v.as_object().unwrap().len(), 9);
+        assert_eq!(v.as_object().unwrap().len(), 10);
+        assert_eq!(v["addonToc"], serde_json::Value::Null);
         let c = &v["characters"][0];
         for k in [
             "guid",

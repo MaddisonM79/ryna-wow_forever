@@ -8,11 +8,12 @@ use std::path::{Path, PathBuf};
 
 use crate::addon_install;
 use crate::agent_status;
-use crate::discovery::{AccountFile, Discovery};
+use crate::discovery::{AccountFile, Discovery, Install};
 use crate::prices_data;
 use crate::push::{Api, CombatLog, Heartbeat, HeartbeatAccount, HeartbeatInstall, PushError};
 use crate::snapshot::{self, account_key, default_label};
 use crate::state::{self, AccountState, LastRun, State};
+use crate::support::{self, KnownSupport, Support};
 use crate::util::{self, Clock};
 use crate::watch::WatchEvent;
 use crate::zones_backfill;
@@ -118,6 +119,11 @@ pub fn run_once_observed(
     let mut signed_out = false;
     // The item ids of each account file this run parsed and pushed, for the pooled prices.
     let mut ids_by_account: BTreeMap<PathBuf, Vec<i64>> = BTreeMap::new();
+    // The API's newest judgment of this version this pass (an ingest's answer or refusal, then the
+    // heartbeat's), and the ingests' `pooled` (the first account that wasn't pooled, by label).
+    let mut judged: Option<Support> = None;
+    let mut paused_label: Option<String> = None;
+    let mut pooled_any = false;
 
     for acct in &discovery.accounts {
         // Chronicle by zone's backfill (zones_backfill): once per character, with the game closed,
@@ -133,7 +139,7 @@ pub fn run_once_observed(
             (Outcome::Skipped, Vec::new(), None)
         } else {
             let (outcome, warnings, failed, ids) =
-                push_account(acct, entry, api, clock, opts, on_event);
+                push_account(acct, entry, api, clock, opts, on_event, &mut judged);
             if let Some(ids) = ids {
                 ids_by_account.insert(acct.path.clone(), ids);
             }
@@ -145,19 +151,29 @@ pub fn run_once_observed(
             (Outcome::Failed(msg), Some(f)) => {
                 note(f, msg, &mut failure, &mut first_error);
                 signed_out |= f == Fix::SignIn;
-                on_event(WatchEvent::error(
-                    Some(label.clone()),
-                    Some(path),
-                    msg.clone(),
-                    f,
-                ));
+                on_event(WatchEvent::Error {
+                    label: Some(label.clone()),
+                    path: Some(path),
+                    message: msg.clone(),
+                    fix: f,
+                    advice: support::advice(f, msg, judged.as_ref()),
+                });
             }
-            (Outcome::Pushed { characters, data }, _) => on_event(WatchEvent::Pushed {
-                label: label.clone(),
-                path,
-                characters: *characters,
-                result: data.clone(),
-            }),
+            (Outcome::Pushed { characters, data }, _) => {
+                match data.get("pooled").and_then(serde_json::Value::as_bool) {
+                    Some(false) => {
+                        paused_label.get_or_insert_with(|| label.clone());
+                    }
+                    Some(true) => pooled_any = true,
+                    None => {}
+                }
+                on_event(WatchEvent::Pushed {
+                    label: label.clone(),
+                    path,
+                    characters: *characters,
+                    result: data.clone(),
+                })
+            }
             _ => {}
         }
         reports.push(AccountReport {
@@ -176,15 +192,46 @@ pub fn run_once_observed(
         let mut hb = heartbeat_body(discovery, &st, first_error.clone());
         hb.submission_id = api.submission_id();
         hb.combat_log = crate::combat::tail::heartbeat(state_dir, clock.now());
-        api.heartbeat(&hb).map(|_| ()).map_err(|e| {
-            note(classify(&e), &e.to_string(), &mut failure, &mut first_error);
-            e.to_string()
-        })
+        match api.heartbeat(&hb) {
+            Ok(data) => {
+                if let Some(s) = Support::in_answer(&data) {
+                    judged = Some(s);
+                }
+                Ok(())
+            }
+            Err(e) => {
+                note(classify(&e), &e.to_string(), &mut failure, &mut first_error);
+                Err(e.to_string())
+            }
+        }
     };
     on_event(WatchEvent::Heartbeat {
         ok: heartbeat.is_ok(),
         error: heartbeat.as_ref().err().cloned(),
     });
+
+    // What the API said about this version, kept to show (never to refuse: it fails open, so with
+    // no answer this pass the last one stays, and with none ever it's `current`).
+    let known = match judged.take() {
+        Some(s) => {
+            let (known, changed) = support::record(state_dir, s, clock.now());
+            on_event(WatchEvent::Support {
+                support: known.support.clone(),
+                received_at: known.received_at,
+                changed,
+            });
+            Some(known)
+        }
+        None => KnownSupport::load(state_dir),
+    };
+    // Reduced mode: the ingest stored your data and pooled none of it. Said once, not every pass.
+    if let Some(label) = paused_label {
+        if support::note_pooled(state_dir, false) {
+            on_event(WatchEvent::ContributionsPaused { label });
+        }
+    } else if pooled_any {
+        support::note_pooled(state_dir, true);
+    }
 
     // The Prices mod's way back down (prices_data): the pooled prices for what these accounts
     // know, into the addon's Data/ files. Not while the sign-in is gone or the API isn't
@@ -214,6 +261,7 @@ pub fn run_once_observed(
         auth.signed_in().unwrap_or(false),
         auth.identity(),
         failure.zip(first_error.as_deref()),
+        known.as_ref().map(|k| &k.support),
         &agent_status::Combat::from_state(state_dir, clock.now()),
         clock.now(),
     );
@@ -257,6 +305,7 @@ fn push_account(
     clock: &dyn Clock,
     opts: &RunOptions,
     on_event: &mut dyn FnMut(WatchEvent),
+    judged: &mut Option<Support>,
 ) -> (Outcome, Vec<String>, Option<Fix>, Option<Vec<i64>>) {
     let mtime = match util::mtime(&acct.path) {
         Ok(m) => m,
@@ -277,7 +326,7 @@ fn push_account(
         path: path.clone(),
         saved_at: mtime.secs,
     });
-    let built = match snapshot::read_file(
+    let mut built = match snapshot::read_file(
         &acct.path,
         &acct.account,
         Some(&entry.label),
@@ -295,9 +344,17 @@ fn push_account(
             return (Outcome::Failed(msg), Vec::new(), Some(failure), None);
         }
     };
+    // The TOC of the addon in this file's install: what the API judges the addon by.
+    built.snapshot.addon_toc = addon_install::installed_addon_version(&Install {
+        path: acct.install.clone(),
+        flavor: acct.flavor.clone(),
+    });
     on_event(WatchEvent::Pushing { label, path });
     match api.ingest(&built.snapshot) {
         Ok(data) => {
+            if let Some(s) = Support::in_answer(&data) {
+                *judged = Some(s);
+            }
             let characters = built.snapshot.characters.len();
             entry.pushed_mtime_ns = Some(mtime.nanos);
             entry.saved_at = Some(built.snapshot.saved_at);
@@ -315,6 +372,9 @@ fn push_account(
             )
         }
         Err(e) => {
+            if let Some(s) = e.support() {
+                *judged = Some(s.clone());
+            }
             let msg = e.to_string();
             entry.last_error = Some(msg.clone());
             (
@@ -331,6 +391,7 @@ fn push_account(
 pub fn heartbeat_body(discovery: &Discovery, st: &State, last_error: Option<String>) -> Heartbeat {
     Heartbeat {
         agent: crate::AGENT_VERSION.to_string(),
+        channel: support::CHANNEL.to_string(),
         host: util::hostname(),
         os: util::os_name().to_string(),
         installs: discovery
@@ -865,5 +926,188 @@ mod tests {
             &RunOptions::default(),
         );
         assert!(matches!(r, Err(RunError::Busy(_))));
+    }
+
+    /// `run`, with the events it says.
+    fn run_seeing(e: &Env, http: &ScriptedTransport, force: bool) -> (RunReport, Vec<WatchEvent>) {
+        let config = test_config();
+        let auth = Auth::new(&config, http, &e.store, &e.clock);
+        let key = test_key();
+        let api = Api::new(&config.api, http, &auth, Some(&key), &e.clock);
+        let mut events = Vec::new();
+        let r = run_once_observed(
+            &discover(Some(&e.root)),
+            &e.state,
+            &api,
+            &e.clock,
+            &RunOptions { force },
+            &mut |ev| events.push(ev),
+        )
+        .unwrap();
+        (r, events)
+    }
+
+    /// The addon at `toc` in the fixture's install; returns its folder.
+    fn addon_at(e: &Env, toc: &str) -> PathBuf {
+        let addon = e.root.join("_forever_/Interface/AddOns/Ryna");
+        std::fs::create_dir_all(&addon).unwrap();
+        std::fs::write(
+            addon.join("Ryna.toc"),
+            format!("## Title: Ryna\n## Version: {toc}\n"),
+        )
+        .unwrap();
+        addon
+    }
+
+    fn judged(band: &str) -> serde_json::Value {
+        json!({ "band": band, "version": crate::AGENT_VERSION, "addon": "0.3.4", "channel": "stable",
+                "minimum": "0.3.1", "preferred": "999.0.0", "perfect": "999.0.0", "note": null,
+                "update": "https://ryna.io/wow/guide#upkeep" })
+    }
+
+    fn agent_status(addon: &Path) -> serde_json::Value {
+        let text = std::fs::read_to_string(addon.join("AgentStatus.lua")).unwrap();
+        crate::lua::parse(&text).unwrap()["RynaAgentStatus"].clone()
+    }
+
+    #[test]
+    fn reduced_mode_is_kept_shown_and_said_once() {
+        let mut e = env(&[("FAKEACCOUNT1", FIXTURE)]);
+        e.store = MemoryStore::with_access("tok", NOW + 100_000);
+        let addon = addon_at(&e, "0.3.4");
+        let ingest = json!({ "ok": true, "data": { "snapshotId": 7, "sightings": 0, "pooled": false, "support": judged("reduced") } });
+        let beat = json!({ "ok": true, "data": { "host": "h", "seenAt": NOW, "support": judged("reduced") } });
+        let prices = json!({ "ok": true, "data": { "flavor": "wowf", "items": [] } });
+        let http = ScriptedTransport::new();
+        http.json(200, ingest.clone())
+            .json(200, beat.clone())
+            .json(200, prices.clone());
+        let (r, events) = run_seeing(&e, &http, false);
+        assert!(r.ok(), "{r:?}");
+        // The snapshot carries the install's TOC, the heartbeat the channel.
+        let body: serde_json::Value =
+            serde_json::from_slice(&http.requests.borrow()[0].body).unwrap();
+        assert_eq!(body["addonToc"], json!("0.3.4"));
+        assert_eq!(
+            body["addon"],
+            json!("0.1.0"),
+            "RynaDB.addon, sent as it was"
+        );
+        let hb: serde_json::Value =
+            serde_json::from_slice(&http.requests.borrow()[1].body).unwrap();
+        assert_eq!(hb["channel"], json!("stable"));
+        // A changed band and the pause, each said.
+        let support = events.iter().find_map(|ev| match ev {
+            WatchEvent::Support {
+                support, changed, ..
+            } => Some((support.band, *changed)),
+            _ => None,
+        });
+        assert_eq!(support, Some((support::Band::Reduced, true)));
+        assert!(events
+            .iter()
+            .any(|ev| matches!(ev, WatchEvent::ContributionsPaused { label } if label == "UNT1")));
+        // Kept, with when, for the window.
+        let known = KnownSupport::load(&e.state).unwrap();
+        assert_eq!(
+            (known.support.band, known.received_at, known.pooled),
+            (support::Band::Reduced, NOW, Some(false))
+        );
+        // Written for the addon: support, the old addons' line, and both updates offered.
+        let a = agent_status(&addon);
+        assert_eq!(a["support"]["band"], json!("reduced"));
+        assert_eq!(
+            a["messages"],
+            json!([{ "at": NOW, "level": "warn", "text": support::REDUCED_SENTENCE }])
+        );
+        assert_eq!(
+            a["latest"],
+            json!({ "addon": "999.0.0", "agent": "999.0.0" })
+        );
+
+        // The next pass, the same answers: nothing said again.
+        let http = ScriptedTransport::new();
+        http.json(200, ingest).json(200, beat).json(200, prices);
+        let (r, events) = run_seeing(&e, &http, true);
+        assert!(r.ok(), "{r:?}");
+        assert!(events
+            .iter()
+            .any(|ev| matches!(ev, WatchEvent::Support { changed: false, .. })));
+        assert!(!events
+            .iter()
+            .any(|ev| matches!(ev, WatchEvent::ContributionsPaused { .. })));
+    }
+
+    #[test]
+    fn an_unsupported_version_fails_in_the_api_s_words_and_the_heartbeat_still_goes() {
+        let mut e = env(&[("FAKEACCOUNT1", FIXTURE)]);
+        e.store = MemoryStore::with_access("tok", NOW + 100_000);
+        let addon = addon_at(&e, "0.3.1");
+        let http = ScriptedTransport::new();
+        http.json(200, json!({ "ok": false, "error": { "code": "AGENT_UNSUPPORTED",
+                "message": support::UNSUPPORTED_SENTENCE, "detail": judged("unsupported") } }))
+            .json(200, json!({ "ok": true, "data": { "host": "h", "seenAt": NOW, "support": judged("unsupported") } }));
+        let (r, events) = run_seeing(&e, &http, false);
+        assert_eq!(r.failure, Some(Fix::Update));
+        assert!(
+            matches!(&r.accounts[0].outcome, Outcome::Failed(m) if m == support::UNSUPPORTED_SENTENCE)
+        );
+        assert!(r.heartbeat.is_ok());
+        // No price call: the API would refuse it too.
+        assert_eq!(http.urls().len(), 2, "{:?}", http.urls());
+        let advice = events.iter().find_map(|ev| match ev {
+            WatchEvent::Error { advice, fix, .. } => Some((advice.clone(), *fix)),
+            _ => None,
+        });
+        assert_eq!(
+            advice,
+            Some((support::UNSUPPORTED_SENTENCE.to_string(), Fix::Update))
+        );
+        // One line in game, the sentence, as an error; the file not pushed, so tried again.
+        let a = agent_status(&addon);
+        assert_eq!(a["support"]["band"], json!("unsupported"));
+        assert_eq!(
+            a["messages"],
+            json!([{ "at": NOW, "level": "error", "text": support::UNSUPPORTED_SENTENCE }])
+        );
+        let st = State::load(&e.state);
+        assert_eq!(st.accounts.values().next().unwrap().pushed_mtime_ns, None);
+    }
+
+    #[test]
+    fn no_judgment_is_current_and_an_unreachable_api_keeps_the_last_one() {
+        let mut e = env(&[("FAKEACCOUNT1", FIXTURE)]);
+        e.store = MemoryStore::with_access("tok", NOW + 100_000);
+        let addon = addon_at(&e, "0.3.9");
+        // An API that says nothing about versions (before section 18): nothing kept, nothing said.
+        let http = ScriptedTransport::new();
+        http.json(200, ingested()).json(200, ok()).json(
+            200,
+            json!({ "ok": true, "data": { "flavor": "wowf", "items": [] } }),
+        );
+        let (r, events) = run_seeing(&e, &http, false);
+        assert!(r.ok(), "{r:?}");
+        assert!(!events
+            .iter()
+            .any(|ev| matches!(ev, WatchEvent::Support { .. })));
+        assert_eq!(KnownSupport::load(&e.state), None);
+        assert!(agent_status(&addon).get("support").is_none());
+
+        // Judged behind, then the API is unreachable: the last judgment stays, to show.
+        let http = ScriptedTransport::new();
+        http.json(
+            200,
+            json!({ "ok": true, "data": { "support": judged("behind") } }),
+        );
+        run_seeing(&e, &http, false);
+        let http = ScriptedTransport::new();
+        http.fail("a").fail("b").fail("c");
+        let (r, _) = run_seeing(&e, &http, false);
+        assert_eq!(r.failure, Some(Fix::Network));
+        assert_eq!(
+            KnownSupport::load(&e.state).unwrap().support.band,
+            support::Band::Behind
+        );
+        assert_eq!(agent_status(&addon)["support"]["band"], json!("behind"));
     }
 }

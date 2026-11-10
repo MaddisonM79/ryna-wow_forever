@@ -95,6 +95,21 @@ pub enum WatchEvent {
         ok: bool,
         error: Option<String>,
     },
+    /// What the API said about this version this pass (`support::Support`: current, behind,
+    /// reduced or unsupported, with the marks), kept to show. `changed` when the band differs from
+    /// the one kept before. Never a reason to stop: the API refuses, the app only shows it.
+    #[serde(rename_all = "camelCase")]
+    Support {
+        support: crate::support::Support,
+        received_at: i64,
+        changed: bool,
+    },
+    /// Reduced mode: the ingest stored `label`'s data and pooled none of it (no census sightings,
+    /// no prices). Said once when it starts, not every pass.
+    #[serde(rename_all = "camelCase")]
+    ContributionsPaused {
+        label: String,
+    },
     /// A pass ended; the next starts after the interval.
     #[serde(rename_all = "camelCase")]
     PassFinished {
