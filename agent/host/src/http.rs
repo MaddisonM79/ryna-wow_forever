@@ -65,6 +65,7 @@ impl HttpTransport {
     pub fn new() -> Result<Self, String> {
         let client = reqwest::blocking::Client::builder()
             .user_agent(crate::user_agent())
+            .redirect(redirect_policy())
             .build()
             .map_err(|e| e.to_string())?;
         Ok(HttpTransport { client })
@@ -112,6 +113,30 @@ impl Transport for HttpTransport {
             body,
         })
     }
+}
+
+/// What a redirect may lead to: `https://`, or `http://` to a loopback host (local development),
+/// at most 10 hops. A redirect to anything else is refused rather than followed, since a POST
+/// body (a refresh token, a device code) would go with it in the clear.
+fn redirect_policy() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        let url = attempt.url();
+        let safe = match url.scheme() {
+            "https" => true,
+            "http" => matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]")),
+            _ => false,
+        };
+        if !safe {
+            let to = format!("{}://{}", url.scheme(), url.host_str().unwrap_or(""));
+            attempt.error(format!(
+                "refused a redirect to {to}: only https is followed"
+            ))
+        } else if attempt.previous().len() >= 10 {
+            attempt.error("too many redirects")
+        } else {
+            attempt.follow()
+        }
+    })
 }
 
 /// reqwest's error with its causes, which is where the useful part (DNS, refused, TLS) is.
@@ -227,6 +252,40 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_redirect_to_plain_http_is_refused_not_followed() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut c, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = c.read(&mut buf);
+            c.write_all(
+                b"HTTP/1.1 307 Temporary Redirect\r\nLocation: http://cleartext.invalid/token\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            )
+            .unwrap();
+        });
+        let http = HttpTransport::new().unwrap();
+        let e = http
+            .post(&Request {
+                method: Method::Post,
+                url: format!("http://127.0.0.1:{port}/token"),
+                content_type: "application/x-www-form-urlencoded",
+                content_encoding: None,
+                body: b"refresh_token=secret".to_vec(),
+                bearer: None,
+                headers: Vec::new(),
+                timeout: Duration::from_secs(10),
+            })
+            .unwrap_err();
+        server.join().unwrap();
+        assert!(
+            e.contains("refused a redirect to http://cleartext.invalid"),
+            "{e}"
+        );
+    }
 
     #[test]
     fn form_encoding() {
