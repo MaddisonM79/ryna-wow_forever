@@ -213,6 +213,12 @@ local function statusText()
   return table.concat(ns.OrderedLines(P.statusSources), "\n")
 end
 
+-- First of all, when the API said this version is reduced or unsupported: its sentence and how to
+-- update (order 0, above every mod's lines). Nothing when current or behind.
+P.statusSources[#P.statusSources + 1] = { order = 0, seq = 0, fn = function()
+  return St.SupportLines()
+end }
+
 -- The core's own Status tab lines: the journal, then the companion app and the errors.
 P.statusSources[#P.statusSources + 1] = { order = 30, seq = 0, fn = function()
   local journal = ns.db and #ns.db.journal or 0

@@ -40,6 +40,8 @@ ns.On("PLAYER_LOGIN", function()
   if not ns.db then ns.InitDB() end
   ns.Run("panel", ns.Panel.Register)
   ns.Run("minimap", ns.Minimap.Create)
+  -- A frame, never chat, and only when the API said this version is no longer supported.
+  ns.Run("version notice", ns.Notice.ShowAtLogin)
 end)
 
 ns.On("PLAYER_LOGOUT", function()

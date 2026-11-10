@@ -10,6 +10,7 @@
 --   lastPush = 1762464000,        -- unix seconds of the last upload
 --   accounts = { { key = "...", label = "...", savedAt = 0, pushedAt = 0, characters = 0 } },
 --   latest = { addon = "0.2.0", agent = "0.2.0" },
+--   support = { band = "reduced", perfect = "0.3.10", note = "..." },  -- ryna.io on this version
 --   messages = { { at = 1762464000, level = "info", text = "..." } },  -- level: info, warn, error
 -- }
 --

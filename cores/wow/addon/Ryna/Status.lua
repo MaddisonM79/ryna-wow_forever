@@ -5,6 +5,7 @@
 
 local _, ns = ...
 local L = ns.L
+local N = ns.N
 
 local St = {}
 ns.Status = St
@@ -137,14 +138,53 @@ function St.UpdateLines()
   return out
 end
 
--- Up to `limit` messages, newest first: { at, level, text }, with anything malformed skipped.
+-- Supported versions (docs/ryna-agent-cores-mods.md 9.1): what the API last said about this
+-- version, as the companion app wrote it (RynaAgentStatus.support). Only `reduced` and `unsupported`
+-- have words here; `behind` is the "Update available" lines above, and anything else, or nothing, is
+-- current. The sentences are Maddison's, the same in the app, the game and the portal; the app writes
+-- them in English, so they're compared in English and shown through L.
+local SENTENCES = {
+  reduced = N("This version of Ryna is getting old. Your characters still sync, but what you add to "
+    .. "everyone's census and prices is paused until you update."),
+  unsupported = N("This version of Ryna is no longer supported, so nothing syncs to ryna.io. Update to "
+    .. "carry on."),
+}
+St.SUPPORT_SENTENCES = SENTENCES
+
+local SUPPORT_COLOR = { reduced = "|cffffb000", unsupported = "|cffff4040" }
+
+-- { band, sentence (English), note } for a reduced or unsupported band, else nil.
+function St.Support()
+  local sup = field(St.Agent(), "support", "table")
+  local band = field(sup, "band", "string")
+  local sentence = band and SENTENCES[band]
+  if not sentence then return nil end
+  return { band = band, sentence = sentence, note = St.Plain(field(sup, "note", "string")) }
+end
+
+-- The Status tab's first lines: the band's sentence, coloured, with how to update, then the note.
+-- None when current, behind or unknown.
+function St.SupportLines()
+  local sup = St.Support()
+  if not sup then return {} end
+  local lines = { SUPPORT_COLOR[sup.band] .. L[sup.sentence] .. " " .. L["Open the Ryna app to update."] .. "|r" }
+  if sup.note then lines[2] = SUPPORT_COLOR[sup.band] .. sup.note .. "|r" end
+  return lines
+end
+
+-- Up to `limit` messages, newest first: { at, level, text }, with anything malformed skipped. The
+-- app also writes the band's sentence as a message (for addons that don't read `support`); it is
+-- skipped here while St.SupportLines says it, so it isn't shown twice.
 function St.Messages(limit)
   local list = field(St.Agent(), "messages", "table")
   local out = {}
   if not list then return out end
+  local sup = St.Support()
+  local said = sup and sup.sentence
   for i = 1, #list do
     local m = list[i]
-    local text = St.Plain(field(m, "text", "string"))
+    local raw = field(m, "text", "string")
+    local text = raw ~= said and St.Plain(raw) or nil
     if text then
       local level = field(m, "level", "string")
       if level ~= "warn" and level ~= "error" then level = "info" end

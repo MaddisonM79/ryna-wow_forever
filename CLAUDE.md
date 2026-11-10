@@ -38,7 +38,7 @@ node cores/wow/addon/tools/strings.mjs
 ```
 
 ```bash
-for t in mods/wow/*/test/*_test.lua; do lua5.1 "$t" || exit 1; done
+for t in cores/wow/addon/test/*_test.lua mods/wow/*/test/*_test.lua; do lua5.1 "$t" || exit 1; done
 ```
 
 CI also parses every addon file with `luac5.1 -p`. This Mac may only have a newer `lua`; say so

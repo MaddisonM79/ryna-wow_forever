@@ -188,7 +188,9 @@ tab (the content scrolls when it's taller than the window), and the panel opens 
 had (`RynaDB.settings.panelTab`). The tabs use the game's own tab style where the client has it, and
 plain buttons with the selected one lit where it doesn't.
 
-**Status**: the character you're on; what's been recorded (items in your bags and bank, equipped
+**Status**: first, when ryna.io has said this version of Ryna is getting old or is no longer
+supported (`support` below), that sentence in amber or red with "Open the Ryna app to update." and
+the policy's note under it. Then the character you're on; what's been recorded (items in your bags and bank, equipped
 gear, quests in your log and completed, guild members); how many journal events this session and in
 all, and the session id; the Chronicle's totals ("Chronicle: 41 creatures, 112 items", or "Chronicle:
 off"); this session's kills and experience per hour ("Session: 42 kills, 3,120 XP/h", from the session
@@ -213,7 +215,8 @@ they are). Last, the census's promise: who was seen, never what they said, and t
 or used for advertising.
 
 **Messages**: up to 10 notices from the companion app, newest first ("No messages" when there are
-none).
+none). The app also writes a reduced or unsupported version's sentence here, for addons through 0.3.9
+that don't read `support`; this addon leaves that copy out while the Status tab says it.
 
 **Mods**: every `Ryna_*` addon in the game's AddOns list, each with a box: on means it loads, off
 turns it off in the game's AddOns list (`C_AddOns.DisableAddOn`, or `EnableAddOn` to turn it back
@@ -415,9 +418,18 @@ RynaAgentStatus = {
   lastPush = 1762464000,    -- unix seconds of the last upload
   accounts = { { key = "...", label = "...", savedAt = 0, pushedAt = 0, characters = 0 } },
   latest = { addon = "0.2.0", agent = "0.2.0" },   -- newest releases the app knows of
+  support = { band = "reduced", version = "0.3.6", addon = "0.3.6", perfect = "0.3.10",
+    note = "...", update = "https://ryna.io/wow/guide#upkeep" },  -- what ryna.io last said
   messages = { { at = 1762464000, level = "info", text = "..." } },  -- info, warn or error
 }
 ```
+
+`support` is ryna.io's judgment of this version (docs/ryna-agent-cores-mods.md 9.1): `band` is
+`current`, `behind`, `reduced` (your characters sync; what you add to the census and prices is paused)
+or `unsupported` (nothing syncs), absent until the app has heard. `latest` is filled from its
+`perfect`: `agent` when the app is older, `addon` only when this install's TOC is older. An
+unsupported version also gets a small notice at login (once per login, closed with its button);
+nothing is ever printed to chat for it.
 
 The addon ships the file with `RynaAgentStatus = nil` and reads every field defensively: the table
 may be missing or have any subset of these. Versions compare as dotted integers. What the panel
