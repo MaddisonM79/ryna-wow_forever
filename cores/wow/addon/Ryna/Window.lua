@@ -39,11 +39,13 @@
 --   search     false greys the search box (default: on)
 --   sortable   false: the column headings don't sort (rows with headings in them; default: on)
 --   icons      true leaves room for an icon at the start of every row
---   columns    { { title, width, justify = "LEFT"|"RIGHT", kind = "bar" }, ... } (at most 6), or
---              function(ctx) -> that list
+--   columns    { { title, width, justify = "LEFT"|"RIGHT", kind = "bar", sort = false }, ... } (at
+--              most 6; sort = false: its heading doesn't sort, for a column with no row.sort key whose
+--              text only fill() makes), or function(ctx) -> that list
 --   rows       function(ctx) -> the section's rows, in its own order (see "A row" below)
 --   fill       optional function(row, ctx): fills row.cells (and icon, link, ...) for a row about to
---              be drawn, once per row: rows(ctx) may return light rows and leave the strings here
+--              be drawn, once per row and again each minute (ages move on): rows(ctx) may return
+--              light rows and leave the strings here
 --   tiles      optional function(ctx) -> { { label, value, sub }, ... } (at most 4), every draw
 --   tooltip    optional function(row, tip, ctx, hadLink): adds lines under the row's own tooltip
 --              (the game's item tooltip when row.link is set; hadLink says whether it took)
@@ -350,13 +352,15 @@ function Wn.View(section, ctx)
   if v.built and v.version == version and v.character == ctx.character and v.search == ctx.search then
     return v, false
   end
-  v.built, v.version, v.character, v.search = true, version, ctx.character, ctx.search
   local rows = section.rows(ctx)
+  -- Marked built only once rows() returned, so a section that failed is tried again next draw.
+  v.built, v.version, v.character, v.search = true, version, ctx.character, ctx.search
   v.rows = type(rows) == "table" and rows or {}
   v.columns = columnsFor(section, ctx)
   v.builds = v.builds + 1
   v.sortedFrom = nil
-  v.filled = {} -- the rows section.fill has filled, by row
+  v.filled = {} -- the rows section.fill has filled, by row (emptied each minute, so ages move on)
+  v.filledMinute = math.floor((tonumber(GetTime()) or 0) / 60)
   return v, true
 end
 
@@ -416,7 +420,7 @@ function Wn.SortBy(col)
   if not section or not section.sortable then return end
   local v = views[section.key]
   local spec = v and v.columns and v.columns[col]
-  if not spec then return end
+  if not spec or spec.sort == false then return end
   local cur = Wn.state.sort[section.key]
   local firstDesc = spec.justify == "RIGHT"
   if not cur or cur.col ~= col then
@@ -780,9 +784,16 @@ local function rowTooltip(row)
 end
 
 -- The key of the section whose row tooltip is being drawn right now, or nil (a mod's tooltip hook
--- can leave out a line the section already shows).
-function Wn.TooltipSection()
-  return Wn.tooltipSection
+-- can leave out a line the section already shows). With `tooltip`, also when that tooltip belongs to
+-- one of the window's rows: the client redraws a tooltip by itself once an item it hadn't loaded
+-- arrives, and runs the hooks again then, after the window's own drawing is over.
+function Wn.TooltipSection(tooltip)
+  if Wn.tooltipSection then return Wn.tooltipSection end
+  if type(tooltip) == "table" and type(tooltip.GetOwner) == "function" and shown() then
+    local owner = ns.Try(tooltip.GetOwner, tooltip)
+    if type(owner) == "table" and rawget(owner, "rynaWindowRow") then return Wn.state.section end
+  end
+  return nil
 end
 
 -- Drawing -----------------------------------------------------------------------------------------------------
@@ -863,7 +874,7 @@ function Wn.Draw()
   for c = 1, MAX_COLS do
     local spec = columns[c]
     f.headCells[c]:SetText(spec and ((spec.title or "") .. sortArrow(section, c)) or "")
-    if spec ~= nil and section.sortable and (spec.title or "") ~= "" then
+    if spec ~= nil and section.sortable and spec.sort ~= false and (spec.title or "") ~= "" then
       f.headButtons[c]:Show()
     else
       f.headButtons[c]:Hide()
@@ -871,7 +882,8 @@ function Wn.Draw()
   end
 
   local sort = section.sortable and Wn.state.sort[section.key] or nil
-  if sort and not (columns[sort.col] and (columns[sort.col].title or "") ~= "") then sort = nil end
+  local sortSpec = sort and columns[sort.col]
+  if sort and not (sortSpec and sortSpec.sort ~= false and (sortSpec.title or "") ~= "") then sort = nil end
   applySort(v, sort)
   local list = v.sorted
   local count = #list
@@ -883,6 +895,10 @@ function Wn.Draw()
     local i = offset + r
     local data = r <= visible and list[i] or nil
     if type(data) == "table" then
+      local minute = math.floor((tonumber(GetTime()) or 0) / 60)
+      if v.filledMinute ~= minute then
+        v.filled, v.filledMinute = {}, minute
+      end
       if section.fill and not v.filled[data] then
         section.fill(data, ctx)
         v.filled[data] = true
@@ -1071,6 +1087,7 @@ function Wn.Create()
     row.icon:SetSize(ICON, ICON)
     row.icon:SetPoint("LEFT", row, "LEFT", 4, 0)
     row.icon:Hide()
+    row.rynaWindowRow = true
     row.cols, row.bars = {}, {}
     for c = 1, MAX_COLS do
       row.cols[c] = fontString(row, "GameFontHighlightSmall")

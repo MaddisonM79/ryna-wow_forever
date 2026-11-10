@@ -185,7 +185,7 @@ local function onItem(tooltip, data, show)
     local id = itemId(tooltip, data)
     local lines = T.ItemLines(id)
     -- Which of your other characters hold it (Items.lua; its own setting, tooltipHolders).
-    local holders = ns.Items and ns.Items.TooltipLine(id)
+    local holders = ns.Items and ns.Items.TooltipLine(id, tooltip)
     if holders then
       lines = lines or {}
       lines[#lines + 1] = holders

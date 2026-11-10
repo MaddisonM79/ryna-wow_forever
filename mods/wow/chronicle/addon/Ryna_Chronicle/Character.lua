@@ -12,6 +12,7 @@ C.version = 0 -- every change to the record after login (the Characters section 
 
 local function changed()
   C.version = C.version + 1
+  if ns.Window and ns.Window.Changed then ns.Window.Changed() end
 end
 
 local NonEmpty = ns.NonEmpty

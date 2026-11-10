@@ -481,6 +481,11 @@ The first fourteen were answered on 2026-11-08 and the journal probes on 2026-11
 10. `/dump C_DamageMeter ~= nil, C_DamageMeter and C_DamageMeter.IsDamageMeterAvailable()`
 11. After a fight, out of combat: `/dump C_DamageMeter.GetAvailableCombatSessions()`
 12. Then: `/run local s=C_DamageMeter.GetCombatSessionFromType(1,0) print(#s.combatSources, s.totalAmount, s.durationSeconds) local c=s.combatSources[1] print(c and c.name, c and c.totalAmount, c and c.amountPerSecond)` (the current session's damage done: readable out of combat?)
+13. Ryna's window (2026-11-09) uses these, each with a fallback, none yet seen on Forever:
+    `/dump C_Item.GetItemIconByID ~= nil, C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString ~= nil, GetItemIcon ~= nil`;
+    `/dump C_XMLUtil.GetTemplateInfo("WowStyle1DropdownTemplate") ~= nil, C_XMLUtil.GetTemplateInfo("SearchBoxTemplate") ~= nil`
+    (the character picker falls back to a list of its own, the search box to a plain one);
+    `/dump RAID_CLASS_COLORS.MAGE, ITEM_QUALITY_COLORS[2], FACTION_BAR_COLORS and FACTION_BAR_COLORS[5], FACTION_STANDING_LABEL5, LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE.MAGE, HEADSLOT, RANGEDSLOT`
 
 ## Links
 

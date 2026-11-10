@@ -97,14 +97,14 @@ end
 -- All characters --------------------------------------------------------------------------------------
 
 local ALL_COLUMNS = {
-  { title = L["Character"], width = 170 }, { title = L["Level"], width = 64, justify = "RIGHT", kind = "bar" },
-  { title = L["Gold"], width = 110, justify = "RIGHT" }, { title = L["Played"], width = 80, justify = "RIGHT" },
+  { title = L["Character"], width = 160 }, { title = L["Level"], width = 60, justify = "RIGHT", kind = "bar" },
+  { title = L["Gold"], width = 105, justify = "RIGHT" }, { title = L["Played"], width = 75, justify = "RIGHT" },
   { title = L["Professions"], width = 120 }, { title = L["Last seen"], width = 70, justify = "RIGHT" },
 }
 
 local DETAIL_COLUMNS = {
-  { title = "", width = 230 }, { title = "", width = 150 }, { title = "", width = 170, kind = "bar" },
-  { title = "", width = 60, justify = "RIGHT" },
+  { title = "", width = 220 }, { title = "", width = 140 }, { title = "", width = 170, kind = "bar" },
+  { title = "", width = 50, justify = "RIGHT" },
 }
 
 function Ch.AllRows(ctx)
@@ -262,9 +262,11 @@ function Ch.Footer(ctx)
   return Wn.RecordFooter(ctx)
 end
 
--- The section's version: the session's (gold, experience, levels) and the record's scans.
+-- The section's version: the session's (gold, experience, levels), the record's scans, and the
+-- minute (time played and "last seen" move on).
 function Ch.Version()
-  return tostring(ns.Session.version) .. ":" .. tostring(ns.Character.version or 0)
+  return tostring(ns.Session.version) .. ":" .. tostring(ns.Character.version or 0) .. ":"
+    .. math.floor(GetTime() / 60)
 end
 
 if RW.AddSection({

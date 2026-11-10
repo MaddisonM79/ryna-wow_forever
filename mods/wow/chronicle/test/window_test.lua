@@ -251,6 +251,15 @@ eq(#Wn.views.kills.sorted, 2002, "2,002 creatures listed")
 local filled = 0
 for _ in pairs(Wn.views.kills.filled) do filled = filled + 1 end
 eq(filled, Wn.visible, "only the rows on screen were filled")
+Wn.Draw()
+local again = 0
+for _ in pairs(Wn.views.kills.filled) do again = again + 1 end
+eq(again, Wn.visible, "a redraw in the same minute fills nothing again")
+local fillsBefore = Wn.views.kills.filled
+F.clock = F.clock + 60
+Wn.Draw()
+check(Wn.views.kills.filled ~= fillsBefore, "a minute later the rows on screen are filled afresh (ages move on)")
+F.clock = F.clock - 60
 check(Wn.visible >= 15 and Wn.visible <= 20, "15 to 20 rows on screen (" .. tostring(Wn.visible) .. ")")
 eq(f.rows[1].cols[1]:GetText(), "Mob 2000", "most first")
 f.list._scripts.OnMouseWheel(f.list, -1)
@@ -272,6 +281,9 @@ f.rows[1]._scripts.OnEnter(f.rows[1])
 tips = GameTooltip:Texts()
 eq(tips[1]:sub(1, 5), "link ", "the game's own item tooltip first")
 eq(tips[#tips], "From: Kobold Vermin", "then where it came from")
+Wn.SortBy(4)
+check(Wn.state.sort.loot == nil, "From has no sort key: its heading doesn't sort")
+check(not f.headButtons[4]:IsShown(), "and isn't clickable")
 f.rows[1]._scripts.OnLeave(f.rows[1])
 
 -- History (the Levels tab's levels): /chronicle levels still works.
@@ -351,7 +363,17 @@ for _, l in ipairs(GameTooltip.lines) do
 end
 eq(holderLines, 3, "the tooltip lists each holder")
 check(not heldBy, "inside Items, the holders line isn't added under the item too")
+-- The client redraws a tooltip by itself once an item it hadn't loaded arrives, running the hooks again
+-- outside the window's drawing: the tooltip's owner is still the window's row, so no holders line.
+GameTooltip:ClearLines()
+for _, pc in ipairs(F.postCalls) do if pc.kind == 0 then pc.fn(GameTooltip, { id = 2589 }) end end
+local redrawn = false
+for _, l in ipairs(GameTooltip.lines) do
+  if l.left and l.left:find("in the bank", 1, true) then redrawn = true end
+end
+check(not redrawn, "the client's own redraw of Items' tooltip: still no holders line")
 clothRow._scripts.OnLeave(clothRow)
+GameTooltip.owner = nil
 R.Window.Choose(ALT)
 eq(#Wn.views.items.sorted, 1, "one character's items only")
 eq(f.rows[1].cols[4]:GetText(), "120", "in its bank")
@@ -390,9 +412,39 @@ Wn.Draw()
 eq(Wn.views.items.builds, builds, "no scan: no rebuild")
 BAGS[0][4] = { itemID = 4306, stackCount = 2, quality = 1, hyperlink = link(4306, "Silk Cloth") }
 ns.Containers.Scan()
-R.Window.Refresh()
-eq(Wn.views.items.builds, builds + 1, "a scan rebuilds Items")
+check(#F.timers == 1, "a bag scan while the window is open queues a redraw")
+F.RunTimers()
+eq(Wn.views.items.builds, builds + 1, "a scan rebuilds Items, without anything else happening")
 eq(#Wn.views.items.sorted, 4, "the new item is there")
+
+-- Characters redraws when a scan changes a record, with nothing else happening.
+F.Click(f.railButtons.characters)
+builds = Wn.views.characters.builds
+ns.Character.ScanReputations()
+check(#F.timers == 1, "a reputation scan queues a redraw")
+F.RunTimers()
+eq(Wn.views.characters.builds, builds + 1, "and Characters is rebuilt")
+
+-- A section whose rows() fails is tried again on the next draw, not left empty.
+local failOnce = true
+check(R.Window.AddSection({ key = "flaky", group = "world", label = "Flaky", columns = cols,
+  version = function() return 1 end,
+  rows = function()
+    if failOnce then
+      failOnce = false
+      error("not yet")
+    end
+    return { { cells = { "here now" } } }
+  end }), "a flaky section: added")
+local errorsBefore = core.errors.count
+SlashCmdList.RYNACHRONICLE("") -- closes
+R.Window.Open("flaky")
+eq(core.errors.count, errorsBefore + 1, "its first build failed (caught)")
+core.errors.count = errorsBefore
+Wn.Draw()
+eq(f.rows[1].cols[1]:GetText(), "here now", "the next draw builds it")
+check(f.groupHeads.world:IsShown(), "World is drawn now that it has a section")
+F.chat = {}
 
 -- The probe section in Combat and gold: picker context passed through.
 F.Click(f.railButtons.probe)

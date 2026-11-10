@@ -389,7 +389,7 @@ if Wn.available then
   add({
     key = "loot", group = "me", order = 50, label = L["Loot"], characters = "one", icons = true,
     columns = { { title = L["Item"], width = 190 }, { title = L["Looted"], width = 60, justify = "RIGHT" },
-      { title = L["Count"], width = 60, justify = "RIGHT" }, { title = L["From"], width = 160 },
+      { title = L["Count"], width = 60, justify = "RIGHT" }, { title = L["From"], width = 160, sort = false },
       { title = L["Last"], width = 110, justify = "RIGHT" } },
     version = function() return ns.Chronicle.lootVersion or 0 end,
     rows = lootRows, fill = lootFill, tiles = lootTiles,
@@ -403,13 +403,23 @@ if Wn.available then
       { title = L["Played when reached"], width = 160, justify = "RIGHT" } },
     version = function()
       local db = ns.db
+      -- and the minute: the current level's time played counts on.
       return tostring(db and type(db.journal) == "table" and #db.journal or 0) .. ":" .. ns.Session.levelVersion
+        .. ":" .. math.floor(GetTime() / 60)
     end,
     rows = historyRows, tiles = historyTiles,
     footer = function() return L["From the journal's level-ups (it keeps 30 days) and /played."] end,
   })
   -- Redrawn when Session.lua says something changed, only while the window is open.
   ns.Session.Watch(function() return RW.IsShown() end, function() RW.Refresh() end)
+end
+
+-- The window's sections whose data changed outside the session (a bag scan, a gear or reputation
+-- scan): a redraw at most every half second, only while the window is open. Rows rebuild only if
+-- the section's version moved.
+function Wn.Changed()
+  if not Wn.available or not RW.IsShown() then return end
+  ns.Debounce("chronicle-window", 0.5, function() RW.Refresh() end)
 end
 
 -- Opening it -------------------------------------------------------------------------------------------

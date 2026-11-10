@@ -179,6 +179,7 @@ function F.NewTooltip(name)
     _G[name .. "TextLeft" .. i] = { GetText = function() local l = t.lines[i]; return l and l.left end }
   end
   function t.SetOwner(self, owner) self.owner = owner end
+  function t.GetOwner(self) return self.owner end
   function t.ClearLines(self) self.lines = {} end
   function t.AddLine(self, text) self.lines[#self.lines + 1] = { left = text } end
   function t.AddDoubleLine(self, l, r) self.lines[#self.lines + 1] = { left = l, right = r } end

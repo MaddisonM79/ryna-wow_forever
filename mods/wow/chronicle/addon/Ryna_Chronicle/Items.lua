@@ -1,5 +1,6 @@
 -- Items: what every character on the account holds, from the saved file (each record's `containers`,
--- what Containers.lua records: bags and keyring at each login, the bank as of its last visit).
+-- what Containers.lua records: bags and keyring at each login, the bank as of its last visit; the
+-- keyring counts as bags here).
 -- Nothing new is recorded here.
 --
 --   I.Index()                 item id (a string) -> { id, name, quality, link, total, bags, bank,
@@ -155,11 +156,13 @@ local function holderText(h)
 end
 
 -- The tooltip line: the other characters (not the one you're on) holding item `id`, most first.
-function I.TooltipLine(id)
+-- `tooltip`: the tooltip it goes on (to tell the window's own).
+function I.TooltipLine(id, tooltip)
   if not ns.Setting("tooltipHolders") then return nil end
-  -- Inside the Items section the window lists every holder under the item already.
+  -- Inside the Items section the window lists every holder under the item already (also when the
+  -- client redraws that tooltip itself, once an item it hadn't loaded arrives).
   local RW = ns.API.Window
-  if type(RW) == "table" and RW.TooltipSection and RW.TooltipSection() == "items" then return nil end
+  if type(RW) == "table" and RW.TooltipSection and RW.TooltipSection(tooltip) == "items" then return nil end
   local e = I.Entry(id)
   if not e then return nil end
   local holders = I.Holders(e, ns.rec and ns.rec.guid)
@@ -182,7 +185,7 @@ local RW = ns.API.Window
 local ALL_COLUMNS = {
   { title = L["Item"], width = 210 }, { title = L["Total"], width = 60, justify = "RIGHT" },
   { title = L["In bags"], width = 66, justify = "RIGHT" }, { title = L["In the bank"], width = 80, justify = "RIGHT" },
-  { title = L["Characters"], width = 170 },
+  { title = L["Characters"], width = 160, sort = false },
 }
 local ONE_COLUMNS = {
   { title = L["Item"], width = 260 }, { title = L["Total"], width = 70, justify = "RIGHT" },
@@ -223,12 +226,15 @@ end
 function I.Fill(row, ctx)
   local e = row.e
   row.icon = RW.ItemIcon(row.ref)
+  -- Asked for now, so the client has it by the time the row is hovered (an alt's bank item may
+  -- never have been loaded this session).
+  ns.Try(ns.Fn("C_Item", "RequestLoadItemDataByID"), tonumber(row.ref))
   local who = ""
   if ctx.character == nil then
-    local names = {}
-    for i, h in ipairs(I.Holders(e)) do
+    local holders, names = I.Holders(e), {}
+    for i, h in ipairs(holders) do
       if i > 3 then
-        names[#names + 1] = string.format(L["%d more"], #I.Holders(e) - 3)
+        names[#names + 1] = string.format(L["%d more"], #holders - 3)
         break
       end
       names[#names + 1] = h.name

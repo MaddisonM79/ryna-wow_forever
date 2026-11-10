@@ -101,6 +101,7 @@ function B.Scan()
   end
   rec.containers = rows
   B.version = B.version + 1
+  if ns.Window and ns.Window.Changed then ns.Window.Changed() end
   if ns.Debugging() then
     local items, slots = { bag = 0, keyring = 0, bank = 0 }, { bag = 0, keyring = 0, bank = 0 }
     for _, row in ipairs(rows) do

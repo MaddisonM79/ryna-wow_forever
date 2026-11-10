@@ -719,9 +719,9 @@ What the portal adds is what a game window can't do well: every set served by th
 charts over time, the same view across accounts and for the people a profile is shared with, and
 room to browse. It is where most looking will happen; the addon is why anyone installs.
 
-**One window.** Chronicle already has the window (`RynaChronicleWindow`: Session, Kills, Loot,
-Levels, a search box, and lists that fill only the rows on screen, so 2,000 creatures cost what 15
-do). It moves into the core as `Ryna.Window`, beside `Ryna.Panel`:
+**One window.** Chronicle had the window (`RynaChronicleWindow`: Session, Kills, Loot, Levels, a
+search box, and lists that fill only the rows on screen, so 2,000 creatures cost what 15 do). It
+moved into the core as `Ryna.Window`, beside `Ryna.Panel` (built 2026-11-09):
 
 - One frame. A rail of sections down the left, one header (title, character picker, search box),
   Escape closes.

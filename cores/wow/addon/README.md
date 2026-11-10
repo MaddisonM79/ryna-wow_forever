@@ -352,8 +352,8 @@ Chronicle's sections, under Me:
   when it was reached. The journal keeps 30 days, so a level reached before then shows as the current
   level only, "before the journal".
 
-Beside a core from before the window (0.3.9 and earlier), Chronicle registers nothing there:
-`/chronicle` and the strip's click say once, when used, that the core is too old, and the Recording
+Beside a core from before the window (the released 0.3.9 and earlier), Chronicle registers nothing
+there: `/chronicle` and the strip's click say, each time they're used, that the core is too old, and the Recording
 tab has no button. Recording and the tooltips work as before.
 
 ### A mod's section

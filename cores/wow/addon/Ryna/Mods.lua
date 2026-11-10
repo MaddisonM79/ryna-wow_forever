@@ -190,7 +190,7 @@ R.Window = {
   Refresh = function(key) return Wn.Refresh(key) end,
   Choose = function(guid) return Wn.Choose(guid) end,
   Characters = function() return Wn.Characters() end,
-  TooltipSection = function() return Wn.TooltipSection() end,
+  TooltipSection = function(tooltip) return Wn.TooltipSection(tooltip) end,
   Match = Wn.Match, QualityColor = Wn.QualityColor, ClassColor = Wn.ClassColor, ClassName = Wn.ClassName,
   Money = Wn.Money, ItemIcon = Wn.ItemIcon,
 }
