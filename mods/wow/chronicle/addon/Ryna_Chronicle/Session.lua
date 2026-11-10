@@ -1,4 +1,4 @@
--- Session: this play session's numbers, for the session strip (Strip.lua), the Chronicle window
+-- Session: this play session's numbers, for the session strip (Strip.lua), Ryna's window
 -- (Window.lua) and the Status tab. In memory while you play: kills by creature (count and
 -- experience), experience gained (PLAYER_XP_UPDATE deltas, level-ups included), money gained and
 -- spent, quests turned in, deaths, items looted and the time since login. Rates per hour are worked

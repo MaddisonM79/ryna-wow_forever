@@ -7,7 +7,7 @@
   "kind": "addon",
   "actsInGame": false,
   "source": { "kind": "bundled" },
-  "requires": { "core": ">=0.3.0" },
+  "requires": { "core": ">=0.3.9" },
   "defaultOn": true,
   "addons": ["Ryna_Chronicle"]
 }

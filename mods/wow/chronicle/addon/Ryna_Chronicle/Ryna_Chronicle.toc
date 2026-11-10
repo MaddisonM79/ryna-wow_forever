@@ -31,6 +31,8 @@ Chronicle.lua
 Session.lua
 Strip.lua
 Window.lua
+Characters.lua
+Items.lua
 Tooltip.lua
 Tabs.lua
 Init.lua
