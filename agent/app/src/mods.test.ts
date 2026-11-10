@@ -105,11 +105,11 @@ group("what a toggle and an install say", () => {
 
 group("modAction", () => {
   it("offers the update when an older copy is installed", () => {
-    expect(modAction(mod(true, true, "0.2.6"), AT)).toEqual({ label: "Update to 0.3.0" });
+    expect(modAction(mod(true, true, "0.2.6"), AT)).toEqual({ label: "Update to 0.3.0", kind: "update" });
   });
   it("offers the install when the mod is on but not there yet", () => {
-    expect(modAction(mod(true, false, null), AT)).toEqual({ label: "Install the addon" });
-    expect(modAction(mod(true, true, "0.3.0"), "/elsewhere")).toEqual({ label: "Install the addon" });
+    expect(modAction(mod(true, false, null), AT)).toEqual({ label: "Install the addon", kind: "install" });
+    expect(modAction(mod(true, true, "0.3.0"), "/elsewhere")).toEqual({ label: "Install the addon", kind: "install" });
   });
   it("offers nothing when current, off, or the version is unknown", () => {
     expect(modAction(mod(true, true, "0.3.0"), AT)).toBeNull();
