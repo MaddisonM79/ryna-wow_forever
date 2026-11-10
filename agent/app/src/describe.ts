@@ -250,12 +250,65 @@ export function modRow(m: ModView, install: string): { text: string; chip: "push
  * and an older copy is installed, "Install the addon" when it's on and not there yet. Both run the
  * same install as the Game tab's button (the core addon and every mod that's on, into that install).
  */
-export function modAction(m: ModView, install: string): { label: string } | null {
+export function modAction(m: ModView, install: string): { label: string; kind: "install" | "update" } | null {
   if (!m.on || m.kind === "agent") return null;
   const here = m.installs.find((i) => i.install === install);
-  if (!here?.installed) return { label: "Install the addon" };
-  if (here.version && compareVersions(here.version, m.bundled) < 0) return { label: `Update to ${m.bundled}` };
+  if (!here?.installed) return { label: "Install the addon", kind: "install" };
+  if (here.version && compareVersions(here.version, m.bundled) < 0) {
+    return { label: `Update to ${m.bundled}`, kind: "update" };
+  }
   return null;
+}
+
+/**
+ * The Mods tab's one button for an install, or null: every row's action is the same install (the
+ * core addon and every mod that's on), so the card offers it once. "Install the addon" when a mod
+ * that's on isn't there yet, else "Update all to <bundled>" ("Update all" when the mods differ).
+ */
+export function modsAction(mods: ModView[], install: string): { label: string; kind: "install" | "update" } | null {
+  const wanting = mods.flatMap((m) => {
+    const a = modAction(m, install);
+    return a ? [{ m, a }] : [];
+  });
+  if (!wanting.length) return null;
+  if (wanting.some((w) => w.a.kind === "install")) return { label: "Install the addon", kind: "install" };
+  const versions = new Set(wanting.map((w) => w.m.bundled));
+  const [only] = versions;
+  const label = versions.size === 1 && only ? `Update all to ${only}` : "Update all";
+  return { label, kind: "update" };
+}
+
+/** What the Mods tab's last toggle or install said, shown once for the whole card. */
+export interface ModsResult {
+  ok: boolean;
+  /** The one line on top: "Updated the addon and 3 mods to 0.4.0". */
+  summary: string;
+  /** What it did, one line each (folders and errors). */
+  lines: string[];
+}
+
+/**
+ * The Mods tab's one line over an install's result: "Updated the addon and 3 mods to 0.4.0" (or
+ * "Installed the addon and 3 mods (0.4.0)" when it was an install), and the mods it took out when there were any.
+ */
+export function installSummary(r: InstallResult, update: boolean): string {
+  const added = r.mods.filter((c) => c.change === "installed");
+  const removed = r.mods.length - added.length;
+  const versions = new Set([r.version, ...added.map((c) => (c.change === "installed" ? c.version : null))]);
+  const one = versions.size === 1 ? r.version : null;
+  const what = `the addon${added.length ? ` and ${plural(added.length, "mod")}` : ""}`;
+  let line = update ? `Updated ${what}${one ? ` to ${one}` : ""}` : `Installed ${what}${one ? ` (${one})` : ""}`;
+  if (removed) line += `, and removed ${plural(removed, "mod")} ${removed === 1 ? "that's" : "that are"} off`;
+  return line;
+}
+
+/**
+ * A result line in pieces that each end at a "/", so a path wraps between folders (a <wbr> between
+ * pieces) rather than in the middle of a name.
+ */
+export function pathPieces(line: string): string[] {
+  const parts = line.split("/");
+  return parts.map((p, n) => (n < parts.length - 1 ? `${p}/` : p)).filter((p) => p !== "");
 }
 
 /** Dotted integers, as the core compares them: "0.10.0" is after "0.9.1". */

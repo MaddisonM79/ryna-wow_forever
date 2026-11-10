@@ -366,15 +366,114 @@ label.setting {
   font-size: 12px;
 }
 
-/* The Game tab's mods: a toggle each, its state in each install under it. */
-.mods .mod-state {
-  margin: 0 0 4px 24px;
-  display: flex;
-  gap: 8px;
-  align-items: center;
+/* The Mods tab: one grid for every mod, so the switch, the words, and the state in each install
+   are columns that line up from row to row. A row's cells carry its divider. */
+.mods-card .section-head {
+  margin-bottom: 4px;
 }
 
-.setting .acts-in-game {
+.mods-card button {
+  white-space: nowrap;
+}
+
+.mods-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) fit-content(18em);
+}
+
+.mods-grid > li {
+  display: contents;
+}
+
+.mods-grid > li > * {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.mods-grid > li:last-child > * {
+  border-bottom: none;
+}
+
+.mods-grid .mod-switch {
+  padding-right: 10px;
+}
+
+.mods-grid .mod-switch input {
+  margin: 3px 0 0;
+}
+
+.mods-grid .mod-text {
+  padding-right: 16px;
+  cursor: pointer;
+}
+
+.mod-text .muted,
+.mod-text .acts-in-game {
+  display: block;
+  font-size: 12px;
+}
+
+.mods-grid .mod-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+/* A long state wraps inside its column rather than widening it. */
+.mods-grid .mod-status .chip {
+  white-space: normal;
+}
+
+/* Too narrow for three columns (the same widths as the cards'): the state goes under the words. */
+@media (max-width: 772px) and (min-width: 701px), (max-width: 640px) {
+  .mods-grid {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .mods-grid .mod-switch {
+    grid-row: span 2;
+  }
+  .mods-grid .mod-text {
+    padding-right: 0;
+    padding-bottom: 4px;
+    border-bottom: none;
+  }
+  .mods-grid .mod-status {
+    grid-column: 2;
+    padding-top: 0;
+  }
+}
+
+/* The card's last result: one place for the whole card, a line on top and what it did under it. */
+section .banner.mods-result {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 8px;
+}
+
+.mods-result-text {
+  min-width: 0;
+}
+
+.mods-result ul {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.mods-result li + li {
+  margin-top: 2px;
+}
+
+.setting .acts-in-game,
+.mod-text .acts-in-game {
   display: block;
   font-size: 12px;
   color: var(--warn-text);
