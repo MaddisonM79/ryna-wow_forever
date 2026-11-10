@@ -5,7 +5,7 @@ import { manifest } from "./latest-json.mjs";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { agree, lockVersion, modVersions, readVersions, tocVersion, workspaceVersion } from "./versions.mjs";
+import { agree, lockVersion, luaVersions, modVersions, readVersions, tocVersion, workspaceVersion } from "./versions.mjs";
 
 test("reads each place's version", () => {
   assert.equal(tocVersion("## Interface: 16001\r\n## Version: 0.2.0\r\n## SavedVariables: RynaDB\n"), "0.2.0");
@@ -33,6 +33,30 @@ test("reads each bundled mod's manifest and its addon folders' TOCs", () => {
     [join("mods", "wow", "chronicle", "addon", "Ryna_Gone", "Ryna_Gone.toc"), null],
   ]);
   assert.deepEqual(modVersions(join(root, "nowhere")), []);
+});
+
+test("a version written into an addon's Lua is found, and has to agree with the rest", () => {
+  const root = mkdtempSync(join(tmpdir(), "ryna-versions-"));
+  const core = join(root, "cores", "wow", "addon", "Ryna");
+  const mod = join(root, "mods", "wow", "chronicle");
+  mkdirSync(core, { recursive: true });
+  mkdirSync(join(mod, "addon", "Ryna_Chronicle"), { recursive: true });
+  mkdirSync(join(mod, "test"), { recursive: true });
+  writeFileSync(join(core, "Core.lua"), 'local addonName, ns = ...\nns.NAME = addonName\nns.VERSION = "0.3.2"\n');
+  // Read from the TOC, a table's own number, and a test's stub: none of them is a second copy.
+  writeFileSync(join(core, "Mods.lua"), "R.VERSION = ns.VERSION\n");
+  writeFileSync(join(mod, "addon", "Ryna_Chronicle", "Mod.lua"), 'ns.VERSION = R.Try(metadata, addonName, "Version")\nP.VERSION = 1\n');
+  writeFileSync(join(mod, "test", "x_test.lua"), 'ns.VERSION = "test"\n');
+  const where = join("cores", "wow", "addon", "Ryna", "Core.lua");
+  assert.deepEqual(luaVersions(root), [[where, "0.3.2"]]);
+  assert.deepEqual(luaVersions(join(root, "nowhere")), []);
+  const off = agree({ "cores/wow/addon/Ryna/Ryna.toc": "0.3.9", [where]: "0.3.2" }, null);
+  assert.equal(off.version, null);
+  assert.match(off.problems[0], /disagree[\s\S]*0\.3\.2  .*Core\.lua/);
+});
+
+test("no addon in this repository carries its own copy of the version", () => {
+  assert.deepEqual(luaVersions(join(import.meta.dirname, "..")), []);
 });
 
 test("this repository's versions include Chronicle's and the Settings mod's", () => {

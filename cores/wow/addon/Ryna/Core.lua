@@ -8,7 +8,6 @@
 local addonName, ns = ...
 
 ns.NAME = addonName
-ns.VERSION = "0.3.2"
 ns.SCHEMA = 1
 ns.FLAVOR = "wowf"
 ns.COMBAT_LOG_MODES = { instances = true, always = true, never = true }
@@ -71,6 +70,12 @@ function ns.NonEmpty(s)
   if type(s) == "string" and s ~= "" and not ns.IsSecret(s) then return s end
   return nil
 end
+
+-- The version is the TOC's (## Version), so there is no second copy here to fall behind it (one
+-- sat at 0.3.2 through 0.3.9, and RynaDB.addon told the companion app the old number). "unknown",
+-- the app's own word for a missing one, when the client can't say; it compares as no version.
+local metadata = ns.Fn("C_AddOns", "GetAddOnMetadata") or ns.Fn("GetAddOnMetadata")
+ns.VERSION = ns.NonEmpty(ns.Try(metadata, addonName, "Version")) or "unknown"
 
 -- The client's language ("enUS", "deDE", ...), for the locale files; "enUS" when it can't say.
 function ns.Locale()

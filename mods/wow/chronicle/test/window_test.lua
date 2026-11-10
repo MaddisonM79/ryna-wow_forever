@@ -99,6 +99,13 @@ _G.C_Container = {
   GetContainerItemInfo = function(bag, slot) return BAGS[bag] and BAGS[bag][slot] end,
 }
 
+-- What the client says each addon's TOC holds (## Version), the one place a version is written.
+local function tocVersion(folder, name)
+  return assert(io.open(folder .. name .. ".toc")):read("*a"):match("## Version:%s*(%S+)")
+end
+local TOC = { Ryna = tocVersion(CORE, "Ryna"), Ryna_Chronicle = tocVersion(CHRON, "Ryna_Chronicle") }
+_G.C_AddOns = { GetAddOnMetadata = function(name, field) if field == "Version" then return TOC[name] end end }
+
 -- Load the core, then Chronicle, and log in.
 local core = {}
 F.LoadAddon(CORE, "Ryna", core)
@@ -116,6 +123,14 @@ local Wn = core.Window
 check(type(R.Window) == "table" and type(R.Window.AddSection) == "function", "the core exposes Ryna.Window")
 check(type(R.Tooltip) == "table" and type(R.Tooltip.AddLine) == "function", "the core exposes Ryna.Tooltip")
 check(ns.Window.available, "Chronicle sees the window")
+
+-- Each addon's version is its TOC's, with no copy in Lua to fall behind it (the core's sat at 0.3.2
+-- while the TOC said 0.3.9), and it is the number RynaDB hands the companion app.
+check(type(TOC.Ryna) == "string" and TOC.Ryna:match("^%d+%.%d+%.%d+"), "the core's TOC has a version")
+eq(core.VERSION, TOC.Ryna, "the core's version is its TOC's")
+eq(R.VERSION, TOC.Ryna, "Ryna.VERSION is the TOC's")
+eq(RynaDB.addon, TOC.Ryna, "RynaDB.addon is the TOC's")
+eq(ns.VERSION, TOC.Ryna_Chronicle, "Chronicle's version is its TOC's")
 
 -- Registration and the rail. ------------------------------------------------------------------------
 local function rows() return {} end
@@ -501,5 +516,13 @@ eq(type(RynaDB.settings.window), "table", "the window's settings survive the def
 
 check(#F.chat == 0, "nothing in chat: " .. table.concat(F.chat, " / "))
 check(core.errors.count == 0, "no errors caught: " .. tostring(core.errors.last))
+
+-- A client that can't read the TOC: "unknown" (the app's own word), never nil in a format call.
+-- Last, because it loads Core.lua a second time.
+_G.C_AddOns = nil
+local bare = {}
+assert(loadfile(CORE .. "Core.lua"))("Ryna", bare)
+eq(bare.VERSION, "unknown", "no metadata call: the version is unknown")
+eq(core.Status.CompareVersions("9.9.9", bare.VERSION), nil, "unknown compares as no version, so no update line")
 print(string.format("window: %d checks, %d failed", checks, failures))
 os.exit(failures == 0 and 0 or 1)

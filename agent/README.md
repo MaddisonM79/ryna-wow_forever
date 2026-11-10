@@ -314,8 +314,8 @@ without a key.
 1. Bump the version everywhere: `version` in the root `Cargo.toml` (`[workspace.package]`, every
    crate takes it), `version` in `app/package.json`, `## Version:` in `cores/wow/addon/Ryna/Ryna.toc`, `version` in `cores/wow/core.json`,
    and each bundled mod's `version` in `mods/wow/<id>/mod.json` and `## Version:` in its addon's TOC
-   (Chronicle: `mods/wow/chronicle/addon/Ryna_Chronicle/Ryna_Chronicle.toc`; also `ns.VERSION` in
-   its `Mod.lua`, and the core addon's in `Core.lua`; Automation reads its version from its TOC).
+   (Chronicle: `mods/wow/chronicle/addon/Ryna_Chronicle/Ryna_Chronicle.toc`). No Lua carries the
+   version: every addon reads its own TOC in game, and the check refuses a copy that disagrees.
    A mod's `requires.core` should name the release that brought the mod API it needs.
    Run `cargo check` so `Cargo.lock` follows, then `node scripts/check-versions.mjs`, which fails
    and names each file when they disagree (CI runs it on every push too).

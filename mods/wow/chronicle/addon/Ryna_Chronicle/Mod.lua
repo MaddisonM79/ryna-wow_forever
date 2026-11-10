@@ -29,8 +29,11 @@ if type(R) ~= "table" or type(R.API) ~= "number" or R.API < 1 or type(R.Register
 end
 
 ns.NAME = addonName
-ns.VERSION = "0.3.2"
 ns.API = R
+
+-- The version is the TOC's, so there is no second copy to keep in step.
+local metadata = (_G.C_AddOns and _G.C_AddOns.GetAddOnMetadata) or _G.GetAddOnMetadata
+ns.VERSION = R.Try(metadata, addonName, "Version")
 
 for _, name in ipairs({ "Try", "Fn", "IsSecret", "NonEmpty", "Now", "Locale", "Print", "PrintRaw", "Debug",
   "DebugChanged", "Debugging", "Plural", "N", "Run", "After", "Debounce", "ReportError", "CanonicalName",

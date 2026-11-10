@@ -38,6 +38,8 @@ export function readVersions(root) {
   // Each bundled mod (mods/wow/<id>/mod.json, `kind: "addon"` or `kind: "agent"`) versions with the
   // agent, and so does each addon folder it installs (its TOC; an agent mod has none).
   for (const [where, version] of modVersions(root)) found[where] = version;
+  // An addon reads its version from its TOC in game. A copy written into its Lua has to agree too.
+  for (const [where, version] of luaVersions(root)) found[where] = version;
   // tauri.conf.json falls back to the crate's version; if it ever names one, it must agree.
   const tauri = JSON.parse(read("agent/app/src-tauri/tauri.conf.json"));
   if (tauri.version !== undefined) found["agent/app/src-tauri/tauri.conf.json"] = tauri.version;
@@ -61,6 +63,30 @@ export function modVersions(root) {
       out.push([toc, existsSync(join(root, toc)) ? tocVersion(readFileSync(join(root, toc), "utf8")) : null]);
     }
   }
+  return out;
+}
+
+/**
+ * Every `ns.VERSION = "…"` written into an addon's own Lua (the core's and each mod's addon
+ * folders, not their tests), by where it is. None is the healthy answer: the addons read their TOC.
+ * One that exists is a second copy, and the core's sat at 0.3.2 while its TOC said 0.3.9.
+ */
+export function luaVersions(root) {
+  const out = [];
+  const walk = (dir) => {
+    if (!existsSync(join(root, dir))) return;
+    for (const e of readdirSync(join(root, dir), { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name.endsWith(".lua")) {
+        const m = /^[ \t]*ns\.VERSION\s*=\s*["']([^"']*)["']/m.exec(readFileSync(join(root, p), "utf8"));
+        if (m) out.push([p, m[1] || null]);
+      }
+    }
+  };
+  walk(join("cores", "wow", "addon"));
+  const mods = join("mods", "wow");
+  if (existsSync(join(root, mods))) for (const id of readdirSync(join(root, mods)).sort()) walk(join(mods, id, "addon"));
   return out;
 }
 

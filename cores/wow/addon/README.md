@@ -565,9 +565,9 @@ global `Ryna` (`Mods.lua`, where every function is described), never the core's 
 
 `luacheck cores/wow/addon/ mods/wow/ --config cores/wow/addon/.luacheckrc` from the repository root,
 and `node cores/wow/addon/tools/strings.mjs` checks the translatable strings of both addons (see
-"Translating Ryna"). Each addon's version is in two places, `## Version` in its `.toc` and
-`ns.VERSION` (Ryna's `Core.lua`, Chronicle's `Mod.lua`); change them together (Chronicle's also in
-its `mod.json`; `scripts/check-versions.mjs` holds them all to the release's).
+"Translating Ryna"). Each addon's version is `## Version` in its `.toc`, and `ns.VERSION` reads it
+in game; no Lua carries a copy (a mod's is also in its `mod.json`; `scripts/check-versions.mjs`
+holds them all to the release's, and a copy written into Lua with them).
 
 ### Advanced combat logging
 
