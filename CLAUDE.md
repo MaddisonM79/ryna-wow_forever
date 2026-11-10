@@ -69,5 +69,10 @@ Agent (`.github/workflows/agent.yml`): `cargo fmt --all --check`, `cargo clippy 
   `agent/README.md` ("Releasing").
 - **Commit subjects** start with the area: `chronicle: ...`, `prices mod: ...`, `core: ...`,
   `app: ...`, `docs: ...`. Push straight to main unless the work came in on a PR branch.
+- **`main` and `v*` tags are behind rulesets** (2026-11-10): only admins push or merge to main,
+  every commit on it is signed (an unsigned push is refused: 1Password is probably locked, tell
+  Maddison), only admins create a `v*` tag, nobody moves or deletes one, and a published release
+  is never changed. `agent/README.md` "Who can release" has the whole of it. Every `uses:` is
+  pinned to a commit SHA; Dependabot opens PRs on Tuesdays.
 
 <!-- global: v2, reviewed 2026-11-08 -->
