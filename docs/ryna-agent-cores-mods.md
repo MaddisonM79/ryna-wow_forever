@@ -977,11 +977,52 @@ objects["1731"] = { n = 5, last = …, zone = "Elwynn Forest", zones = { ["Elwyn
 - **Objects:** `countSource` adds the same way.
 - With the `chronicle` setting off, nothing is counted, as today.
 
-**4. Totals from before the change.**
-- Nothing is backfilled or guessed.
-- The difference `n − sum(zones)` is shown as its own line, "before zones were tracked". Once an entry hits the
-  8-zone cap, the line reads "earlier or elsewhere", because the dropped zones fall into it too.
-- Picking a zone filters to entries with `zones[that zone]`. That one number is honest: it is "since the update".
+**4. Totals from before the change: placed from the combat logs where they exist, never guessed.**
+
+The API keeps no history of the tallies (each sync replaces `wow_kills`), so the only record of where an earlier
+kill happened is the player's own combat logs, still on their Mac in `_forever_/Logs`. A log marks every kill
+(`PARTY_KILL`: who landed the blow, the creature's GUID and so its npc id) and every zone change (`ZONE_CHANGE`).
+The agent's parser (`cores/wow/core/src/combat/parse.rs`) already reads all of it: `PARTY_KILL`, `ZONE_CHANGE`,
+the affiliation flags, and line times with their offset.
+
+Measured on Maddison's Mac on 2026-11-10:
+- 26 log files, from Nov 6 to Nov 10.
+- **Player-6933-01A402F3:** the logs place 413 of 690 counted kills (60%), across 3 zones.
+- **Player-6933-016102AC:** the logs place 96 of 108 (89%), in 1 zone.
+- 359 kills in the logs were credited to party members. Chronicle counts every kill that gave the player
+  experience, while the log credits only the killing blow, so counting party kills while grouped should close most
+  of the first character's gap.
+
+**The backfill:**
+- **When.** It is a one-time job per character, run by the agent with the game closed. It writes the save file the
+  same way 7.2's settings copy between characters does, so the counts show in game straight away.
+- **Which kills.** The addon stamps `zonesSince` on the character the first time it counts a zone. Only log lines
+  before that time are used, so nothing is counted twice.
+- **Matching.** A kill is the character's when the blow's source is the character, or a party or raid member
+  (`AFFILIATION_PARTY | AFFILIATION_RAID`) while the character was logging. Each kill is put in the zone of the
+  `ZONE_CHANGE` before it.
+- **How much is placed.** Per creature, the logs' zone split is applied to the earlier count `n − sum(zones)`,
+  never placing more than that.
+- **Where it is kept.** The result goes in its own map, `logZones = { [zone] = n }`, beside `zones`. The record can
+  then always tell what was counted live from what was placed from logs, and the window can say so in a tooltip
+  ("12 here, 4 of them placed from your combat logs").
+- **Record of the run.** `RynaDB.characters[guid].zonesBackfill = { at, files, placed }`. A character that has one
+  is never backfilled again.
+- **Kills only.** The logs don't record loot or objects.
+- **Not guessed from the pool.** The pool could guess that every creature ever seen in one zone was killed there.
+  That is probably right, but it is a guess, and the logs are records. So the pool isn't used for this.
+
+**What still can't be placed** (kills from before logging was on, logs the player deleted, or the dungeon-only
+default of `combatLog = "instances"` missing world kills, which will be most players) stays on one line:
+- **"Earlier travels"**, with a tooltip "counted before Ryna kept zones". This is recommended; the alternatives are
+  "Before Ryna kept zones" or "From before zones were tracked".
+- Once an entry hits the 8-zone cap, the line takes in the dropped zones too, and the tooltip says "or in other
+  zones".
+
+**Picking a zone** shows `zones[z] + logZones[z]`, with the log-placed part named in the tooltip.
+
+**Check first.** `ZONE_CHANGE`'s name is assumed to be the same text as `GetRealZoneText`. Check this on a real
+log before building; if it's ever the subzone, fold it up through the same `areas` lookup the census uses.
 
 **5. In game first (7.5).** Recommended:
 - **Kills and Loot sections:** a zone picker beside the search ("All zones", "This zone", then the zones the
@@ -1034,6 +1075,8 @@ plus the "before zones were tracked" line. The pure filter and remainder helpers
    ignores `zones` until step 2.
 2. API migration, ingest and reads, deployed before the portal.
 3. Portal picker.
+4. The combat-log backfill in the agent (and the app's button for it), after the addon has stamped `zonesSince`
+   on a character. The API takes `logZones` like `zones` (one more JSON column, the same checks).
 
 The next agent sync after step 2 fills the columns from the addon's saved counts, so nothing is lost between
 steps.
@@ -1045,7 +1088,10 @@ steps.
    (from the journal's `zone` events). It would be the full answer to "keeps track in each zone", and a stage of
    its own.
 2. **Loot by zone:** yes, drops only (recommended); also pieces (`qty`); or kills only.
-3. **The remainder's wording:** "before zones were tracked" or something warmer.
+3. **The remainder's wording:** "Earlier travels" (recommended), "Before Ryna kept zones", or "From before zones
+   were tracked".
+5. **The backfill's trigger:** the agent runs it by itself the first time it sees `zonesSince` (recommended:
+   nothing to click, and it only ever adds), or a button in the app.
 4. **Release:** with the next Chronicle release, or its own.
 
 #### Not decided here
