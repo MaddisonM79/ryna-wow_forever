@@ -29,3 +29,8 @@ updates:
     commit-message: { prefix: "app" }
     groups:
       app: { patterns: ["*"], update-types: [minor, patch] }
+    ignore:
+      # vue-tsc can't run on TypeScript 7 yet (ERR_PACKAGE_PATH_NOT_EXPORTED for typescript/lib/tsc,
+      # PR #13, 2026-11-10). Drop this when a vue-tsc release supports 7.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
