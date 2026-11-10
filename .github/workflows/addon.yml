@@ -14,12 +14,15 @@ jobs:
   luacheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install luacheck
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q lua5.1 luarocks
-          sudo luarocks install luacheck
+          # Pinned, its dependencies too: the versions CI installed unpinned on 2026-11-09.
+          sudo luarocks install argparse 0.7.2-1
+          sudo luarocks install luafilesystem 1.9.0-1
+          sudo luarocks install luacheck 1.2.0-1
       # Both addons: the core's and every mod's (Ryna_Chronicle first).
       - run: luacheck cores/wow/addon/ mods/wow/ --config cores/wow/addon/.luacheckrc --no-color
       - name: Every addon file parses as Lua 5.1

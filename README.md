@@ -122,8 +122,11 @@ only its last four characters go along as a label, so you can tell two accounts 
 
 The census is the other players your characters see: nearby (nameplates, target, mouseover), in
 chat (who spoke, never what), in your group and guild, and in the answers to a `/who` you type
-yourself. Ryna never sends `/who` on its own. The census is about everyone and names no one in its
-numbers. Looking up a character by name on ryna.io shows what `/who` would: name, level, class,
+yourself. Ryna never sends `/who` on its own. Your own characters never go to it: that means every
+character Ryna has recorded on this computer, on any of your game accounts and installs (every
+character that has logged in there, by its folder in the game's `WTF`), so one of your characters
+seen by another of yours is left out like any other of yours. The census is about
+everyone and names no one in its numbers. Looking up a character by name on ryna.io shows what `/who` would: name, level, class,
 guild, and the zone (never the subzone), with when it was last seen only as "today", "this week",
 "this month" or "older", never a time of day. There are no per-character views of hours or days;
 those exist only as totals across all players. Every lookup is logged for the operator, so someone

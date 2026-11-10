@@ -1,8 +1,10 @@
 // What `pnpm tauri build` adds to tauri.conf.json for this build, from what exists here and
 // now: the updater's public key (agent/app/updater.pub), whether to make signed updater
 // artifacts (only with TAURI_SIGNING_PRIVATE_KEY too), and Windows code signing (only with the
-// Azure Artifact Signing names). With none of it the build is the plain unsigned one, which
-// can't update itself and says so. scripts/tauri.mjs passes the result as `--config <json>`.
+// Azure Artifact Signing names). updater.pub is tracked, so every clone's build carries the
+// production public key and will offer production-signed updates; only with the file gone is
+// the build one that can't update itself and says so. scripts/tauri.mjs passes the result as
+// `--config <json>`.
 
 /** Azure Artifact Signing (formerly Trusted Signing): what names the certificate profile. */
 export const AZURE_NAMES = [

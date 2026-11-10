@@ -39,16 +39,17 @@ pub const LOGIN_FINISHED: &str = "login-finished";
 
 /// The device client id: `RYNA_CLIENT_ID` when it is set where the app runs, else one baked
 /// in at compile time (`RYNA_CLIENT_ID` in the build's environment), else the core's
-/// placeholder, which `login` refuses. API and issuer come from the core (env overrides).
-pub fn config() -> Config {
-    let mut config = Config::resolve(None, None);
+/// placeholder, which `login` refuses. API and issuer come from the core (env overrides), which
+/// refuses a cleartext one: the app then doesn't start, and says which variable.
+pub fn config() -> Result<Config, String> {
+    let mut config = Config::resolve(None, None).map_err(|e| e.to_string())?;
     let baked = option_env!("RYNA_CLIENT_ID")
         .map(str::trim)
         .filter(|id| !id.is_empty());
     if let (false, Some(id)) = (config.client_id_issued(), baked) {
         config.client_id = id.to_string();
     }
-    config
+    Ok(config)
 }
 
 /// The code to show the person, and where to check it: the core's `DeviceLogin` (less the
@@ -1108,10 +1109,13 @@ mod tests {
     fn fake_context() -> CoreContext {
         CoreContext {
             state_dir: PathBuf::from("/nowhere"),
-            tokens: Arc::new(KeychainTokens::new(Config::resolve(
-                Some("https://api.test".into()),
-                Some("https://idp.test".into()),
-            ))),
+            tokens: Arc::new(KeychainTokens::new(
+                Config::resolve(
+                    Some("https://api.test".into()),
+                    Some("https://idp.test".into()),
+                )
+                .unwrap(),
+            )),
             device_key: None,
             game_folder: None,
         }

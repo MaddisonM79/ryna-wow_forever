@@ -81,8 +81,22 @@ fn install_at(app: &AppHandle, path: &str) -> Result<Install, String> {
         .ok_or_else(|| format!("{path} isn't an install Ryna works in."))
 }
 
+/// `account` as the window sent it, only when it is exactly one of the account folders the install
+/// lists (`inventory::accounts`): the webview never names a folder of its own.
+fn listed_account(i: &Install, account: &str) -> Result<(), String> {
+    if inventory::accounts(i).iter().any(|a| a == account) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{account:?} isn't an account folder in {}.",
+            i.path.display()
+        ))
+    }
+}
+
 fn inventory_of(app: &AppHandle, install: &str, account: &str) -> Result<Inventory, String> {
     let i = install_at(app, install)?;
+    listed_account(&i, account)?;
     inventory::inventory(&i, account).map_err(|e| format!("{e:#}"))
 }
 
@@ -242,6 +256,9 @@ pub fn restore(
 ) -> Result<RestoreReport, String> {
     require_on(app)?;
     let i = install_at(app, install)?;
+    // `backup::account_for` matches it against the listed folders too; checked here first so the
+    // window's string never reaches the core unless it is one of them.
+    listed_account(&i, account)?;
     let mut progress = emit(app);
     let opts = RestoreOptions {
         account: Some(account),
@@ -263,6 +280,30 @@ pub fn delete(app: &AppHandle, id: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_listed_account_folder_is_taken_from_the_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("_forever_");
+        std::fs::create_dir_all(p.join("WTF/Account/ACCOUNT1")).unwrap();
+        std::fs::create_dir_all(p.join("WTF/Account/SavedVariables")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Elsewhere/Realm/Name")).unwrap();
+        let i = Install {
+            path: p,
+            flavor: Some("wowf".into()),
+        };
+        assert!(listed_account(&i, "ACCOUNT1").is_ok());
+        for bad in [
+            "../../../Elsewhere",
+            "ACCOUNT1/../ACCOUNT1",
+            "account1",
+            "SavedVariables",
+            "",
+            "NOPE",
+        ] {
+            assert!(listed_account(&i, bad).is_err(), "{bad}");
+        }
+    }
 
     #[test]
     fn errors_read_as_sentences() {

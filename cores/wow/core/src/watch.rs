@@ -9,7 +9,7 @@
 //! let stop = cancel.clone();
 //! let (tx, rx) = std::sync::mpsc::channel();
 //! let worker = std::thread::spawn(move || {
-//!     let config = Config::resolve(None, None);
+//!     let config = Config::resolve(None, None).expect("https endpoints");
 //!     let opts = WatchOptions::new(None, Duration::from_secs(60)).expect("a state folder");
 //!     watch(&config, &opts, &stop, &mut |event| { let _ = tx.send(event); })
 //! });

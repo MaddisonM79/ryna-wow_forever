@@ -92,8 +92,10 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        // Always registered: a build without a key has an empty pubkey, and `updates` never
-        // calls it then.
+        // Always registered. `agent/app/updater.pub` is tracked, so every build through
+        // `pnpm tauri` (dev or build, from any clone) carries the production public key and will
+        // offer production-signed releases; only a plain `cargo build`, which reads
+        // tauri.conf.json alone, has an empty pubkey, and `updates` never calls it then.
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Off until the person turns it on in Settings. On macOS it's a login item (through
         // System Events), not a launchd job: the app opens at login, nothing else runs.
@@ -109,7 +111,7 @@ fn main() {
                 .build(),
         )
         .setup(|app| {
-            let config = agent::config();
+            let config = agent::config().inspect_err(|e| eprintln!("ryna: {e}"))?;
             let signed_in = agent::signed_in(&config);
             app.manage(agent::Agent::new(config, app.path().app_config_dir().ok()));
             app.manage(updates::Updates::default());

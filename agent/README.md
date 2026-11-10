@@ -294,14 +294,19 @@ build can't be passed off as a new one). `pnpm tauri …` runs `app/scripts/taur
 this build's additions into `tauri.conf.json` as `--config <json>` (`app/scripts/release-config.mjs`
 decides them, and prints a `[ryna]` line for each):
 
+`app/updater.pub` is tracked in git (it's a public key, and the release workflow needs it), so
+every clone builds with the production public key: a local `pnpm tauri dev` or `pnpm tauri build`
+checks this repository's releases and will offer, and install, the production-signed ones like any
+installed copy.
+
 | What exists | What the build gets |
 |---|---|
-| no `app/updater.pub` | an empty `pubkey`: the app never checks, and its button says "Updates aren't set up in this build" |
-| `app/updater.pub` | the key, so the app can update itself |
+| `app/updater.pub` (every clone) | the production key, so the app can update itself from this repository's releases |
+| no `app/updater.pub` (only if you delete it) | an empty `pubkey`: the app never checks, and its button says "Updates aren't set up in this build" |
 | `app/updater.pub` and `TAURI_SIGNING_PRIVATE_KEY` | also `createUpdaterArtifacts` (and the `app` target on macOS): `Ryna.app.tar.gz` + `.sig`, the NSIS installer's `.sig`, or the AppImage's `.sig` |
 | all six Azure values (below) | `bundle.windows.signCommand`: `artifact-signing-cli` signs the exe and the installer, before the updater signs the installer |
 
-A plain `cargo build -p ryna-wow-app` reads `tauri.conf.json` alone, so it's always the build
+A plain `cargo build -p ryna-wow-app` reads `tauri.conf.json` alone, so it's the one build
 without a key.
 
 ## Releasing
@@ -373,6 +378,12 @@ cargo tauri signer generate -w ~/.tauri/ryna.key     # asks for a password; writ
 Store both halves (and the password) in 1Password. Put the private key's contents in the
 `TAURI_SIGNING_PRIVATE_KEY` secret and the password in `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Copy
 `ryna.key.pub` to `agent/app/updater.pub` and commit only that file. Then delete the local copies.
+
+The private key can't be replaced for builds already shipped: each installed copy trusts only the
+public key it was built with, so an update signed by any other key is refused. Losing it strands
+every installed copy on the version it has, and each person would have to download and reinstall
+by hand. It is kept in two places, the repository's Actions secrets and Maddison's password
+manager; keep both.
 
 ## Use (developers)
 

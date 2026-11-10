@@ -203,6 +203,16 @@ pub fn install_named(source: &Path, install: &Install, name: &str) -> Result<Pat
     let target = addons.join(name);
     let staging = addons.join(format!(".{name}.installing"));
     let old = addons.join(format!(".{name}.old"));
+    // An earlier install that couldn't put the previous addon back left it as `.<name>.old` with no
+    // `<name>`: that copy is the addon now (its Data/ too), so it goes back before anything else.
+    if !target.exists() && old.is_dir() {
+        std::fs::rename(&old, &target).with_context(|| {
+            format!(
+                "{} is the previous addon, left by an install that failed; rename it to {name} by hand",
+                old.display()
+            )
+        })?;
+    }
     for leftover in [&staging, &old] {
         if leftover.exists() {
             std::fs::remove_dir_all(leftover)
@@ -217,12 +227,9 @@ pub fn install_named(source: &Path, install: &Install, name: &str) -> Result<Pat
         std::fs::rename(&target, &old)
             .with_context(|| format!("moving the old addon aside in {}", addons.display()))?;
     }
-    if let Err(e) = std::fs::rename(&staging, &target) {
-        if old.exists() {
-            let _ = std::fs::rename(&old, &target);
-        }
-        return Err(e).with_context(|| format!("putting the addon in {}", target.display()));
-    }
+    swap_in(&staging, &target, &old, &|from, to| {
+        std::fs::rename(from, to)
+    })?;
     if old.exists() {
         // The core's Data/ folder is the agent's, not the release's (prices_data): carry it over,
         // so a reinstall doesn't lose the pooled prices until the next sync. The stubs the release
@@ -241,6 +248,42 @@ pub fn install_named(source: &Path, install: &Install, name: &str) -> Result<Pat
         std::fs::remove_dir_all(&old).with_context(|| format!("removing {}", old.display()))?;
     }
     Ok(target)
+}
+
+/// Move `staging` to `target`, where the previous addon (if any) already sits aside as `old`. When
+/// that fails, `old` is put back; when that fails too, the error keeps the first failure and says
+/// where the previous addon is now and how to restore it, since the folder is then missing.
+fn swap_in(
+    staging: &Path,
+    target: &Path,
+    old: &Path,
+    rename: &dyn Fn(&Path, &Path) -> std::io::Result<()>,
+) -> Result<()> {
+    let Err(e) = rename(staging, target) else {
+        return Ok(());
+    };
+    let first = format!("putting the addon in {} failed: {e}", target.display());
+    if !old.exists() {
+        bail!("{first}");
+    }
+    match rename(old, target) {
+        Ok(()) => bail!("{first}; the previous addon was put back as it was"),
+        Err(back) => bail!(
+            "{first}; putting the previous addon back failed too ({back}){}: the previous one is \
+             at {old} (rename that folder to {name}, in the same folder, to restore it; the next \
+             install puts it back first if {name} is still missing)",
+            if target.exists() {
+                ""
+            } else {
+                ", so there is no addon folder now"
+            },
+            name = target
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            old = old.display(),
+        ),
+    }
 }
 
 /// Remove `install`'s `Interface/AddOns/<name>` (a mod's folder; never the core's own). Returns
@@ -402,6 +445,79 @@ mod tests {
             assert!(remove_named(&inst, refused).is_err(), "{refused}");
         }
         assert!(has_addon(&inst));
+    }
+
+    #[test]
+    fn a_failed_swap_says_where_the_previous_addon_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let addons = dir.path();
+        let staging = addons.join(".Ryna.installing");
+        let target = addons.join("Ryna");
+        let old = addons.join(".Ryna.old");
+        std::fs::create_dir_all(&staging).unwrap();
+        std::fs::create_dir_all(&old).unwrap();
+        let refuse = |_: &Path, _: &Path| -> std::io::Result<()> {
+            Err(std::io::Error::other("disk says no"))
+        };
+        // Both renames fail: the first error is kept, and the way back is spelled out.
+        let e = swap_in(&staging, &target, &old, &refuse)
+            .unwrap_err()
+            .to_string();
+        assert!(e.starts_with("putting the addon in "), "{e}");
+        assert!(e.contains("failed: disk says no"), "{e}");
+        assert!(
+            e.contains("putting the previous addon back failed too"),
+            "{e}"
+        );
+        assert!(e.contains(&old.display().to_string()), "{e}");
+        assert!(e.contains("rename that folder to Ryna"), "{e}");
+        // Only the first fails: the previous addon is back, and the error says so.
+        let calls = std::cell::Cell::new(0);
+        let once = |from: &Path, to: &Path| {
+            calls.set(calls.get() + 1);
+            if calls.get() == 1 {
+                Err(std::io::Error::other("disk says no"))
+            } else {
+                std::fs::rename(from, to)
+            }
+        };
+        let e = swap_in(&staging, &target, &old, &once)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("put back as it was"), "{e}");
+        assert!(target.is_dir() && !old.exists());
+        // Nothing aside (a first install): just the first failure.
+        let e = swap_in(
+            &staging,
+            &addons.join("New"),
+            &addons.join(".New.old"),
+            &refuse,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.ends_with("failed: disk says no"), "{e}");
+    }
+
+    #[test]
+    fn a_stranded_previous_addon_is_put_back_before_the_next_install() {
+        // A failed rollback left `.Ryna.old` (with the agent's Data/) and no `Ryna`.
+        let dir = tempfile::tempdir().unwrap();
+        let src = addon(dir.path());
+        let install = Install {
+            path: dir.path().join("_forever_"),
+            flavor: Some("wowf".into()),
+        };
+        let addons = install.path.join("Interface/AddOns");
+        let stranded = addons.join(".Ryna.old");
+        std::fs::create_dir_all(stranded.join(crate::prices_data::DIR)).unwrap();
+        std::fs::write(stranded.join(crate::prices_data::DIR).join("kept.lua"), "x").unwrap();
+        let target = install_named(&src, &install, ADDON_NAME).unwrap();
+        assert!(target.join("Core.lua").is_file());
+        assert_eq!(
+            std::fs::read_to_string(target.join(crate::prices_data::DIR).join("kept.lua")).unwrap(),
+            "x"
+        );
+        assert!(!stranded.exists());
     }
 
     #[test]
