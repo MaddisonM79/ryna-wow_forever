@@ -1318,6 +1318,14 @@ is the manifest, the setting and one row, with no change to the judgment.
   minimum sooner, by her word.
 - **Channels later, shape now**: the first build keys the policy by channel and sends
   `channel: "stable"`; beta is stage 4, its own release.
+- **The marks are a D1 table she can change quickly** (Maddison, 2026-11-10, later the same day: "i
+  would like to make the [versions] a DB table for me to be able to control that quickly if needed"):
+  `wow_version_policy` in the `api` D1, one row per versioned thing and channel (`ryna`/`stable` today),
+  with who changed it and when. Nothing caches it on the server, so an edit holds from the next call;
+  a running app sees it at its next heartbeat (about a minute). Two ways to change it: the Admin page
+  (audited), and for an emergency a plain SQL `UPDATE`, written out in the api repo's `docs/wow.md`
+  section 18. Every read checks the row, and a malformed one counts as no policy (everyone supported),
+  never a lockout. The seed supports every released version; she sets the first real marks.
 - **The wording is the plain one above**, the same sentence in the app, the game and the portal:
   reduced, "This version of Ryna is getting old. Your characters still sync, but what you add to
   everyone's census and prices is paused until you update."; unsupported, "This version of Ryna is no
