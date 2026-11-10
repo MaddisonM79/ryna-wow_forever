@@ -719,14 +719,18 @@ What the portal adds is what a game window can't do well: every set served by th
 charts over time, the same view across accounts and for the people a profile is shared with, and
 room to browse. It is where most looking will happen; the addon is why anyone installs.
 
-**One window.** Chronicle already has the window (`RynaChronicleWindow`: Session, Kills, Loot,
-Levels, a search box, and lists that fill only the rows on screen, so 2,000 creatures cost what 15
-do). It moves into the core as `Ryna.Window`, beside `Ryna.Panel`:
+**One window.** Chronicle had the window (`RynaChronicleWindow`: Session, Kills, Loot, Levels, a
+search box, and lists that fill only the rows on screen, so 2,000 creatures cost what 15 do). It
+moved into the core as `Ryna.Window`, beside `Ryna.Panel` (built 2026-11-09):
 
-- One frame. A rail of sections down the left, tabs inside a section, one search box, Escape closes.
-- A mod registers a section: `Ryna.Window.AddSection({ key, label, order, tabs = { { key, label,
-  columns, rows = function(filter) … end, tooltip = function(row) … end } } })`. The core owns the
-  frame, the virtual list, sorting, the search box and the row tooltip; a mod supplies rows.
+- One frame. A rail of sections down the left, one header (title, character picker, search box),
+  Escape closes.
+- A mod registers a section: `Ryna.Window.AddSection({ key, group, label, order, characters, columns,
+  rows = function(ctx) … end, fill, tiles, tooltip, click, footer, version })`, where `ctx` carries the
+  chosen character (or all) and the search text. The core owns the frame, the virtual list, sorting,
+  the picker, the search box and the row tooltip; a mod supplies rows. As built (2026-11-09): a section
+  is one list (no tabs inside a section); the spec is at the top of `cores/wow/addon/Ryna/Window.lua`
+  and in `cores/wow/addon/README.md`, "Ryna's window".
 - Chronicle registers its four tabs as one section, unchanged, and its journal sections
   ("Collections", "Dungeons", later "Quests") when their settings are on. Prices can add "Auctions"
   over its own snapshot. The panel (`/ryna`) stays for settings; the window is for data.
@@ -835,13 +839,13 @@ pages):
 
 | Feature | In game today | Portal today | Owed in game |
 |---|---|---|---|
-| Session numbers | Strip; Session tab | none | Nothing |
-| Kills and loot, this character | Kills and Loot tabs; tooltip lines | Character, Chronicle | The same for every character on the account |
+| Session numbers | Strip; Session section | none | Nothing |
+| Kills and loot, this character | Kills and Loot sections, any character on the account by the picker; tooltip lines | Character, Chronicle | Nothing (an account-wide total is a later choice) |
 | Pooled drop rates and kill counts | Nothing | Chronicle, Items | Rates on the Loot and Kills rows and on tooltips, from the data layer |
-| The character record: level, gold, played, gear, professions, reputations | Nothing | Characters, Character | A **Characters** section: every character on the account at a glance, and each one's detail |
-| Bags and bank | Nothing | Bags, Items search | An **Items** search across every character, and a tooltip line ("Maddiepally: 12 in the bank") |
+| The character record: level, gold, played, gear, professions, reputations | **Characters** section (built 2026-11-09): every character at a glance, each one's detail | Characters, Character | Nothing |
+| Bags and bank | **Items** section (built 2026-11-09) across every character, and the tooltip line ("Maddiepally: 12 in the bank") | Bags, Items search | Nothing |
 | Quests | Nothing | Quests | 7.4's Quests section; the completed count per character meanwhile |
-| History: levels, deaths, zones, sessions | Levels tab only | History, Trends | A **History** tab: deaths, zones, sessions by day, with the week's totals |
+| History: levels, deaths, zones, sessions | **History** section, levels only | History, Trends | A **History** tab: deaths, zones, sessions by day, with the week's totals |
 | Census | Four checkboxes | Population | A **Census** section in two halves, Maddison's words for them: **Your contributions** (what this account has seen and sent: counts by faction, class and level band, never names) and **Global contributions** (the realm's pooled picture, from a data file) |
 | Guild roster | Nothing (the game's own guild pane) | Guilds | With the guild stage |
 | Fights | Nothing | Logs, Fight | A **Fights** section in the manner of Details (below) |

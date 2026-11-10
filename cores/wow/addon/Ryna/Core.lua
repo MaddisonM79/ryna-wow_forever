@@ -267,6 +267,8 @@ end)
 --                   on/off lines in chat; off, Ryna prints nothing it wasn't asked for (Maddison, 2026-11-08)
 --   debug           print what the addon is doing to chat (ns.Debug)
 --   minimap         { shown = true, angle = <degrees> } for the minimap button
+--   window          { point, relativePoint, x, y, section } for Ryna's window (Window.lua): where it
+--                   was dragged to and the section it was last on; Defaults keeps it
 --   panelTab        the options panel's selected tab ("status", "recording", "census", "messages",
 --                   "mods", "advanced"; a mod's tabs too); Panel.lua checks it and falls back to
 --                   "status", and Defaults keeps it
@@ -289,6 +291,7 @@ function ns.ApplySettingDefaults(settings)
   local mm = settings.minimap
   if type(mm.shown) ~= "boolean" then mm.shown = true end
   if type(mm.angle) ~= "number" then mm.angle = ns.MINIMAP_DEFAULT_ANGLE end
+  if type(settings.window) ~= "table" then settings.window = {} end
 end
 
 -- One spelling for a character's full name wherever it came from: the client hands chat senders

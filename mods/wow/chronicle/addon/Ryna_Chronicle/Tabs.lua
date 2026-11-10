@@ -1,7 +1,8 @@
 -- Tabs: Chronicle's two tabs in the core's panel (Ryna.Panel.AddTab), Recording and Census, built
 -- with the core's widgets (Ryna.Panel.Widgets). The combat-log controls are the core's (its
--- Advanced tab). Recording also has the merchants switch (Merchants.lua), the session strip's
--- settings, and opens the Chronicle window.
+-- Advanced tab). Recording also has the merchants switch (Merchants.lua), the tooltip line naming
+-- the characters that hold an item (Items.lua), the session strip's settings, and opens Ryna's
+-- window (Window.lua; not there with a core too old for it).
 
 local _, ns = ...
 if ns.off then return end
@@ -31,16 +32,20 @@ function build.recording(f)
     L["Adds your own kills and drops to creature and item tooltips: how many you killed, what they dropped "
     .. "for you and how often."])
   toggle(P.tooltips, "tooltips")
+  P.holders = checkbox(f, L["Show which of my characters hold an item"],
+    L["One more line on item tooltips naming your other characters that hold it, and how many, in their "
+    .. "bags or the bank, from your saved file: \"Alyra: 120 in the bank · Brennic: 34\"."])
+  toggle(P.holders, "tooltipHolders")
   P.merchants = checkbox(f, L["Record the merchants I visit"],
     L["When you open a merchant, records what that NPC sells and for how much, once per NPC each time you "
     .. "log in, for vendor prices on ryna.io. Merchants are NPCs: nothing here is about a player."])
   toggle(P.merchants, "merchants")
-  -- In game: the session strip (Strip.lua) and the Chronicle window (Window.lua).
+  -- In game: the session strip (Strip.lua) and Ryna's window (Window.lua).
   P.liveHeader = text(f, "GameFontNormal")
   P.liveHeader:SetText(L["In game"])
   P.strip = checkbox(f, L["Show the session strip"],
     L["One line on screen with this session's kills, experience and money per hour, quests and time. "
-    .. "Hover it for more; click it for the Chronicle window."])
+    .. "Hover it for more; click it for Ryna's window."])
   toggle(P.strip, "sessionStrip", function() ns.Strip.Apply() end)
   P.stripLock = checkbox(f, L["Lock the strip"],
     L["Unlocked, Shift-drag moves it. Right-clicking the strip locks or unlocks it too."])
@@ -49,13 +54,15 @@ function build.recording(f)
   if P.stripReset then
     P.stripReset:SetScript("OnClick", function() ns.Run("session strip", ns.Strip.ResetPosition) end)
   end
-  P.openWindow = button(f, L["Open the Chronicle window"], 220, 22)
-  if P.openWindow then
-    P.openWindow:SetScript("OnClick", function() ns.Run("chronicle window", ns.Window.Open) end)
+  if ns.Window and ns.Window.available then
+    P.openWindow = button(f, L["Open Ryna's window"], 220, 22)
+    if P.openWindow then
+      P.openWindow:SetScript("OnClick", function() ns.Run("ryna window", ns.Window.Open, "session") end)
+    end
+    P.windowHint = text(f, "GameFontDisableSmall", 10)
+    P.windowHint:SetText(L["Also /chronicle. Your session, your characters, everything in their bags and banks, "
+      .. "your kills with their drops, your loot and your levels."])
   end
-  P.windowHint = text(f, "GameFontDisableSmall", 10)
-  P.windowHint:SetText(L["Also /chronicle. Your session, your kills with their drops, your loot and your "
-    .. "levels, in its own window."])
 end
 
 function layout.recording(s, settings)
@@ -64,6 +71,9 @@ function layout.recording(s, settings)
   P.chronicle.place(s, 4)
   P.tooltips:SetChecked(settings.tooltips)
   P.tooltips.place(s, 4)
+  P.holders:SetChecked(settings.tooltipHolders)
+  P.holders.setActive(settings.tooltips)
+  P.holders.place(s, 30)
   P.merchants:SetChecked(settings.merchants)
   P.merchants.place(s, 4)
   s.text(P.liveHeader, 0, 6)
@@ -81,7 +91,7 @@ function layout.recording(s, settings)
       s.add(P.openWindow, 22, 8, 8)
     end
   end
-  s.text(P.windowHint, 8, 6)
+  if P.windowHint then s.text(P.windowHint, 8, 6) end
 end
 
 function build.census(f)

@@ -152,7 +152,7 @@ L["Deaths"] = true
 -- The tooltip's list of creatures killed most this session: "Kobold Vermin   12 (480 XP)".
 L["Top kills this session"] = true
 L["%s (%s XP)"] = true
-L["Click: the Chronicle window. Right-click: lock or unlock."] = true
+L["Click: Ryna's window. Right-click: lock or unlock."] = true
 L["Shift-drag to move."] = true
 -- Printed in chat ("Ryna: the session strip is locked. ...") when the strip is right-clicked.
 L["the session strip is locked. Right-click it to unlock."] = true
@@ -161,26 +161,35 @@ L["the session strip is unlocked: Shift-drag to move it."] = true
 L["In game"] = true
 L["Show the session strip"] = true
 L["One line on screen with this session's kills, experience and money per hour, quests and time. "
-  .. "Hover it for more; click it for the Chronicle window."] = true
+  .. "Hover it for more; click it for Ryna's window."] = true
 L["Lock the strip"] = true
 L["Unlocked, Shift-drag moves it. Right-clicking the strip locks or unlocks it too."] = true
 -- A button: the strip back to its default place (top of the screen).
 L["Reset position"] = true
--- The Recording tab's button that opens the Chronicle window, and the line under it.
-L["Open the Chronicle window"] = true
-L["Also /chronicle. Your session, your kills with their drops, your loot and your "
-  .. "levels, in its own window."] = true
--- The Chronicle window: its title (the mod's name) and its four tabs.
-L["Chronicle"] = true
+-- The Recording tab's button that opens Ryna's window (the core's one window, where Chronicle's
+-- sections are), and the line under it.
+L["Open Ryna's window"] = true
+L["Also /chronicle. Your session, your characters, everything in their bags and banks, "
+  .. "your kills with their drops, your loot and your levels."] = true
+-- The Recording tab's setting for the tooltip line naming your other characters that hold an item.
+-- The names in the example are made up.
+L["Show which of my characters hold an item"] = true
+L["One more line on item tooltips naming your other characters that hold it, and how many, in their "
+  .. "bags or the bank, from your saved file: \"Alyra: 120 in the bank · Brennic: 34\"."] = true
+-- Chronicle's sections in Ryna's window (its rail, under Me).
 L["Session"] = true
+L["Characters"] = true
+L["Items"] = true
 L["Loot"] = true
-L["Levels"] = true
--- The Session tab: the column heading over its numbers, "Since" (when the session started), and the
--- heading over this session's kills.
+L["History"] = true
+-- The Session section: the column heading over its numbers, "Since" (when the session started), and
+-- the heading over this session's kills.
 L["This session"] = true
 L["Since"] = true
 L["Kills this session"] = true
--- The Kills tab's columns: creature, kills, experience, the zone of the last kill, when ("2 hours ago").
+-- The Kills section's tiles (how many kinds of creature) and columns: creature, kills, experience,
+-- the zone of the last kill, when ("2 hours ago").
+L["Creatures"] = true
 L["Creature"] = true
 L["Last zone"] = true
 L["Last"] = true
@@ -192,7 +201,7 @@ L["%s, %s"] = true
 L["Corpses looted"] = true
 L["Drops"] = true
 L["%d of %d (%d%%)"] = true
--- The Loot tab's columns: item, times looted, how many in all, where from, when.
+-- The Loot section's columns (and tiles): item, times looted, how many in all, where from, when.
 L["Item"] = true
 L["Looted"] = true
 L["Count"] = true
@@ -202,18 +211,89 @@ L["From"] = true
 L["object"] = true
 L["container"] = true
 L["From: %s"] = true
--- The Levels tab's columns: the level, the date it was reached, the time played at it, and the total
+-- The History section's columns (and tiles): the level, the date it was reached, the time played at it, and the total
 -- played time when it was reached. "before the journal": reached more than 30 days ago (no date).
 L["Level"] = true
 L["Reached"] = true
 L["Time at the level"] = true
 L["Played when reached"] = true
 L["before the journal"] = true
--- A list with nothing in it: the search matched nothing, or nothing is recorded yet.
-L["Nothing matches."] = true
-L["Nothing recorded yet."] = true
-L["Your own numbers for this character. Hover a row for more."] = true
--- /ryna help's line for the window's command. Keep /ryna chronicle, /chronicle and the tab words
--- (kills, loot, levels, session) in English: they are what the player types.
-L["/ryna chronicle (or /chronicle): the Chronicle window; "
-  .. "/chronicle kills, loot, levels or session opens that tab"] = true
+-- History's tiles: the time played in all, "pending" (core) until /played answers.
+L["Played"] = true
+-- The footers: where the numbers came from and how old they are. %s: a character's name, then
+-- "2 hours ago".
+L["Counted in game since you logged in; a /reload keeps it."] = true
+L["Counted in game for %s, the character you're on."] = true
+L["From your saved file: %s as of %s, its last logout."] = true
+L["an unknown time"] = true
+L["From the journal's level-ups (it keeps 30 days) and /played."] = true
+-- /chronicle with a core too old for the window (printed only when typed).
+L["the Ryna addon here is too old for its window. Update it from the Ryna companion app."] = true
+-- /ryna help's line for the window's command. Keep /ryna chronicle, /chronicle and the section words
+-- (session, characters, items, kills, loot, history) in English: they are what the player types.
+L["/ryna chronicle (or /chronicle): Ryna's window; /chronicle session, characters, items, "
+  .. "kills, loot or history opens that section"] = true
+
+-- Characters.lua
+-- The Characters section: its columns over every character, its tiles, "now" (the character you're
+-- on, as "last seen"), and "Mining 75" (a profession and its rank).
+L["Character"] = true
+L["Gold"] = true
+L["Professions"] = true
+L["Last seen"] = true
+L["now"] = true
+L["%s %s"] = true
+-- One character's detail: the headings of its groups and the rows under "Character".
+L["Class"] = true
+L["Guild"] = true
+L["Zone"] = true
+L["Talents"] = true
+L["Gear"] = true
+L["Reputations"] = true
+L["None recorded yet."] = true
+-- A tile: the time played at the current level ("3h 12m at this level"); a tooltip's "Level 17 Paladin".
+L["%s at this level"] = true
+L["Level %s %s"] = true
+L["Click for this character's gear, professions and reputations."] = true
+L["From your saved file: each character as of its last logout; the one you're on is live."] = true
+-- Equipment slots, where the client has no name of its own for one.
+L["Ammo"] = true
+L["Head"] = true
+L["Neck"] = true
+L["Shoulder"] = true
+L["Shirt"] = true
+L["Chest"] = true
+L["Waist"] = true
+L["Legs"] = true
+L["Feet"] = true
+L["Wrist"] = true
+L["Hands"] = true
+L["Finger"] = true
+L["Trinket"] = true
+L["Back"] = true
+L["Main Hand"] = true
+L["Off Hand"] = true
+L["Ranged"] = true
+L["Tabard"] = true
+
+-- Items.lua
+-- The tooltip line naming your other characters that hold an item: "Alyra: 120 in the bank · Brennic:
+-- 34 · 2 more". Each part is "<name>: <how many>"; "154 (120 in the bank)" when some are in bags too.
+L["%s: %s"] = true
+L["%s (%s in the bank)"] = true
+L["%s in the bank"] = true
+L["%d more"] = true
+-- The Items section: columns, tiles, the tooltip's "34 in bags · 120 in the bank (as of 2 days ago)".
+L["Total"] = true
+L["In bags"] = true
+L["In the bank"] = true
+L["%s in bags"] = true
+L["%s in the bank (as of %s)"] = true
+L["Kinds of item"] = true
+L["Bank read"] = true
+L["Nothing in the bags or bank yet. Each character's are recorded at login."] = true
+-- Its footers. %s: how long ago ("2 days ago"), a character's name, or "never: open the bank once".
+L["From your saved file: bags as of each character's last login, the bank as of its last visit."] = true
+L["never: open the bank once"] = true
+L["Bags as they are now; the bank as of your last visit (%s)."] = true
+L["From your saved file: %s's bags as of %s, the bank as of %s."] = true

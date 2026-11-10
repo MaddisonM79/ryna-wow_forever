@@ -1,7 +1,9 @@
 -- Tooltip: the player's own Chronicle numbers on creature and item tooltips (docs/wow.md section
 -- 12.2), with the `tooltips` setting on. Through TooltipDataProcessor where the client has it,
--- GameTooltip's OnTooltipSetUnit / OnTooltipSetItem scripts otherwise. Only this character's
--- numbers; nothing here writes to the record.
+-- GameTooltip's OnTooltipSetUnit / OnTooltipSetItem scripts otherwise. Only this character's kills
+-- and loot, and, with `tooltipHolders` on too, one line naming the account's other characters that
+-- hold the item (Items.lua): "Alyra: 120 in the bank · Brennic: 34". Nothing here writes to
+-- the record.
 
 local _, ns = ...
 if ns.off then return end
@@ -123,10 +125,22 @@ function T.ItemLines(itemId)
   return { string.format(L["Ryna: looted %s (%d)"], times, num(e.qty)) }
 end
 
+-- Each line once: through the core's guard (Ryna.Tooltip, cores after 0.3.9), so a hook the client
+-- runs twice or a tooltip refreshed by hand never shows a line twice.
 local function addLines(tooltip, lines, show)
   if not lines or type(tooltip) ~= "table" or type(tooltip.AddLine) ~= "function" then return end
-  for _, line in ipairs(lines) do tooltip:AddLine(COLOR .. line .. "|r") end
-  if show and type(tooltip.Show) == "function" then tooltip:Show() end
+  local guard = ns.API.Tooltip
+  local added = false
+  for _, line in ipairs(lines) do
+    local text = COLOR .. line .. "|r"
+    if type(guard) == "table" and guard.AddLine then
+      if guard.AddLine(tooltip, text) then added = true end
+    else
+      tooltip:AddLine(text)
+      added = true
+    end
+  end
+  if added and show and type(tooltip.Show) == "function" then tooltip:Show() end
 end
 
 local function usable(v)
@@ -168,7 +182,15 @@ end
 local function onItem(tooltip, data, show)
   ns.Run("tooltip item", function()
     if not ns.rec or not ns.Setting("tooltips") then return end
-    addLines(tooltip, T.ItemLines(itemId(tooltip, data)), show)
+    local id = itemId(tooltip, data)
+    local lines = T.ItemLines(id)
+    -- Which of your other characters hold it (Items.lua; its own setting, tooltipHolders).
+    local holders = ns.Items and ns.Items.TooltipLine(id, tooltip)
+    if holders then
+      lines = lines or {}
+      lines[#lines + 1] = holders
+    end
+    addLines(tooltip, lines, show)
   end)
 end
 

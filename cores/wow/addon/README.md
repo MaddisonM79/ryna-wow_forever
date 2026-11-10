@@ -23,7 +23,8 @@ The core's addon and its mods' addons are installed side by side by the companio
   item and its stack on every item tooltip, with its own Prices tab and `/ryna prices`
   (`mods/wow/README.md`). It only reads the game's item data.
 
-Together they have a small settings panel (in tabs) and a minimap button. Nothing is printed to chat
+Together they have a small settings panel (in tabs), one window for what they record (below, "Ryna's
+window") and a minimap button. Nothing is printed to chat
 unless you ask: the login line and the combat-logging notices are a setting under Advanced, off by
 default, and `/ryna` answers only when typed. The one exception is an error: one caught inside any
 Ryna addon's handler or hook prints one "an error in … was caught (reported once)" line, once per
@@ -197,9 +198,10 @@ companion app.", its version, and "Update available" when the app knows of a new
 Signing in happens in the companion app, never in the game: an addon can't reach the network.
 
 **Recording** (Chronicle's): one line on what is recorded about your own characters, Record kills
-and loot, Show my numbers on tooltips, and Record the merchants I visit; then **In game**: Show the session strip, Lock the strip
+and loot, Show my numbers on tooltips, Show which of my characters hold an item (greyed while the
+tooltips are off), and Record the merchants I visit; then **In game**: Show the session strip, Lock the strip
 (greyed while the strip is hidden), a **Reset position** button (the strip back to the top of the
-screen) and an **Open the Chronicle window** button.
+screen) and an **Open Ryna's window** button (not there beside a core too old for the window).
 
 **Census**: first, "Ryna never sends /who itself. When you type /who, the results are recorded as
 sightings, like players you see on nameplates or in chat." Then Take part in the census, with its
@@ -236,6 +238,7 @@ The settings (saved in `RynaDB.settings`; if the game loses them, the defaults c
 | Advanced combat logging | Advanced | on | Sets the game's `advancedCombatLogging`, so fights are logged with positions and health (see below). |
 | Record kills and loot | Recording | on | Counts kills, the experience they give, and loot into the character record (see "Kills and loot"). Off: nothing is counted; the totals so far are kept. |
 | Show my numbers on tooltips | Recording | on | Adds your own kill and loot numbers to creature and item tooltips. |
+| Show which of my characters hold an item | Recording | on | With the tooltips on, one more line on item tooltips naming the account's other characters that hold the item and how many, in bags or the bank, from the saved file: "Alyra: 120 in the bank · Brennic: 34" (`tooltipHolders`; see "Ryna's window", Items). |
 | Record the merchants I visit | Recording | on | A `merchant` journal event when you open a merchant: the NPC, where, and what it sells for how much (`merchants`; mods/wow/README.md has the shape and rules). Once its whole list is written, the NPC is done for the login, and an unchanged list isn't written again for 7 days. Off: merchants aren't looked at. |
 | Show the session strip | Recording | on | The session strip on screen (`sessionStrip`; see "The session strip"). Off: hidden; the session is still counted, and the window and the Status line still show it. |
 | Lock the strip | Recording | off | Locked, the strip can't be dragged (`sessionStripLocked`). Right-clicking the strip switches it too. Its place is `sessionStripPos` (Reset position clears it); the panel's Defaults keeps it. |
@@ -268,7 +271,7 @@ in. It's the game's own small font on a translucent black backdrop and nothing m
 well in the default UI as in a dark one like ElvUI's. Hovering it shows when the session started,
 kills, experience, levels gained, money (net, and gained / spent), quests, items looted and deaths,
 with the per-hour rates, and the session's top 8 creatures (kills and experience). A **click** opens
-the Chronicle window; a **right-click** locks or unlocks it (said in chat); unlocked, **Shift-drag**
+Ryna's window on Session (or closes it); a **right-click** locks or unlocks it (said in chat); unlocked, **Shift-drag**
 moves it, and the place is kept (`RynaDB.settings.sessionStripPos`). It's clamped to the screen.
 
 What a session counts (Chronicle's `Session.lua`, kept in memory): kills by creature (count and
@@ -285,35 +288,106 @@ saved, and the companion app doesn't read it.
 It redraws when something it shows changes, at most every half second, and every 5 seconds for the
 clock, and only while it's shown.
 
-## The Chronicle window
+## Ryna's window
 
-`/chronicle` (or `/ryna chronicle`), a click on the strip, or the Recording tab's button opens a
-window of its own (`RynaChronicleWindow`; not the settings panel). It moves by dragging and closes
-with Escape or its close button. Its four tabs, for the character you're on:
+One window for everything the mods record (`RynaWindow`, the core's `Window.lua`; not the settings
+panel). `/chronicle` (or `/ryna chronicle`), a click on the session strip or the Recording tab's
+button opens it on Session. It moves by dragging, closes with Escape or its close button, and keeps
+its place and the section it was on (`RynaDB.settings.window`; the panel's Defaults keeps them too).
+It uses the game's own fonts, tooltip backdrop, close button, search box, dropdown and bar textures and
+no art of its own, so it sits in the default UI and in a dark one like ElvUI's.
 
-- **Session**: the session's numbers (since, kills, experience, levels gained, money, gained /
-  spent, quests, items looted, deaths) with the per-hour rates, then this session's kills by
-  creature (name, kills, experience), most first.
-- **Kills**: every creature you've killed (the record's `kills`), most first: name, kills,
-  experience, the last kill's zone and when. A search box filters by name. Hovering a row shows that
-  creature's numbers (kills and how many were yours, experience, last zone, corpses looted) and its
-  drops: each item looted from its corpses, in its quality colour, as "12 of 40 (30%)" of the corpses
-  you opened.
-- **Loot**: every item you've looted (`loot`), newest first: the name in its quality colour (the
-  game's `ITEM_QUALITY_COLORS`), how often, how many in all, where it came from (the creature's name,
-  "object" for a chest, vein, herb or pool, "container", "fishing"; the top two) and when. A search
-  box filters by name; hovering a row shows the item's own tooltip and all its sources.
-- **Levels**: the journal's `level` events for this character, oldest first: the level, when you
-  reached it, the time played at it (the difference of the played totals at two level-ups; for the
-  current level, `/played`'s time at this level, counted on) and the played total when you reached it.
-  The journal keeps 30 days, so a level reached before then shows as the current level only, "before
-  the journal".
+- **The rail**, down the left, lists the sections in three groups: **Me**, **World** and **Combat and
+  gold**. Only sections that exist are listed; a group with none isn't drawn. Today all of them are
+  Chronicle's, under Me.
+- **The header** is the same on every section: its title, the **character picker** ("All characters"
+  and each character on the account) and the **search box**. A section about one character (Kills,
+  Loot, History) reads All characters as the one you're on; Session is always the one you're on, so
+  the picker is greyed there. Each section keeps its own search.
+- **The body**: up to four summary tiles, then rows. A row may have an icon, a name in the game's
+  quality (or class) colour, a progress bar and right-aligned numbers, and hovering it shows the
+  game's own tooltip (an item's) with the section's lines under it. A click on a column heading sorts
+  by it (numbers most first), a second click the other way, a third back to the section's own order.
+- **The footer** says where the numbers came from and how old they are ("Counted in game for …, the
+  character you're on", "From your saved file: … as of 2 days ago, its last logout").
 
-Each list is one fixed set of 15 rows over a sorted view of the data, scrolled with the mouse wheel
-or the bar beside it: only the rows on screen are filled, so 2,000 creatures cost what 15 do. A view
-is sorted again only when its data or its search changed. The window redraws when something it shows
+Each list is one fixed set of row frames over the section's rows, scrolled with the mouse wheel or
+the bar beside it: only the rows on screen are filled, so 2,000 creatures cost what 20 do. A
+section's rows are built when it's first shown and rebuilt only when its data's version or the
+context (the character picked, the search) changed. The window redraws when something it shows
 changes (a kill or loot counted, experience, money, a quest, a death, a level), at most every half
 second, and only while it's open.
+
+Chronicle's sections, under Me:
+
+- **Session**: tiles for this session's kills, experience and money (each with its rate per hour) and
+  when it started; then levels gained, money gained / spent, quests turned in, items looted and
+  deaths; then this session's kills by creature (name, kills, experience), most first.
+- **Characters**: every character on the account, from the saved file, the one you're on first: name
+  in its class colour, level (over its experience bar), gold, time played, professions with their
+  ranks, and when it was last seen ("now" for the one you're on); tiles for how many characters, their
+  gold and their time played. A click on a row (or the picker) shows that character: its class, guild,
+  zone and talents, its gear by slot (the game's item tooltip on hover), its professions and its
+  reputations, each with a bar. The one you're on is live; the others are as of their last logout.
+- **Items**: everything in every character's bags and bank (each character's bags as of its last
+  login, its bank as of its last visit), one row per item: its icon and name, the total, how many in
+  bags and in the bank, and who holds it. Hovering shows the game's item tooltip and, under it, each
+  holder's bags and bank (with the bank's age). Picking a character shows only that one's items. With
+  **Show which of my characters hold an item** on (Recording, on by default, under the tooltip
+  setting), every item tooltip in the game gets one line naming your other characters that hold it,
+  most first: "Alyra: 120 in the bank · Brennic: 154 (120 in the bank)" (first names, full names where
+  two share one; five at most, then "3 more"). Only this account's own characters are named.
+- **Kills**: every creature the character has killed (the record's `kills`), most first: name, kills,
+  experience, the last kill's zone and when, with tiles for how many kinds, kills and experience.
+  Hovering a row shows that creature's numbers (kills and how many were yours, experience, last zone,
+  corpses looted) and its drops: each item looted from its corpses, in its quality colour, as "12 of
+  40 (30%)" of the corpses you opened. Pick another character to see its kills from the saved file.
+- **Loot**: every item the character has looted (`loot`), newest first: icon and name in its quality
+  colour, how often, how many in all, where it came from (the creature's name, "object" for a chest,
+  vein, herb or pool, "container", "fishing"; the top two) and when. Hovering a row shows the item's
+  own tooltip and all its sources.
+- **History** (levels for now): the journal's `level` events for the character, oldest first: the
+  level, when it was reached, the time played at it (the difference of the played totals at two
+  level-ups; for the current level, `/played`'s time at this level, counted on) and the played total
+  when it was reached. The journal keeps 30 days, so a level reached before then shows as the current
+  level only, "before the journal".
+
+Beside a core from before the window (the released 0.3.9 and earlier), Chronicle registers nothing
+there: `/chronicle` and the strip's click say, each time they're used, that the core is too old, and the Recording
+tab has no button. Recording and the tooltips work as before.
+
+### A mod's section
+
+A mod adds a section with `Ryna.Window.AddSection(spec)` (true when added, false when the spec is
+refused: a key taken, an unknown group, no `rows` or `columns`). `Window.lua` has the whole spec at
+its top; in short:
+
+```lua
+Ryna.Window.AddSection({
+  key = "auctions", group = "combat", label = "Auctions", order = 20,  -- group: me, world or combat
+  characters = "all",   -- "all" (All characters and each), "one" (All = the one you're on), "current"
+  search = true, sortable = true, icons = true,
+  columns = { { title = "Item", width = 220 }, { title = "Low", width = 80, justify = "RIGHT" },
+    { title = "Listed", width = 120, kind = "bar" } },        -- or function(ctx) -> columns
+  version = function() return myVersion end,                  -- rows rebuilt only when this or ctx changes
+  rows = function(ctx)                                        -- ctx: character, current, all, search
+    return { { cells = { "Linen Cloth", "10c", "13,754" }, sort = { "linen cloth", 10, 13754 },
+      quality = 1, icon = 132889, link = itemLink, bars = { [3] = { value = 13754, max = 20000 } } } }
+  end,
+  fill = function(row, ctx) end,              -- optional: fill a light row's cells when it's on screen
+  tiles = function(ctx) return { { label = "Items", value = "1,204", sub = "as of 2 hours ago" } } end,
+  tooltip = function(row, tip, ctx, hadLink) tip:AddLine("…") end,   -- under the row's own tooltip
+  click = function(row, ctx) end,
+  footer = function(ctx) return "Your last auction-house visit, 2 hours ago." end,
+})
+```
+
+`Ryna.Window` also has `Open(key)`, `Toggle(key)`, `Hide()`, `IsShown()`, `Selected()`,
+`Refresh(key)` (redraw if that section is on screen; rows rebuild only when its version moved),
+`Choose(guid)`, `Characters()`, and the helpers the core uses itself: `Match(text, search)`,
+`QualityColor(q)`, `ClassColor(class)`, `ClassName(class)`, `Money(copper)`, `ItemIcon(id)` and
+`TooltipSection()` (the section whose row tooltip is being drawn, so a tooltip hook can leave out a
+line that section already shows). A mod checks `Ryna.Window` exists before using it.
 
 ## The minimap button
 
@@ -391,8 +465,9 @@ positions and health in the log, turn on **Advanced Combat Logging** in the game
   print as one summary line per scan, and nearby players at most one line per 5 seconds.
   Your own `/who` prints one line per answer: its count, how many were recorded, and how many were
   skipped by the window or appeared twice.
-- `/ryna chronicle`, or `/chronicle`: opens or closes the Chronicle window (Chronicle's);
-  `/chronicle session|kills|loot|levels` opens it on that tab.
+- `/ryna chronicle`, or `/chronicle`: opens Ryna's window on Session, or closes it (Chronicle's);
+  `/chronicle session|characters|items|kills|loot|history` opens it on that section (`levels` is
+  History's old name and still works).
 - `/ryna help`: the commands.
 
 ## Installing by hand
@@ -474,7 +549,10 @@ global `Ryna` (`Mods.lua`, where every function is described), never the core's 
 - `Ryna.Journal.Add(type, fields, quiet)`, `.Session()`, `.Seq()`, `.Count()`.
 - `Ryna.Settings.Get`, `.Set`, `.All`, `.AddDefaults`, `.COMBAT_LOG_MODES`.
 - `Ryna.Panel.AddTab{ key, label, order, build, layout }`, `.AddStatusLines(order, fn)`, `.Refresh()`,
-  `.RefreshIfShown()`, `.Widgets`; `Ryna.Slash.Add{ word, run(arg, rest), help, order }` (`rest`: the
+  `.RefreshIfShown()`, `.Widgets`;
+- `Ryna.Window.AddSection(spec)` and the window's helpers (cores after 0.3.9; "Ryna's window" has the
+  spec); `Ryna.Tooltip.HasLine(tooltip, text)` and `.AddLine(tooltip, text, r, g, b, wrap)`, the guard
+  every mod's tooltip lines go through, so no line is added twice or over the same text already drawn; `Ryna.Slash.Add{ word, run(arg, rest), help, order }` (`rest`: the
   whole line after the word, in cores after 0.3.4),
   `.AddStatusLines(order, fn)`; `Ryna.L`.
 - `Ryna.Data.Get(name, version)`, `.WrittenAt(t)`, `.Count(t)`: the data layer's tables (above; cores

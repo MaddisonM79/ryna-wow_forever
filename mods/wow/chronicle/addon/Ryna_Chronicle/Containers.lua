@@ -7,6 +7,7 @@ if ns.off then return end
 
 local B = {}
 ns.Containers = B
+B.version = 0 -- every scan (Items.lua rebuilds its index when it moves)
 
 local NonEmpty = ns.NonEmpty
 
@@ -99,6 +100,8 @@ function B.Scan()
     end
   end
   rec.containers = rows
+  B.version = B.version + 1
+  if ns.Window and ns.Window.Changed then ns.Window.Changed() end
   if ns.Debugging() then
     local items, slots = { bag = 0, keyring = 0, bank = 0 }, { bag = 0, keyring = 0, bank = 0 }
     for _, row in ipairs(rows) do

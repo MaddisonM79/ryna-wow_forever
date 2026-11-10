@@ -4,7 +4,7 @@
 --
 -- A plain frame (RynaChronicleStrip): the game's own small font on a translucent black backdrop,
 -- nothing else, so it sits as well in the default UI as in a dark one like ElvUI's. Hovering shows
--- the session's top kills and the rest of its numbers; a click opens the Chronicle window
+-- the session's top kills and the rest of its numbers; a click opens Ryna's window
 -- (Window.lua); a right-click locks or unlocks it; Shift-drag moves it while it is unlocked.
 --
 -- Settings (RynaDB.settings): sessionStrip (shown, default on), sessionStripLocked (default off),
@@ -68,7 +68,7 @@ function St.TooltipLines(s)
     end
   end
   add("")
-  add(L["Click: the Chronicle window. Right-click: lock or unlock."])
+  add(L["Click: Ryna's window. Right-click: lock or unlock."])
   if not locked() then add(L["Shift-drag to move."]) end
   return out
 end

@@ -8,6 +8,12 @@ if ns.off then return end
 
 local C = {}
 ns.Character = C
+C.version = 0 -- every change to the record after login (the Characters section of the window)
+
+local function changed()
+  C.version = C.version + 1
+  if ns.Window and ns.Window.Changed then ns.Window.Changed() end
+end
 
 local NonEmpty = ns.NonEmpty
 local GENDER = { [2] = "male", [3] = "female" }
@@ -158,6 +164,7 @@ function C.UpdateGuild()
   name = NonEmpty(name)
   if not name then return end -- not loaded yet; PLAYER_GUILD_UPDATE comes back
   rec.guild = { guid = ns.Guild.Key(name), name = name, rankIndex = rankIndex, rankName = NonEmpty(rankName) }
+  changed()
 end
 
 -- Gear: slots 0 (ammo) to 19 (tabard).
@@ -178,6 +185,7 @@ function C.ScanGear()
     end
   end
   rec.gear = gear
+  changed()
   ns.Debug("gear: %d items equipped", #gear)
 end
 
@@ -251,6 +259,7 @@ function C.ScanTalents()
   if not rec then return end
   local parts = traitTalentParts() or tabTalentParts()
   if parts then rec.talents = table.concat(parts, " / ") end
+  changed()
   ns.Debug("talents: %s", parts and rec.talents or "none readable")
 end
 
@@ -300,6 +309,7 @@ function C.ScanProfessions()
     end
   end
   if #rows > 0 then rec.professions = rows end
+  changed()
   if ns.Debugging() then
     local names = {}
     for _, p in ipairs(rows) do
@@ -416,6 +426,7 @@ function C.ScanReputations()
     end
   end
   if #rows > 0 then rec.reputations = rows end
+  changed()
   -- UPDATE_FACTION comes with every reputation gain, so an unchanged line isn't repeated.
   ns.DebugChanged("reputations", "reputations: %d factions", #rows)
 end
@@ -514,6 +525,7 @@ function C.OnTimePlayed(total, atLevel)
     rec.playedTotal = total
     rec.playedLevel = atLevel
     C.playedAt = GetTime()
+    changed()
     ns.Debug("played time: received, %s in all, %s at this level", ns.DurationText(total), ns.DurationText(atLevel))
   end
   if C.playedPending then

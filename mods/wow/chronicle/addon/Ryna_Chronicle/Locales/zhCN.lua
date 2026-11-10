@@ -160,7 +160,7 @@ L["Deaths"] = nil
 -- The tooltip's list of creatures killed most this session: "Kobold Vermin   12 (480 XP)".
 L["Top kills this session"] = nil
 L["%s (%s XP)"] = nil
-L["Click: the Chronicle window. Right-click: lock or unlock."] = nil
+L["Click: Ryna's window. Right-click: lock or unlock."] = nil
 L["Shift-drag to move."] = nil
 -- Printed in chat ("Ryna: the session strip is locked. ...") when the strip is right-clicked.
 L["the session strip is locked. Right-click it to unlock."] = nil
@@ -169,26 +169,35 @@ L["the session strip is unlocked: Shift-drag to move it."] = nil
 L["In game"] = nil
 L["Show the session strip"] = nil
 L["One line on screen with this session's kills, experience and money per hour, quests and time. "
-  .. "Hover it for more; click it for the Chronicle window."] = nil
+  .. "Hover it for more; click it for Ryna's window."] = nil
 L["Lock the strip"] = nil
 L["Unlocked, Shift-drag moves it. Right-clicking the strip locks or unlocks it too."] = nil
 -- A button: the strip back to its default place (top of the screen).
 L["Reset position"] = nil
--- The Recording tab's button that opens the Chronicle window, and the line under it.
-L["Open the Chronicle window"] = nil
-L["Also /chronicle. Your session, your kills with their drops, your loot and your "
-  .. "levels, in its own window."] = nil
--- The Chronicle window: its title (the mod's name) and its four tabs.
-L["Chronicle"] = nil
+-- The Recording tab's button that opens Ryna's window (the core's one window, where Chronicle's
+-- sections are), and the line under it.
+L["Open Ryna's window"] = nil
+L["Also /chronicle. Your session, your characters, everything in their bags and banks, "
+  .. "your kills with their drops, your loot and your levels."] = nil
+-- The Recording tab's setting for the tooltip line naming your other characters that hold an item.
+-- The names in the example are made up.
+L["Show which of my characters hold an item"] = nil
+L["One more line on item tooltips naming your other characters that hold it, and how many, in their "
+  .. "bags or the bank, from your saved file: \"Alyra: 120 in the bank · Brennic: 34\"."] = nil
+-- Chronicle's sections in Ryna's window (its rail, under Me).
 L["Session"] = nil
+L["Characters"] = nil
+L["Items"] = nil
 L["Loot"] = nil
-L["Levels"] = nil
--- The Session tab: the column heading over its numbers, "Since" (when the session started), and the
--- heading over this session's kills.
+L["History"] = nil
+-- The Session section: the column heading over its numbers, "Since" (when the session started), and
+-- the heading over this session's kills.
 L["This session"] = nil
 L["Since"] = nil
 L["Kills this session"] = nil
--- The Kills tab's columns: creature, kills, experience, the zone of the last kill, when ("2 hours ago").
+-- The Kills section's tiles (how many kinds of creature) and columns: creature, kills, experience,
+-- the zone of the last kill, when ("2 hours ago").
+L["Creatures"] = nil
 L["Creature"] = nil
 L["Last zone"] = nil
 L["Last"] = nil
@@ -200,7 +209,7 @@ L["%s, %s"] = nil
 L["Corpses looted"] = nil
 L["Drops"] = nil
 L["%d of %d (%d%%)"] = nil
--- The Loot tab's columns: item, times looted, how many in all, where from, when.
+-- The Loot section's columns (and tiles): item, times looted, how many in all, where from, when.
 L["Item"] = nil
 L["Looted"] = nil
 L["Count"] = nil
@@ -210,18 +219,89 @@ L["From"] = nil
 L["object"] = nil
 L["container"] = nil
 L["From: %s"] = nil
--- The Levels tab's columns: the level, the date it was reached, the time played at it, and the total
+-- The History section's columns (and tiles): the level, the date it was reached, the time played at it, and the total
 -- played time when it was reached. "before the journal": reached more than 30 days ago (no date).
 L["Level"] = nil
 L["Reached"] = nil
 L["Time at the level"] = nil
 L["Played when reached"] = nil
 L["before the journal"] = nil
--- A list with nothing in it: the search matched nothing, or nothing is recorded yet.
-L["Nothing matches."] = nil
-L["Nothing recorded yet."] = nil
-L["Your own numbers for this character. Hover a row for more."] = nil
--- /ryna help's line for the window's command. Keep /ryna chronicle, /chronicle and the tab words
--- (kills, loot, levels, session) in English: they are what the player types.
-L["/ryna chronicle (or /chronicle): the Chronicle window; "
-  .. "/chronicle kills, loot, levels or session opens that tab"] = nil
+-- History's tiles: the time played in all, "pending" (core) until /played answers.
+L["Played"] = nil
+-- The footers: where the numbers came from and how old they are. %s: a character's name, then
+-- "2 hours ago".
+L["Counted in game since you logged in; a /reload keeps it."] = nil
+L["Counted in game for %s, the character you're on."] = nil
+L["From your saved file: %s as of %s, its last logout."] = nil
+L["an unknown time"] = nil
+L["From the journal's level-ups (it keeps 30 days) and /played."] = nil
+-- /chronicle with a core too old for the window (printed only when typed).
+L["the Ryna addon here is too old for its window. Update it from the Ryna companion app."] = nil
+-- /ryna help's line for the window's command. Keep /ryna chronicle, /chronicle and the section words
+-- (session, characters, items, kills, loot, history) in English: they are what the player types.
+L["/ryna chronicle (or /chronicle): Ryna's window; /chronicle session, characters, items, "
+  .. "kills, loot or history opens that section"] = nil
+
+-- Characters.lua
+-- The Characters section: its columns over every character, its tiles, "now" (the character you're
+-- on, as "last seen"), and "Mining 75" (a profession and its rank).
+L["Character"] = nil
+L["Gold"] = nil
+L["Professions"] = nil
+L["Last seen"] = nil
+L["now"] = nil
+L["%s %s"] = nil
+-- One character's detail: the headings of its groups and the rows under "Character".
+L["Class"] = nil
+L["Guild"] = nil
+L["Zone"] = nil
+L["Talents"] = nil
+L["Gear"] = nil
+L["Reputations"] = nil
+L["None recorded yet."] = nil
+-- A tile: the time played at the current level ("3h 12m at this level"); a tooltip's "Level 17 Paladin".
+L["%s at this level"] = nil
+L["Level %s %s"] = nil
+L["Click for this character's gear, professions and reputations."] = nil
+L["From your saved file: each character as of its last logout; the one you're on is live."] = nil
+-- Equipment slots, where the client has no name of its own for one.
+L["Ammo"] = nil
+L["Head"] = nil
+L["Neck"] = nil
+L["Shoulder"] = nil
+L["Shirt"] = nil
+L["Chest"] = nil
+L["Waist"] = nil
+L["Legs"] = nil
+L["Feet"] = nil
+L["Wrist"] = nil
+L["Hands"] = nil
+L["Finger"] = nil
+L["Trinket"] = nil
+L["Back"] = nil
+L["Main Hand"] = nil
+L["Off Hand"] = nil
+L["Ranged"] = nil
+L["Tabard"] = nil
+
+-- Items.lua
+-- The tooltip line naming your other characters that hold an item: "Alyra: 120 in the bank · Brennic:
+-- 34 · 2 more". Each part is "<name>: <how many>"; "154 (120 in the bank)" when some are in bags too.
+L["%s: %s"] = nil
+L["%s (%s in the bank)"] = nil
+L["%s in the bank"] = nil
+L["%d more"] = nil
+-- The Items section: columns, tiles, the tooltip's "34 in bags · 120 in the bank (as of 2 days ago)".
+L["Total"] = nil
+L["In bags"] = nil
+L["In the bank"] = nil
+L["%s in bags"] = nil
+L["%s in the bank (as of %s)"] = nil
+L["Kinds of item"] = nil
+L["Bank read"] = nil
+L["Nothing in the bags or bank yet. Each character's are recorded at login."] = nil
+-- Its footers. %s: how long ago ("2 days ago"), a character's name, or "never: open the bank once".
+L["From your saved file: bags as of each character's last login, the bank as of its last visit."] = nil
+L["never: open the bank once"] = nil
+L["Bags as they are now; the bank as of your last visit (%s)."] = nil
+L["From your saved file: %s's bags as of %s, the bank as of %s."] = nil

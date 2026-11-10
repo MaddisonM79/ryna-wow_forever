@@ -596,9 +596,9 @@ local function buildPanel()
   panel.refresh = panel.OnRefresh
   panel.OnDefault = function()
     ns.Run("panel defaults", function()
-      local mm, tab = ns.db.settings.minimap, ns.db.settings.panelTab
+      local mm, tab, window = ns.db.settings.minimap, ns.db.settings.panelTab, ns.db.settings.window
       local wasDebug = ns.Debugging()
-      ns.db.settings = { minimap = mm, panelTab = tab }
+      ns.db.settings = { minimap = mm, panelTab = tab, window = window }
       ns.ApplySettingDefaults(ns.db.settings)
       mm.shown = true
       if wasDebug then ns.Print(L["settings back to their defaults; debug messages off."]) end
