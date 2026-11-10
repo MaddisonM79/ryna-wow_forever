@@ -408,8 +408,14 @@ fn acedb_characters(path: &Path) -> Option<Vec<Character>> {
     })
 }
 
-/// Everything the Settings mod sees for `account` in `install`.
+/// Everything the Settings mod sees for `account` in `install`. `account` must be one plain folder
+/// name (no slashes, `..`, drive or absolute path: [`super::plain_component`]), and not the
+/// `SavedVariables` folder beside the accounts; every write this inventory leads to is scoped
+/// under it.
 pub fn inventory(install: &Install, account: &str) -> Result<Inventory> {
+    if !super::plain_component(account) || account.eq_ignore_ascii_case("SavedVariables") {
+        bail!("{account:?} isn't an account folder name");
+    }
     let root = install.path.join("WTF").join("Account").join(account);
     if !root.is_dir() {
         bail!(
@@ -576,6 +582,36 @@ mod tests {
             "Maddie-Shammie-91"
         );
         assert!(inv.character("Maddie-Shammie-92").is_err());
+    }
+
+    #[test]
+    fn an_account_is_one_folder_name_and_never_a_way_out() {
+        // A folder outside the install with a realm and a character in it: an account string that
+        // reached it would scope every later copy, backup and restore there.
+        let dir = tempfile::tempdir().unwrap();
+        let i = install(dir.path(), &[]);
+        let outside = dir.path().join("Elsewhere");
+        std::fs::create_dir_all(outside.join("Realm/Name")).unwrap();
+        std::fs::create_dir_all(i.path.join("WTF/Account/SavedVariables")).unwrap();
+        let absolute = outside.to_string_lossy().into_owned();
+        for bad in [
+            "../../../Elsewhere",
+            "../Account/ACCOUNT1",
+            "ACCOUNT1/../ACCOUNT1",
+            absolute.as_str(),
+            "..",
+            ".",
+            "",
+            "SavedVariables",
+            "ACCOUNT1\\..",
+        ] {
+            let e = inventory(&i, bad).unwrap_err().to_string();
+            assert!(e.contains("isn't an account folder name"), "{bad}: {e}");
+        }
+        // A real one, and one with the characters game logins use, still read.
+        assert_eq!(inventory(&i, "ACCOUNT1").unwrap().account, "ACCOUNT1");
+        std::fs::create_dir_all(i.path.join("WTF/Account/12345678#1")).unwrap();
+        assert!(inventory(&i, "12345678#1").is_ok());
     }
 
     #[test]
