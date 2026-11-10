@@ -1,0 +1,31 @@
+# Dependabot (Maddison, 2026-11-10): every Tuesday, and nothing younger than 2 days, so a
+# release that gets pulled or compromised in its first hours never reaches a PR. Security updates
+# aren't held by the cooldown. One PR per ecosystem for minor and patch; a major comes on its own.
+version: 2
+updates:
+  # The workflows' actions, pinned to commit SHAs: Dependabot moves the SHA and its comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: tuesday, time: "09:00", timezone: America/Chicago }
+    cooldown: { default-days: 2 }
+    commit-message: { prefix: "ci" }
+    groups:
+      actions: { patterns: ["*"] }
+
+  # The cargo workspace: the CLI, the host, the WoW core and the app crate.
+  - package-ecosystem: cargo
+    directory: /
+    schedule: { interval: weekly, day: tuesday, time: "09:00", timezone: America/Chicago }
+    cooldown: { default-days: 2 }
+    commit-message: { prefix: "deps" }
+    groups:
+      cargo: { patterns: ["*"], update-types: [minor, patch] }
+
+  # The desktop app's frontend (pnpm-lock.yaml).
+  - package-ecosystem: npm
+    directory: /agent/app
+    schedule: { interval: weekly, day: tuesday, time: "09:00", timezone: America/Chicago }
+    cooldown: { default-days: 2 }
+    commit-message: { prefix: "app" }
+    groups:
+      app: { patterns: ["*"], update-types: [minor, patch] }

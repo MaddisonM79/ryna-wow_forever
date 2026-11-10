@@ -1,0 +1,55 @@
+name: Something isn't working
+description: A bug in the desktop app, the ryna CLI, the addon or a mod.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting it. Please leave out account names, character names, and anything
+        copied from your WTF or SavedVariables folders: this repository is public.
+  - type: dropdown
+    id: part
+    attributes:
+      label: Which part?
+      options:
+        - The desktop app
+        - The addon in game
+        - A mod (Chronicle, Prices, Automation, ...)
+        - The ryna CLI
+        - Installing or updating
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Ryna version
+      description: The app's About page shows it; for the CLI, `ryna --version`.
+      placeholder: "0.3.9"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [macOS (Apple silicon), macOS (Intel), Windows, Linux]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can it be reproduced?
+      placeholder: |
+        1. ...
+        2. ...
+  - type: textarea
+    id: shown
+    attributes:
+      label: Anything Ryna showed
+      description: An error in the app, or a message in game. Screenshots help.

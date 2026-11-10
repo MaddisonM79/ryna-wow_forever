@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Player guide
+    url: https://ryna.io/wow/guide
+    about: Installing Ryna, what it does and doesn't do, updating and removing it.
+  - name: Report a security problem privately
+    url: https://github.com/MaddisonM79/ryna_agent/security/advisories/new
+    about: Please don't open a public issue for a vulnerability (see SECURITY.md).

@@ -1,0 +1,20 @@
+name: An idea
+description: Something Ryna could do, or do better.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like Ryna to do?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why? What are you trying to get done in game?
+  - type: markdown
+    attributes:
+      value: |
+        Ryna never records anything about other players beyond what the guide describes, and
+        everything it does has a view in game first. An idea that needs either of those to change
+        may not fit.
