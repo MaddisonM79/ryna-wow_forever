@@ -24,6 +24,7 @@ Credits.lua
 Panel.lua
 Minimap.lua
 Slash.lua
+Window.lua
 Mods.lua
 Init.lua
 AgentStatus.lua

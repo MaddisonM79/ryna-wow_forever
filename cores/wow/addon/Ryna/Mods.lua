@@ -27,6 +27,15 @@
 --                                     arg is the next word, rest the whole line after <word>
 --                                     (cores after 0.3.4; 0.3.4 passes arg only)
 --   Ryna.Slash.AddStatusLines(order, fn)   fn() -> lines for /ryna status, at `order`
+--   Ryna.Window.AddSection(spec)      a section of Ryna's one window (Window.lua has the spec), and
+--                                     .Open(key), .Toggle(key), .Hide(), .IsShown(), .Selected(),
+--                                     .Refresh(key), .Choose(guid), .Characters(), .Match(text,
+--                                     search), .QualityColor(q), .ClassColor(class), .ClassName(class),
+--                                     .Money(copper), .ItemIcon(id), .TooltipSection() (cores after
+--                                     0.3.9; a mod checks `Ryna.Window` before using it)
+--   Ryna.Tooltip.HasLine(tooltip, text), .AddLine(tooltip, text, r, g, b, wrap)   the shared guard:
+--                                     a line is never added twice, nor over the same text already
+--                                     drawn (cores after 0.3.9)
 --   Ryna.L                            the core's strings (a mod's own L falls back to it)
 --   Ryna.Try, .Fn, .IsSecret, .NonEmpty, .Now, .Locale, .Print, .PrintRaw, .Debug, .DebugChanged,
 --   .Debugging, .Plural, .N, .Run, .After, .Debounce, .ReportError, .CanonicalName, .MoneyText,
@@ -162,6 +171,29 @@ R.Panel = {
   Refresh = function() return ns.Panel.Refresh() end,
   RefreshIfShown = function() return ns.Panel.RefreshIfShown() end,
   Widgets = ns.Panel.Widgets,
+}
+
+-- The window --------------------------------------------------------------------------------------
+
+local Wn = ns.Window
+R.Window = {
+  AddSection = function(spec) return Wn.AddSection(spec) end,
+  Open = function(key) return Wn.Open(key) end,
+  Toggle = function(key) return Wn.Toggle(key) end,
+  Hide = function() return Wn.Hide() end,
+  IsShown = function() return Wn.IsShown() end,
+  Selected = function() return Wn.Selected() end,
+  Refresh = function(key) return Wn.Refresh(key) end,
+  Choose = function(guid) return Wn.Choose(guid) end,
+  Characters = function() return Wn.Characters() end,
+  TooltipSection = function() return Wn.TooltipSection() end,
+  Match = Wn.Match, QualityColor = Wn.QualityColor, ClassColor = Wn.ClassColor, ClassName = Wn.ClassName,
+  Money = Wn.Money, ItemIcon = Wn.ItemIcon,
+}
+
+R.Tooltip = {
+  HasLine = function(tooltip, text) return ns.TooltipLines.Has(tooltip, text) end,
+  AddLine = function(tooltip, text, r, g, b, wrap) return ns.TooltipLines.Add(tooltip, text, r, g, b, wrap) end,
 }
 
 -- /ryna -----------------------------------------------------------------------------------------

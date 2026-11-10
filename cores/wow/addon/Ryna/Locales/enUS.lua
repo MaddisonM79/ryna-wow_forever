@@ -153,6 +153,18 @@ L["/ryna combatlog instances||always||never: when the addon turns combat logging
 L["combat logging: %s"] = true
 L["usage: /ryna combatlog instances||always||never (now %s)"] = true
 
+-- Window.lua
+-- Ryna's window: the three groups of its rail (what is about you, about the world, about fights and
+-- money), the character picker's first choice, and a character whose name the file doesn't have.
+L["Me"] = true
+L["World"] = true
+L["Combat and gold"] = true
+L["All characters"] = true
+L["Unknown character"] = true
+-- A list with nothing in it: the search matched nothing, or nothing is recorded yet.
+L["Nothing matches."] = true
+L["Nothing recorded yet."] = true
+
 -- Init.lua
 -- The login line, after "Ryna 0.2.1: ".
 L["recording. /ryna for settings."] = true
