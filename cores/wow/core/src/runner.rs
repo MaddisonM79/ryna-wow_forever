@@ -15,6 +15,7 @@ use crate::snapshot::{self, account_key, default_label};
 use crate::state::{self, AccountState, LastRun, State};
 use crate::util::{self, Clock};
 use crate::watch::WatchEvent;
+use crate::zones_backfill;
 
 #[derive(Debug, Clone, Default)]
 pub struct RunOptions {
@@ -119,6 +120,9 @@ pub fn run_once_observed(
     let mut ids_by_account: BTreeMap<PathBuf, Vec<i64>> = BTreeMap::new();
 
     for acct in &discovery.accounts {
+        // Chronicle by zone's backfill (zones_backfill): once per character, with the game closed,
+        // before the push so the push carries it. Local only; a failure is the next run's to retry.
+        backfill_zones(acct, clock);
         let key = path_key(&acct.path);
         let entry = st.accounts.entry(key).or_insert_with(|| AccountState {
             key: account_key(&acct.account),
@@ -224,6 +228,23 @@ pub fn run_once_observed(
         failure,
         first_error,
     })
+}
+
+/// The combat-log backfill for one account file ([`zones_backfill::run`]), said on stderr.
+fn backfill_zones(acct: &AccountFile, clock: &dyn Clock) {
+    let running = || crate::game_process::game_running_at(&acct.install);
+    match zones_backfill::run(acct, clock.now(), &running) {
+        Ok(zones_backfill::Outcome::Done { placed, files }) => {
+            for p in placed {
+                eprintln!(
+                    "zones backfill: {} kills placed in zones for {} from {files} combat logs",
+                    p.placed, p.guid
+                );
+            }
+        }
+        Ok(_) => {}
+        Err(e) => eprintln!("zones backfill for {}: {e:#}", acct.path.display()),
+    }
 }
 
 /// One account: pushed, unchanged, or failed; with the file's item ids when it was parsed and

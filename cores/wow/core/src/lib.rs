@@ -18,6 +18,7 @@
 //! - [`settings`]: the Settings mod: addon settings backed up (encrypted) and copied between characters.
 //! - [`status`]: what a front end shows (installs, accounts, the sign-in, the last run).
 //! - [`combat`]: the combat log: parsing, encounters, digests, the tailer and its upload queue.
+//! - [`zones_backfill`]: Chronicle's earlier kills placed in zones from the combat logs, once per character.
 //!
 //! The agent's own modules (`auth`, `cancel`, `config`, `fix`, `http`, `util`) moved to
 //! `ryna-agent` in stage 1; they're re-exported here under their old names, so `crate::auth` and
@@ -41,6 +42,7 @@ pub mod state;
 pub mod status;
 pub mod watch;
 pub mod wow_core;
+pub mod zones_backfill;
 
 pub use ryna_agent::{auth, cancel, config, fix, http, identity, util};
 

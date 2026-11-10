@@ -1024,6 +1024,17 @@ default of `combatLog = "instances"` missing world kills, which will be most pla
 
 **Check first.** `ZONE_CHANGE`'s name is assumed to be the same text as `GetRealZoneText`. Check this on a real
 log before building; if it's ever the subzone, fold it up through the same `areas` lookup the census uses.
+- **Checked on 2026-11-10** (26 logs, Nov 6 to 10). It names the zone ("Elwynn Forest", "Westfall", "Duskwood",
+  "Stormwind City", "Redridge Mountains", "Zephras Isle"; "The Deadmines" inside the dungeon, instance id 36), each
+  with a `MAP_CHANGE` of the same name. But it also fires on walking into a building ("Lion's Pride Inn",
+  "Sentinel Tower", "Lakeshire Inn", "Lakeshire Town Hall"), with no `MAP_CHANGE`, and on a loading screen
+  ("UNKNOWN AREA", with the continent's `MAP_CHANGE`).
+- So the agent (`cores/wow/core/src/zones_backfill.rs`) takes a `ZONE_CHANGE` name as a zone only when the logs
+  also show it as a `MAP_CHANGE` or an instance (nonzero instance id), or the record already has it as a zone.
+  Any other name leaves the kill in the zone it was in, which is the building's own. No `areas` lookup is needed.
+- Measured with that rule: the logs place 781 kills (own and party) for Player-6933-01A402F3 in Elwynn Forest,
+  Westfall and The Deadmines, and 315 for Player-6933-016102AC in Zephras Isle, none in a building. Each
+  creature's share is still capped at its earlier count.
 
 **5. In game first (7.5).** Decided (Maddison, 2026-11-10): the picker, the tooltip line and a Zones section.
 - **Kills and Loot sections:** a zone picker beside the search ("All zones", "This zone", then the zones the
