@@ -347,8 +347,10 @@ tag, untick `dry_run` to publish that tag.
 Set up 2026-11-10 (Maddison's call):
 
 - Only a repository admin (Maddison) can create a `v*` tag, and nobody, admins included, can
-  move or delete one (two tag rulesets). `main` takes pushes, merges, force-pushes and deletes
-  from admins only, and every commit on it must be signed, with no exception (two branch rulesets).
+  move or delete one (two tag rulesets). Only admins can force-push or delete `main`, and every
+  commit on it must be signed, with no exception (two branch rulesets). Maddison is the only
+  collaborator, so she is the only one who pushes or merges; a PR merges normally, with no
+  `--admin`.
 - `release.yml` refuses a lightweight tag, a tag GitHub can't verify, and a tag whose commit
   isn't on `main`, before anything builds.
 - A published release is never changed. Immutable releases are on, and the workflow refuses a
