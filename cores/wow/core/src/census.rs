@@ -7,17 +7,19 @@
 //! keeps one row per submission ID and key). What leaves for each is the `seen` event's own fields,
 //! when it was seen, and the observing character's realm and faction. Every character Ryna has
 //! recorded on this computer is left out, not just the observing account's: [`OwnCharacters`]
-//! holds the GUIDs and full names from every account's snapshot in every install the agent works
-//! in, so a character on a second game account, seen by one on the first, is never sent as a
-//! stranger. In stage (a) only `ryna census push` sends these, by hand; the app keeps pushing
+//! holds the GUIDs and full names from every account's snapshot, and the name of every character
+//! folder under `WTF/Account`, in every install on the computer, so a character on a second game
+//! account, seen by one on the first, is never sent as a stranger. In stage (a) only `ryna census push` sends these, by hand; the app keeps pushing
 //! snapshots as before.
 
 use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
+use crate::discovery::Install;
 use crate::snapshot::{EventType, Snapshot};
 
 pub const CENSUS_SCHEMA: i64 = 1;
@@ -87,10 +89,16 @@ fn guid_server_id(guid: &str) -> Option<i64> {
     parts.next()?.parse().ok()
 }
 
-/// Every character Ryna has recorded on this computer: the GUIDs and full names (lower case) of
-/// the characters in every account's snapshot, in every install. The census leaves out any
-/// sighting of one of them, by GUID, or by full name where the event has no GUID (a `/who` row
-/// carries none, so the name match is what catches those).
+/// Every character Ryna has recorded on this computer: the GUIDs and full names of the characters
+/// in every account's snapshot, in every install, and the name of every character folder the game
+/// keeps under `WTF/Account/<account>/<Realm>/` ([`OwnCharacters::add_folders`], which covers an
+/// account whose `Ryna.lua` there isn't, or doesn't read). The census leaves out any sighting of one
+/// of them, by GUID, or by full name where the event has no GUID (a `/who` row carries none, so the
+/// name match is what catches those).
+///
+/// Names are compared without regard to case, spaces as hyphens, and a seen name that is an own
+/// name followed by `-<anything>` (a realm suffix, `Maddie-Shammie-91`) counts as that own name: a
+/// stranger who shares a name on another realm is left out too, which errs the private way.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OwnCharacters {
     guids: BTreeSet<String>,
@@ -121,11 +129,33 @@ impl OwnCharacters {
                     (Some(f), Some(l)) => Some(format!("{f}-{l}")),
                     _ => None,
                 });
-            if let Some(n) = name
-                .map(|n| n.trim().to_lowercase())
-                .filter(|n| !n.is_empty())
-            {
-                self.names.insert(n);
+            if let Some(n) = name {
+                self.add_name(&n);
+            }
+        }
+    }
+
+    /// Add one own character by name (a full name, or a character folder's name).
+    pub fn add_name(&mut self, name: &str) {
+        let n = normal_name(name);
+        if !n.is_empty() {
+            self.names.insert(n);
+        }
+    }
+
+    /// Add the name of every character folder in `install` (`WTF/Account/*/<Realm>/<Name>`): every
+    /// character that has logged in there, whether or not its account has a `Ryna.lua`.
+    pub fn add_folders(&mut self, install: &Install) {
+        for account in subdirs(&install.path.join("WTF").join("Account")) {
+            for realm in subdirs(&account) {
+                if realm.file_name().is_some_and(|n| n == "SavedVariables") {
+                    continue;
+                }
+                for character in subdirs(&realm) {
+                    if let Some(n) = character.file_name() {
+                        self.add_name(&n.to_string_lossy());
+                    }
+                }
             }
         }
     }
@@ -133,8 +163,36 @@ impl OwnCharacters {
     /// Whether a `seen` event's fields name one of these characters.
     fn sighting_of(&self, seen: &Map<String, Value>) -> bool {
         text(seen, "guid").is_some_and(|g| self.guids.contains(g))
-            || text(seen, "fullName").is_some_and(|n| self.names.contains(&n.to_lowercase()))
+            || text(seen, "fullName").is_some_and(|n| self.has_name(n))
     }
+
+    fn has_name(&self, seen: &str) -> bool {
+        let n = normal_name(seen);
+        self.names.contains(&n)
+            || self.names.iter().any(|own| {
+                n.strip_prefix(own.as_str())
+                    .is_some_and(|rest| rest.len() > 1 && rest.starts_with('-'))
+            })
+    }
+}
+
+/// A name as the census compares it: trimmed, lower case, each run of spaces a hyphen.
+fn normal_name(name: &str) -> String {
+    name.split_whitespace()
+        .collect::<Vec<_>>()
+        .join("-")
+        .to_lowercase()
+}
+
+fn subdirs(p: &Path) -> Vec<PathBuf> {
+    std::fs::read_dir(p)
+        .map(|rd| {
+            rd.filter_map(Result::ok)
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Every `seen` event in the snapshot's journal that isn't about a character in `own` or in the
@@ -334,6 +392,51 @@ mod tests {
         for gone in ["0F00B001", "Kesra", "Tavi"] {
             assert!(!body.contains(gone), "{gone} in {body}");
         }
+    }
+
+    #[test]
+    fn names_match_across_case_spaces_and_a_realm_suffix_and_folders_count() {
+        let mut own = OwnCharacters::default();
+        own.add_name("Maddie-Shammie");
+        let seen = |n: &str| {
+            json!({ "fullName": n, "source": "who" })
+                .as_object()
+                .unwrap()
+                .clone()
+        };
+        for mine in [
+            "Maddie-Shammie",
+            "maddie-shammie ",
+            "Maddie Shammie",
+            "Maddie-Shammie-91",
+            "Maddie Shammie-Doomhowl",
+        ] {
+            assert!(own.sighting_of(&seen(mine)), "{mine}");
+        }
+        for stranger in [
+            "Maddie",
+            "Maddie-Shammier",
+            "Maddie-Shammie-",
+            "Kesra-Duskmantle",
+        ] {
+            assert!(!own.sighting_of(&seen(stranger)), "{stranger}");
+        }
+        // A character folder on a second account with no Ryna.lua at all is still own.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("_forever_");
+        std::fs::create_dir_all(p.join("WTF/Account/SECOND/91/Tavi-Emberleaf")).unwrap();
+        std::fs::create_dir_all(p.join("WTF/Account/SECOND/SavedVariables/NotAChar")).unwrap();
+        let mut own = OwnCharacters::default();
+        own.add_folders(&Install {
+            path: p,
+            flavor: Some("wowf".into()),
+        });
+        assert!(own.sighting_of(&seen("Tavi-Emberleaf")));
+        assert!(!own.sighting_of(&seen("NotAChar")));
+        let s = fixture();
+        assert!(census_events(&s, &own)
+            .iter()
+            .all(|e| e.seen.get("fullName") != Some(&json!("Tavi-Emberleaf"))));
     }
 
     #[test]

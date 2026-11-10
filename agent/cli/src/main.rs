@@ -522,7 +522,21 @@ fn census_push(config: &Config, install: Option<&Path>, dry_run: bool) -> Result
             unread.join(", ")
         );
     }
-    let own = census::OwnCharacters::of(&snapshots);
+    // Plus every character folder in every install on this computer: the one --install names and
+    // every one in the usual places, so a character on an account whose Ryna.lua isn't there (or
+    // in an install --install left out) still isn't a stranger.
+    let mut own = census::OwnCharacters::of(&snapshots);
+    let mut installs = found.installs.clone();
+    if install.is_some() {
+        for i in discovery::discover(None).installs {
+            if !installs.contains(&i) {
+                installs.push(i);
+            }
+        }
+    }
+    for i in &installs {
+        own.add_folders(i);
+    }
     let mut failed = !unread.is_empty();
     for snapshot in &snapshots {
         let label = snapshot.account.label.clone();
