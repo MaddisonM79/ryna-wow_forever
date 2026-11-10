@@ -994,19 +994,31 @@ mod tests {
         assert!(part_size(0, 1).is_err() && part_size(5, 4).is_err());
     }
 
+    /// A fresh random data key, as the API hands one out for each backup.
+    fn random_key() -> [u8; 32] {
+        let mut key = [0u8; 32];
+        getrandom::fill(&mut key).expect("the OS gave no random numbers for a test key");
+        key
+    }
+
     #[test]
     fn encryption_is_bound_to_the_key_the_nonce_and_the_id() {
-        let key = [1u8; 32];
-        let nonce = [2u8; 12];
+        // Fresh each run: the property holds for any key and nonce, not one chosen pair.
+        let key = random_key();
+        let nonce = new_nonce();
         let ct = encrypt(b"settings", &key, &nonce, "id-1").unwrap();
         assert_eq!(ct.len(), b"settings".len() + 16);
         assert_eq!(decrypt(&ct, &key, &nonce, "id-1").unwrap(), b"settings");
         assert!(decrypt(&ct, &key, &nonce, "id-2").is_err());
-        assert!(decrypt(&ct, &[9u8; 32], &nonce, "id-1").is_err());
+        let other_key = random_key();
+        assert_ne!(other_key, key);
+        assert!(decrypt(&ct, &other_key, &nonce, "id-1").is_err());
+        let other_nonce = new_nonce();
+        assert_ne!(other_nonce, nonce);
+        assert!(decrypt(&ct, &key, &other_nonce, "id-1").is_err());
         let mut bad = ct.clone();
         bad[3] ^= 1;
         assert!(decrypt(&bad, &key, &nonce, "id-1").is_err());
-        assert_ne!(new_nonce(), new_nonce());
     }
 
     #[test]

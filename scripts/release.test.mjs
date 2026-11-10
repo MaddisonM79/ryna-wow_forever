@@ -5,7 +5,7 @@ import { manifest } from "./latest-json.mjs";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { agree, lockVersion, luaVersions, modVersions, readVersions, tocVersion, workspaceVersion } from "./versions.mjs";
+import { agree, escapeRegExp, lockVersion, luaVersions, modVersions, readVersions, tocVersion, workspaceVersion } from "./versions.mjs";
 
 test("reads each place's version", () => {
   assert.equal(tocVersion("## Interface: 16001\r\n## Version: 0.2.0\r\n## SavedVariables: RynaDB\n"), "0.2.0");
@@ -18,6 +18,11 @@ test("reads each place's version", () => {
   assert.equal(lockVersion(lock, "ryna"), "0.2.0");
   assert.equal(lockVersion(lock, "ryna-wow-app"), "0.1.0");
   assert.equal(lockVersion(lock, "ryna-wow-core"), null);
+  // A name is matched literally, whatever characters it has: no wildcard, class or escape in it.
+  assert.equal(lockVersion(lock, "ryn."), null);
+  assert.equal(lockVersion(lock, "ryna-wow-.*"), null);
+  assert.equal(lockVersion('[[package]]\nname = "a\\\\b+[c]"\nversion = "1.2.3"\n', "a\\\\b+[c]"), "1.2.3");
+  assert.equal(escapeRegExp("a.b*c\\d[e]-f/g"), "a\\.b\\*c\\\\d\\[e\\]\\-f\\/g");
 });
 
 test("reads each bundled mod's manifest and its addon folders' TOCs", () => {
