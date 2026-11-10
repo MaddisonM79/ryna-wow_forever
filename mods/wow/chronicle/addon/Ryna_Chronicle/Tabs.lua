@@ -57,7 +57,7 @@ function build.recording(f)
   if ns.Window and ns.Window.available then
     P.openWindow = button(f, L["Open Ryna's window"], 220, 22)
     if P.openWindow then
-      P.openWindow:SetScript("OnClick", function() ns.Run("ryna window", ns.Window.Open, "session") end)
+      P.openWindow:SetScript("OnClick", function() ns.Run("ryna window", ns.Window.Open) end)
     end
     P.windowHint = text(f, "GameFontDisableSmall", 10)
     P.windowHint:SetText(L["Also /chronicle. Your session, your characters, everything in their bags and banks, "

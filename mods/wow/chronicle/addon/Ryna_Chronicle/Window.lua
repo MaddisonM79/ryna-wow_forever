@@ -428,19 +428,21 @@ local function tooOld()
   ns.Print(L["the Ryna addon here is too old for its window. Update it from the Ryna companion app."])
 end
 
+-- Opens the window on section `key`; with none, on the section it was last on (the core remembers it
+-- across sessions; Session the first time, the rail's first).
 function Wn.Open(key)
   if not Wn.available then return tooOld() end
-  RW.Open(key and Wn.keys[key] and key or "session")
+  RW.Open(key and Wn.keys[key] and key or nil)
 end
 
--- The strip's click: opens the window on Session, or closes it.
+-- The strip's click: opens the window where it was last, or closes it.
 function Wn.Toggle()
   if not Wn.available then return tooOld() end
-  if RW.IsShown() then RW.Hide() else RW.Open("session") end
+  if RW.IsShown() then RW.Hide() else RW.Open() end
 end
 
--- /chronicle, and /ryna chronicle: opens or closes the window ("/chronicle kills" opens a section;
--- "levels" is History's old name).
+-- /chronicle, and /ryna chronicle: opens the window where it was last, or closes it ("/chronicle
+-- kills" opens a section; "levels" is History's old name).
 local ALIASES = { levels = "history" }
 local function command(arg)
   arg = tostring(arg or ""):lower():match("^%s*(%S*)")

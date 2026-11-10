@@ -158,11 +158,11 @@ for _, s in ipairs(Wn.List()) do order[#order + 1] = s.key end
 eq(table.concat(order, " "), "session characters items kills loot history probe",
   "rail order: Me by order, then combat")
 
--- /chronicle opens the window on Session.
+-- /chronicle opens the window; the first time ever, on Session (the rail's first).
 SlashCmdList.RYNACHRONICLE("")
 local f = Wn.frame
 check(f and f:IsShown(), "/chronicle opens the window")
-eq(Wn.Selected(), "session", "on Session")
+eq(Wn.Selected(), "session", "on Session the first time")
 eq(f.title:GetText(), "Session", "the header's title")
 local inSpecial = false
 for _, name in ipairs(UISpecialFrames) do if name == "RynaWindow" then inSpecial = true end end
@@ -500,16 +500,28 @@ f:Hide()
 R.Window.Open()
 eq(Wn.Selected(), "probe", "a fresh session's window opens on the remembered section")
 
--- The strip's click opens the window on Session; a second closes it.
+-- Every plain way in opens the window on the section it was last on (Maddison, 2026-11-09), another
+-- mod's included: the strip's click (a second closes it), /chronicle, and the Recording tab's button.
 f:Hide()
 F.Click(ns.Strip.frame, "LeftButton")
 check(f:IsShown(), "the strip's click opens the window")
-eq(Wn.Selected(), "session", "on Session")
+eq(Wn.Selected(), "probe", "the strip opens it where it was last")
 F.Click(ns.Strip.frame, "LeftButton")
 check(not f:IsShown(), "a second click closes it")
--- /ryna chronicle is the same command.
+-- /ryna chronicle is the same command; a named section still goes straight there.
 core.Slash("chronicle kills")
 eq(Wn.Selected(), "kills", "/ryna chronicle kills")
+f:Hide()
+SlashCmdList.RYNACHRONICLE("")
+check(f:IsShown(), "/chronicle opens it again")
+eq(Wn.Selected(), "kills", "/chronicle opens it where it was last")
+f:Hide()
+Wn.state.section = nil -- a fresh login: only RynaDB remembers
+ns.Window.Open()
+eq(Wn.Selected(), "kills", "the button's open, after a login, is on the remembered section")
+f:Hide()
+ns.Window.Open("nowhere")
+eq(Wn.Selected(), "kills", "a section that doesn't exist: where it was last")
 RynaDB.settings = { minimap = RynaDB.settings.minimap, window = RynaDB.settings.window }
 core.ApplySettingDefaults(RynaDB.settings)
 eq(type(RynaDB.settings.window), "table", "the window's settings survive the defaults")

@@ -271,7 +271,7 @@ in. It's the game's own small font on a translucent black backdrop and nothing m
 well in the default UI as in a dark one like ElvUI's. Hovering it shows when the session started,
 kills, experience, levels gained, money (net, and gained / spent), quests, items looted and deaths,
 with the per-hour rates, and the session's top 8 creatures (kills and experience). A **click** opens
-Ryna's window on Session (or closes it); a **right-click** locks or unlocks it (said in chat); unlocked, **Shift-drag**
+Ryna's window where it was last (or closes it); a **right-click** locks or unlocks it (said in chat); unlocked, **Shift-drag**
 moves it, and the place is kept (`RynaDB.settings.sessionStripPos`). It's clamped to the screen.
 
 What a session counts (Chronicle's `Session.lua`, kept in memory): kills by creature (count and
@@ -292,7 +292,7 @@ clock, and only while it's shown.
 
 One window for everything the mods record (`RynaWindow`, the core's `Window.lua`; not the settings
 panel). `/chronicle` (or `/ryna chronicle`), a click on the session strip or the Recording tab's
-button opens it on Session. It moves by dragging, closes with Escape or its close button, and keeps
+button opens it on the section it was last on (Session the first time). It moves by dragging, closes with Escape or its close button, and keeps
 its place and the section it was on (`RynaDB.settings.window`; the panel's Defaults keeps them too).
 It uses the game's own fonts, tooltip backdrop, close button, search box, dropdown and bar textures and
 no art of its own, so it sits in the default UI and in a dark one like ElvUI's.
@@ -465,7 +465,7 @@ positions and health in the log, turn on **Advanced Combat Logging** in the game
   print as one summary line per scan, and nearby players at most one line per 5 seconds.
   Your own `/who` prints one line per answer: its count, how many were recorded, and how many were
   skipped by the window or appeared twice.
-- `/ryna chronicle`, or `/chronicle`: opens Ryna's window on Session, or closes it (Chronicle's);
+- `/ryna chronicle`, or `/chronicle`: opens Ryna's window on the section it was last on, or closes it (Chronicle's);
   `/chronicle session|characters|items|kills|loot|history` opens it on that section (`levels` is
   History's old name and still works).
 - `/ryna help`: the commands.
