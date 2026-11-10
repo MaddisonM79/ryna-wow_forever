@@ -559,8 +559,8 @@ check(statusPanel[1].fn()[1] == "Prices: sell line on (with the stack's total, e
 check(statusSlash[1] and statusSlash[1].order == statusPanel[1].order, "and the same in /ryna status")
 check(#chat == 0, "nothing in chat from any tooltip")
 commands.prices.run("", "")
--- The two status lines (the sell line's, the auction side's), a line per setting, and the hint.
-check(#chat == 2 + #ns.Settings.FEATURES + 1, "/ryna prices prints its state when typed: " .. #chat)
+-- The three status lines (the sell line's, the auction side's, the pooled tables'), a line per setting, and the hint.
+check(#chat == 3 + #ns.Settings.FEATURES + 1, "/ryna prices prints its state when typed: " .. #chat)
 check(chat[1] == "Ryna: Prices: sell line on (with the stack's total, everywhere)", chat[1])
 chat = {}
 commands.prices.run("stacktotal", "stacktotal off")

@@ -31,13 +31,21 @@ local HELP = {
     .. "house over a few seconds and keeps each item's prices for the line above. The prices per item (never "
     .. "who posted them) go to your Ryna journal, so the companion app can pool them. Off: no snapshot and "
     .. "nothing sent; searches still update the line."],
+  priceVendorLine = L["Adds which vendor sells the item and for how much, from everyone's merchant visits "
+    .. "pooled by the companion app: the best known seller (confirmed, then cheapest) and how many more there are. "
+    .. "The app brings the table down with each sync; the game reads it at login or /reload."],
+  pricePooledAuctionLine = L["Adds everyone's auction house numbers for the item, in its own colour under "
+    .. "your own line: today's median price, how many were listed and how old the newest snapshot is. From "
+    .. "the snapshots everyone's Prices mod took, pooled by the companion app and brought down with each "
+    .. "sync; the game reads it at login or /reload."],
 }
 
 local function build(f)
   P.intro = text(f, "GameFontHighlightSmall", 11)
-  P.intro:SetText(L["Prices puts what a vendor pays, and what the auction house asks, on item tooltips. It "
-    .. "only reads the game's item data and the auction house you open: it does nothing for you and says "
-    .. "nothing in chat."])
+  P.intro:SetText(L["Prices puts what a vendor pays, which vendor sells an item, and what the auction house "
+    .. "asks, on item tooltips. It reads the game's item data, the auction house you open, and the price tables "
+    .. "the companion app brings down (read at login or /reload): it does nothing for you and says nothing in "
+    .. "chat."])
   P.boxes = {}
   for _, feature in ipairs(S.FEATURES) do
     local cb = checkbox(f, feature.label, HELP[feature.key])

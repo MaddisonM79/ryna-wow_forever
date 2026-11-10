@@ -30,6 +30,12 @@ use crate::util::Clock;
 
 pub const INGEST_PATH: &str = "/v1/wow/agent/ingest";
 pub const HEARTBEAT_PATH: &str = "/v1/wow/agent/heartbeat";
+/// The pooled prices for the items an account knows (docs/wow.md 17.2), read for `Data/`.
+pub const AGENT_PRICES_PATH: &str = "/v1/wow/agent/prices";
+/// Ids per `/agent/prices` call, the API's page.
+pub const AGENT_PRICES_PAGE: usize = 200;
+/// The (empty) request body's limit for that GET; the answer isn't held to it.
+pub const AGENT_PRICES_LIMIT: usize = 64 * 1024;
 pub const ENCOUNTERS_PATH: &str = "/v1/wow/agent/encounters";
 pub const CENSUS_PATH: &str = "/v1/wow/census";
 /// The Settings mod's backups (docs/wow.md section 15).
@@ -346,6 +352,33 @@ impl<'a> Api<'a> {
     pub fn ingest(&self, snapshot: &Snapshot) -> Result<Value, PushError> {
         let body = serde_json::to_vec(snapshot).expect("a snapshot always serialises");
         self.post(INGEST_PATH, body, INGEST_LIMIT, Duration::from_secs(120))
+    }
+
+    /// One page of the pooled prices (docs/wow.md 17.2): `GET /agent/prices?items=…&flavor=…` as
+    /// the person, unsigned (a GET), at most `AGENT_PRICES_PAGE` ids. Returns the envelope's `data`
+    /// (`{ flavor, items: [ { itemId, vendors, today, week } ] }`).
+    pub fn agent_prices(&self, ids: &[i64], flavor: &str) -> Result<Value, PushError> {
+        let items = ids
+            .iter()
+            .take(AGENT_PRICES_PAGE)
+            .map(i64::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        let path = format!(
+            "{AGENT_PRICES_PATH}?items={items}&flavor={}",
+            path_segment(flavor)
+        );
+        self.send(
+            Method::Get,
+            &path,
+            "application/json",
+            None,
+            Vec::new(),
+            AGENT_PRICES_LIMIT,
+            Duration::from_secs(60),
+            Bearer::Person,
+            false,
+        )
     }
 
     pub fn heartbeat(&self, hb: &Heartbeat) -> Result<Value, PushError> {

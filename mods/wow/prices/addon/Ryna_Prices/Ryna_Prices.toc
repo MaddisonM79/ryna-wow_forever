@@ -20,6 +20,7 @@ Locales\zhCN.lua
 Locales\zhTW.lua
 Settings.lua
 Auction.lua
+Pooled.lua
 Tooltip.lua
 Tab.lua
 Status.lua

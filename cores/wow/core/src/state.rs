@@ -24,6 +24,13 @@ pub struct State {
     pub accounts: BTreeMap<String, AccountState>,
     #[serde(default)]
     pub last_run: Option<LastRun>,
+    /// By install path: when its `Data/` price tables were last refreshed from the API
+    /// (`prices_data`), so an unchanged account still gets fresh pooled prices now and then.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub prices_data_at: BTreeMap<String, i64>,
+    /// By install path: not before when its tables are tried again after a failed refresh.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub prices_data_retry_at: BTreeMap<String, i64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

@@ -23,10 +23,16 @@ local function auctionLine()
   return string.format(L["Prices: %s"], piece .. "; " .. snapshotLine())
 end
 
+-- Everyone's tables: "Prices: pooled prices as of 2 hours ago: 312 items with a vendor, 1204 with
+-- auction prices", or why there are none.
+local function pooledLine()
+  return string.format(L["Prices: %s"], ns.Pooled.Status())
+end
+
 -- "Prices: sell line on (with the stack's total, everywhere)", then "Prices: auction line on,
--- snapshots on; last auction snapshot 2 hours ago: 192300 rows, 8123 items".
+-- snapshots on; last auction snapshot 2 hours ago: 192300 rows, 8123 items", then the pooled tables.
 local function line()
-  return { string.format(L["Prices: %s"], S.Summary()), auctionLine() }
+  return { string.format(L["Prices: %s"], S.Summary()), auctionLine(), pooledLine() }
 end
 
 -- After Automation (45), before the companion app (50).

@@ -25,6 +25,9 @@ Panel.lua
 Minimap.lua
 Slash.lua
 Window.lua
+Data.lua
 Mods.lua
 Init.lua
 AgentStatus.lua
+Data\vendors.lua
+Data\auctions.lua

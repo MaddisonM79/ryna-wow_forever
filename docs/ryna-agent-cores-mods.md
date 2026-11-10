@@ -178,10 +178,13 @@ A mod is a folder with a manifest, installed and toggled by the agent, belonging
 ## 7. The data layer
 
 The thing only an agent can do: bring data *into* the game. Addons can't fetch, but they load files at
-startup and on `/reload`, and the agent writes files. Today one such file exists (`AgentStatus.lua`,
-the agent's status for the panel). The data layer generalises it: a versioned set of files the core
+startup and on `/reload`, and the agent writes files. The first such file was `AgentStatus.lua`
+(the agent's status for the panel). The data layer generalises it: a versioned set of files the core
 writes under `Interface/AddOns/Ryna/Data/`, one table each, each with a version, the addon reading
-what's there and showing its age.
+what's there and showing its age. The first two are the Prices mod's `Data/vendors.lua` and
+`Data/auctions.lua` (7.3, "The way back down as built", 2026-11-09): one global `RynaData_<name>`
+per file, `{ version, writtenAt, flavor, items }`, read by the core's `Ryna.Data.Get(name, version)`
+and written by the agent's `prices_data` only when the rows changed.
 
 Three sources feed it:
 
@@ -531,6 +534,52 @@ events; an agent or core without the id drops nothing early. A core without the 
 a snapshot's parts are added in one frame, so they are always in the same save. Tests:
 `mods/wow/prices/test/auction_test.lua`, `journal_prune_test.lua`, and the agent's
 `snapshot`/`runner`/`agent_status` tests.
+
+**The way back down as built (2026-11-09, not yet run in game).** The API gives the agent one read,
+`GET /v1/wow/agent/prices?items=<≤200 ids>&flavor=` (api docs/wow.md 17.2; the agent token's one
+pooled read, under its existing `wow:ingest`, so nobody signs in again): per item the best three
+sellers (`npcId, name, zone, price, stack, currency, observers, lastSeen`) and the auction pool's
+`today` and `week`. After each run, for every install that has the core addon, the agent
+(`cores/wow/core/src/prices_data.rs`) takes the item ids of the account files it parsed and pushed
+(`snapshot::item_ids`: what the characters hold, bags, bank and keyring, then what they have looted,
+then what the Prices mod's own auction store has seen; each id once, most useful first; at most
+4,000 an install), asks the API a page of 200 at a time, and writes `Interface/AddOns/Ryna/Data/vendors.lua`
+and `Data/auctions.lua`: one plain global each (`RynaData_vendors`, `RynaData_auctions`; the
+SavedVariables form the agent's own reader reads back), `{ version = 1, writtenAt, flavor, items }`,
+vendors as up to three rows `{ npcId, name, zone, price, stack, observers, currency }` per item
+(the API's order: confirmed first, then copper-only, then cheapest per piece) and auctions as one row `{ min, med, listings,
+snapshots, observers, asOf, weekMed, weekDays, weekSnapshots }` per item (0 for none). Names are
+escaped and stripped of `|` and control characters whatever arrived. Each file is budgeted at 256 KB:
+over it, the vendor file first drops every item's third seller, then its second, then items from the
+end of the id order (the auction store's ids are dropped first, then loot, then what's held); the
+auction file drops items from the end. Written through a temp file and a rename, and only when the rows
+changed (`writtenAt` alone doesn't count), so a quiet sync writes nothing; a reinstall of the addon
+carries `Data/` over the release's stubs. When no account file changed, the tables are refreshed
+anyway every 6 hours, since the pools move as others play; either way every account under the
+install counts (the ones not pushed this run are read for their ids), and an account file that can't
+be read skips the install rather than rewriting its tables without that account's items. A failed
+read, call or write is reported in the run's `prices_data`, never fails the run, and puts the
+install off for 30 minutes; none is attempted while the sign-in is gone or the API is unreachable.
+The tables' `writtenAt` is when their rows last changed, which is what `/ryna prices` shows. The core addon loads the two
+files from its TOC (shipped as stubs, the global `nil`) and hands them out through `Ryna.Data.Get(name,
+version)` (`Data.lua`): the table only when it carries the version asked for, else nil and "absent"
+or "version". `Ryna_Prices` reads both at login (`Pooled.lua`) and adds two lines in `Tooltip.lua`:
+`priceVendorLine` (on), "Sold by Kiro, Durotar: 20c (+2 more)", the best known seller (confirmed first,
+then copper-only, then cheapest, as the API orders them) and how many more, "20c for 5" for a bundle, "· unconfirmed" when one person alone saw the price, "· + other
+costs" when it also costs something besides copper; and `pricePooledAuctionLine` (on), "AH (everyone):
+1s 10c each (22s for 20) · 3 listed · as of 2 hours ago" (today's median, else the agreed min; the
+mean listings per snapshot; the age of that day's newest snapshot, which is the data's time, not the
+file's; "· unconfirmed" for one observer) or "AH (everyone): 1s 10c each this week · 5 snapshots" where
+only older days this week have data, in its own light-blue colour under this account's own white "AH:"
+line so the two never read as one, and away wherever the own line is (the auction house showing the
+item). A table from another version is ignored whole and `/ryna prices` says so ("pooled prices from
+another version: update the companion app and the addon"); absent tables read "no pooled prices yet:
+sync the companion app, then /reload"; a core without `Ryna.Data` reads "too old". What shows is as
+fresh as the last login or `/reload`, which the mod's summary in the app says. Tests:
+`mods/wow/prices/test/pooled_test.lua` (over the core's real `Data.lua`), and the agent's
+`prices_data`, `runner`, `snapshot` and `addon_install` tests. Owed in game: that the TOC loads
+`Data\vendors.lua` from a subfolder as it does `Locales\`, the look of the light-blue line, and whether
+"Sold by" should stay off merchant tooltips (the vendor in front of you is the answer there).
 
 Chronicle's `merchant` event, as built (`Merchants.lua`, setting `merchants`, on, on the Recording
 tab):
@@ -939,10 +988,11 @@ judges them.
    Then the Prices mod (7.3): the sell line first, merchant pooling second, the auction line third.
    Then Chronicle's journal (7.4): the Chronicle window moves into the core as `Ryna.Window` (J0),
    then collections (J1) and dungeons (J2) as sections of Chronicle; quests (J3) wait for stage 3.
-3. **Data layer v1.** Parse the three caches, upload them, pool them, write `Data/names.lua` and
-   `Data/quests.lua` back down; the kills table gains names for creatures never targeted; the
-   Chronicle window (0.2.x plan) reads community numbers from the same files, and the quest pool
-   is what Chronicle's Quests section (7.4, J3) is measured against.
+3. **Data layer v1.** The plumbing exists since 2026-11-09 (`Data/`, `Ryna.Data.Get`, the agent's
+   `prices_data`), carrying the Prices mod's two tables. Next: parse the three caches, upload them,
+   pool them, write `Data/names.lua` and `Data/quests.lua` back down; the kills table gains names for
+   creatures never targeted; the Chronicle window (0.2.x plan) reads community numbers from the same
+   files, and the quest pool is what Chronicle's Quests section (7.4, J3) is measured against.
 4. **The Palworld core.** The Node agent as a sidecar, the identity change, the launchd job retired.
 5. **Palworld mods**, per the reading Maddison picks.
 6. **Git-fetched mods and a mods index**, once someone outside wants to write one.

@@ -36,6 +36,9 @@
 --   Ryna.Tooltip.HasLine(tooltip, text), .AddLine(tooltip, text, r, g, b, wrap)   the shared guard:
 --                                     a line is never added twice, nor over the same text already
 --                                     drawn (cores after 0.3.9)
+--   Ryna.Data.Get(name, version)      a data-layer table the companion app wrote (Data.lua): the
+--                                     table, or nil and "absent" or "version"; .WrittenAt(t), .Count(t)
+--                                     (cores after 0.3.9; a mod checks `Ryna.Data` before using it)
 --   Ryna.L                            the core's strings (a mod's own L falls back to it)
 --   Ryna.Try, .Fn, .IsSecret, .NonEmpty, .Now, .Locale, .Print, .PrintRaw, .Debug, .DebugChanged,
 --   .Debugging, .Plural, .N, .Run, .After, .Debounce, .ReportError, .CanonicalName, .MoneyText,
@@ -63,6 +66,7 @@ for _, name in ipairs({ "Try", "Fn", "IsSecret", "NonEmpty", "Now", "Locale", "P
 end
 R.Ago = ns.Status.Ago
 R.Plain = ns.Status.Plain
+R.Data = ns.Data
 
 function R.DB()
   return ns.db

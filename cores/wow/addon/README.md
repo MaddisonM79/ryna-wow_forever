@@ -418,6 +418,29 @@ shows is as fresh as your last login or `/reload`; the companion app itself is t
 login, if the file says the last upload was more than a day ago (or never), chat gets one extra
 line: "Ryna: the companion app hasn't synced recently."
 
+## Data/: what the companion app brings into the game
+
+The same trick, generalised (docs/ryna-agent-cores-mods.md section 7): the app writes versioned
+tables under `Interface/AddOns/Ryna/Data/`, one file each, loaded at login and `/reload`, each
+one global `RynaData_<name>` shaped `{ version, writtenAt, flavor, items = { [itemId] = ... } }`.
+Today there are two, both for the Prices mod and both pooled from everyone's uploads, about no one:
+
+- `Data/vendors.lua` (`RynaData_vendors`): which vendors sell an item. Per item id, up to three
+  rows of `{ npcId, name, zone, price, stack, observers, currency }`: `price` is copper for `stack`
+  pieces, `observers` how many people saw that price (one: unconfirmed), `currency` whether the
+  item also costs something besides copper.
+- `Data/auctions.lua` (`RynaData_auctions`): everyone's auction house prices. Per item id, one row
+  `{ min, med, listings, snapshots, observers, asOf, weekMed, weekDays, weekSnapshots }`: today's
+  agreed lowest unit buyout and median, the mean listings per snapshot, how many snapshots and
+  people, when (unix); then the last 7 days' median, days with data and snapshots. 0 means none.
+
+The addon ships both as stubs (the global `nil`) and a mod reads them through `Ryna.Data.Get(name,
+version)`, which gives the table only when it carries the version the mod knows, else nil and why
+("absent" or "version"), so a file from another release is ignored rather than misread. What shows
+in game is as fresh as the last login or `/reload`; the app rewrites the files after a sync only
+when their rows changed, and keeps them when it reinstalls the addon. Sizes are budgeted on the
+app's side (about 256 KB a file).
+
 ## Combat logging
 
 The core addon (`CombatLog.lua`, with or without any mod) can turn the game's combat log
@@ -532,6 +555,8 @@ global `Ryna` (`Mods.lua`, where every function is described), never the core's 
   every mod's tooltip lines go through, so no line is added twice or over the same text already drawn; `Ryna.Slash.Add{ word, run(arg, rest), help, order }` (`rest`: the
   whole line after the word, in cores after 0.3.4),
   `.AddStatusLines(order, fn)`; `Ryna.L`.
+- `Ryna.Data.Get(name, version)`, `.WrittenAt(t)`, `.Count(t)`: the data layer's tables (above; cores
+  after 0.3.9, so check `Ryna.Data` first).
 - The helpers: `Try`, `Fn`, `IsSecret`, `NonEmpty`, `Now`, `Locale`, `Print`, `PrintRaw`, `Debug`,
   `DebugChanged`, `Debugging`, `Plural`, `N`, `Run`, `After`, `Debounce`, `ReportError`,
   `CanonicalName`, `MoneyText`, `DurationText`, `ListText`, `Ago`, `Plain`.

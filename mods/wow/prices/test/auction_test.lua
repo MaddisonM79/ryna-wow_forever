@@ -848,7 +848,7 @@ local lines = statusPanel[1].fn()
 check(lines[2] == "Prices: auction line on, snapshots on; last auction snapshot 2 hours ago: 192300 rows, 8123 items",
   "the status line: " .. tostring(lines[2]))
 commands.prices.run("", "")
-check(#chat == 2 + #ns.Settings.FEATURES + 1, "/ryna prices: the two status lines, the settings, the hint: " .. #chat)
+check(#chat == 3 + #ns.Settings.FEATURES + 1, "/ryna prices: the three status lines, the settings, the hint: " .. #chat)
 local listed = table.concat(chat, "\n")
 check(listed:find("auctionLine: on", 1, true) and listed:find("auctionSnapshot: on", 1, true)
   and listed:find("auctionStackTotal: on", 1, true) and listed:find("192300 rows", 1, true),
