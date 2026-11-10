@@ -86,10 +86,28 @@ impl AuthError {
 }
 
 /// An access token and when it expires (unix seconds).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct AccessToken {
     pub token: String,
     pub exp: i64,
+}
+
+/// What `{:?}` shows in place of a token or a device code, so one can't reach a log by way of a
+/// debug print. The secrets' own types redact them; nothing else needs to remember to.
+const REDACTED: &str = "<redacted>";
+
+fn redacted<T>(secret: &Option<T>) -> Option<&'static str> {
+    secret.as_ref().map(|_| REDACTED)
+}
+
+impl std::fmt::Debug for AccessToken {
+    // Never the token.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AccessToken")
+            .field("token", &REDACTED)
+            .field("exp", &self.exp)
+            .finish()
+    }
 }
 
 impl AccessToken {
@@ -308,8 +326,8 @@ impl DeviceCode {
 }
 
 /// A started device grant: what to show the person, and what `poll_device_login` needs. The
-/// device code is the poller's secret, so it is never serialised.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// device code is the poller's secret, so it is never serialised or debug-printed.
+#[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceLogin {
     pub user_code: String,
@@ -321,6 +339,20 @@ pub struct DeviceLogin {
     pub interval: u64,
     #[serde(skip)]
     pub device_code: String,
+}
+
+impl std::fmt::Debug for DeviceLogin {
+    // Never the device code.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DeviceLogin")
+            .field("user_code", &self.user_code)
+            .field("verification_uri", &self.verification_uri)
+            .field("verification_uri_complete", &self.verification_uri_complete)
+            .field("expires_at", &self.expires_at)
+            .field("interval", &self.interval)
+            .field("device_code", &REDACTED)
+            .finish()
+    }
 }
 
 impl DeviceLogin {
@@ -374,7 +406,7 @@ pub fn poll_device_login(
     Auth::new(config, &http, &store, &SystemClock).poll_device_login(login, cancel, on_status)
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Default, Deserialize)]
 struct DeviceAnswer {
     device_code: Option<String>,
     user_code: Option<String>,
@@ -386,13 +418,42 @@ struct DeviceAnswer {
     error_description: Option<String>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Default, Deserialize)]
 struct TokenAnswer {
     access_token: Option<String>,
     refresh_token: Option<String>,
     expires_in: Option<i64>,
     error: Option<String>,
     error_description: Option<String>,
+}
+
+impl std::fmt::Debug for DeviceAnswer {
+    // Never the device code.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DeviceAnswer")
+            .field("device_code", &redacted(&self.device_code))
+            .field("user_code", &self.user_code)
+            .field("verification_uri", &self.verification_uri)
+            .field("verification_uri_complete", &self.verification_uri_complete)
+            .field("interval", &self.interval)
+            .field("expires_in", &self.expires_in)
+            .field("error", &self.error)
+            .field("error_description", &self.error_description)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for TokenAnswer {
+    // Never the tokens.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TokenAnswer")
+            .field("access_token", &redacted(&self.access_token))
+            .field("refresh_token", &redacted(&self.refresh_token))
+            .field("expires_in", &self.expires_in)
+            .field("error", &self.error)
+            .field("error_description", &self.error_description)
+            .finish()
+    }
 }
 
 pub struct Auth<'a> {
@@ -1188,6 +1249,48 @@ mod tests {
         assert_eq!(AccessToken::decode(&a.encode()), Some(a));
         assert_eq!(AccessToken::decode("nope"), None);
         assert_eq!(AccessToken::decode("x abc"), None);
+    }
+
+    #[test]
+    fn debug_prints_never_show_a_token_or_a_device_code() {
+        let access = AccessToken {
+            token: "secret-access".into(),
+            exp: 42,
+        };
+        let login = DeviceLogin {
+            user_code: "ABCD-EFGH".into(),
+            verification_uri: "https://idp.test/device".into(),
+            verification_uri_complete: None,
+            expires_at: 42,
+            interval: 5,
+            device_code: "secret-device".into(),
+        };
+        let device = DeviceAnswer {
+            device_code: Some("secret-device".into()),
+            user_code: Some("ABCD-EFGH".into()),
+            ..DeviceAnswer::default()
+        };
+        let tokens = TokenAnswer {
+            access_token: Some("secret-access".into()),
+            refresh_token: Some("secret-refresh".into()),
+            expires_in: Some(300),
+            ..TokenAnswer::default()
+        };
+        for shown in [
+            format!("{access:?}"),
+            format!("{login:?}"),
+            format!("{device:?}"),
+            format!("{tokens:?}"),
+            format!("{:#?}", Some(&access)),
+        ] {
+            assert!(!shown.contains("secret"), "{shown}");
+            assert!(shown.contains(REDACTED), "{shown}");
+        }
+        // What the person needs to see, and the expiry, still show.
+        assert!(format!("{login:?}").contains("ABCD-EFGH"));
+        assert!(format!("{access:?}").contains("42"));
+        // An absent secret reads as absent, not as redacted.
+        assert!(format!("{:?}", TokenAnswer::default()).contains("access_token: None"));
     }
 
     #[test]
