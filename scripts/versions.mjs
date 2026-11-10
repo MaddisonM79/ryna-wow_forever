@@ -16,9 +16,14 @@ export function workspaceVersion(text) {
   return m ? m[1] : null;
 }
 
+/** `text` matched literally inside a RegExp: every character a pattern treats specially, escaped. */
+export function escapeRegExp(text) {
+  return text.replace(/[\\^$.*+?()[\]{}|\/-]/g, "\\$&");
+}
+
 /** The version Cargo.lock records for a package of ours. */
 export function lockVersion(text, name) {
-  const re = new RegExp(`^\\[\\[package\\]\\]\\s*\\nname = "${name.replace(/[-.]/g, "\\$&")}"\\s*\\nversion = "([^"]+)"`, "m");
+  const re = new RegExp(`^\\[\\[package\\]\\]\\s*\\nname = "${escapeRegExp(name)}"\\s*\\nversion = "([^"]+)"`, "m");
   const m = re.exec(text);
   return m ? m[1] : null;
 }
