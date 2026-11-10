@@ -25,7 +25,7 @@ serde_json.workspace = true
 # package (package.json pins @tauri-apps/api 2.12 and @tauri-apps/plugin-dialog 2.8 to match).
 tauri = { version = "=2.12.5", features = ["tray-icon"] }
 tauri-plugin-autostart = "=2.7.0"
-tauri-plugin-dialog = "=2.8.3"
+tauri-plugin-dialog = "=2.8.4"
 tauri-plugin-opener = "=2.7.2"
 # The in-app updater (GitHub Releases latest.json, minisign-verified): driven from Rust only, so
 # it has no npm package. The relaunch after a macOS install is the core AppHandle::restart.
