@@ -189,6 +189,7 @@ R.Window = {
   Selected = function() return Wn.Selected() end,
   Refresh = function(key) return Wn.Refresh(key) end,
   Choose = function(guid) return Wn.Choose(guid) end,
+  SetFilter = function(key, value) return Wn.SetFilter(key, value) end,
   Characters = function() return Wn.Characters() end,
   TooltipSection = function(tooltip) return Wn.TooltipSection(tooltip) end,
   Match = Wn.Match, QualityColor = Wn.QualityColor, ClassColor = Wn.ClassColor, ClassName = Wn.ClassName,

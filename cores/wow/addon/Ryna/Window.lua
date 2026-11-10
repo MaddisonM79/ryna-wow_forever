@@ -40,7 +40,7 @@
 --   sortable   false: the column headings don't sort (rows with headings in them; default: on)
 --   icons      true leaves room for an icon at the start of every row
 --   columns    { { title, width, justify = "LEFT"|"RIGHT", kind = "bar", sort = false }, ... } (at
---              most 6; sort = false: its heading doesn't sort, for a column with no row.sort key whose
+--              most 8; sort = false: its heading doesn't sort, for a column with no row.sort key whose
 --              text only fill() makes), or function(ctx) -> that list
 --   rows       function(ctx) -> the section's rows, in its own order (see "A row" below)
 --   fill       optional function(row, ctx): fills row.cells (and icon, link, ...) for a row about to
@@ -54,9 +54,14 @@
 --   version    optional function() -> anything comparable with ==: rows(ctx) runs when the section
 --              is first shown and again only when this or the context changes
 --   empty      optional text for a list with nothing in it (default "Nothing recorded yet.")
+--   filter     optional function(ctx) -> { { value, label }, ... }: a second picker, left of the
+--              character picker, on this section only (Chronicle's zones). The first choice is the
+--              default and has value nil; the others' values are strings. Ryna.Window.SetFilter(key,
+--              value) picks one from outside (a Zones row opening Kills on its zone)
 --
 -- ctx = { section, character (a GUID, or nil for all characters), current (the GUID you're on),
--- all (character == nil), search (lowercased, trimmed; "" for none) }. A section filters its own
+-- all (character == nil), search (lowercased, trimmed; "" for none), filter (the section's filter
+-- value, nil for its default) }. A section filters its own
 -- rows by ctx.search (Ryna.Window.Match helps).
 --
 -- A row = { cells = { "text", ... } (by column), sort = { value, ... } (what a column sorts by;
@@ -77,7 +82,7 @@ local BODY_X = RAIL_W + 16
 local BODY_W = WIDTH - BODY_X - 28 -- room for the scroll bar
 local ROW_H = 20
 local MAX_ROWS = 20
-local MAX_COLS = 6
+local MAX_COLS = 8
 local MAX_TILES = 4
 local ICON = 16
 local TOP = -46      -- under the header
@@ -87,7 +92,6 @@ local BOTTOM = 34    -- above the footer
 local BAR_TEXTURE = "Interface\\TargetingFrame\\UI-StatusBar"
 local HIGHLIGHT = "Interface\\QuestFrame\\UI-QuestTitleHighlight"
 local GOLD = "|cffffd100"
-local ALL = "all" -- the picker's All characters
 
 Wn.GROUPS = {
   { key = "me", label = L["Me"] },
@@ -102,7 +106,7 @@ Wn.sections = byKey
 
 -- What the window shows: the section, the picker's choice (nil: all characters), each section's
 -- search and sort, and the scroll offset.
-Wn.state = { section = nil, character = nil, search = {}, sort = {}, offset = 0 }
+Wn.state = { section = nil, character = nil, search = {}, sort = {}, filter = {}, offset = 0 }
 -- Each section's built rows: { rows, sorted, columns, version, character, search, builds }.
 local views = {}
 Wn.views = views
@@ -245,8 +249,10 @@ function Wn.Context(section)
   end
   local search = ""
   if section.search then search = Wn.state.search[section.key] or "" end
+  local filter
+  if section.filter then filter = Wn.state.filter[section.key] end
   return { section = section.key, character = character, current = current, all = character == nil,
-    search = search }
+    search = search, filter = filter }
 end
 
 -- The picker's choices for a section: { guid (nil: All characters), label }.
@@ -290,7 +296,7 @@ function Wn.AddSection(spec)
     if v ~= nil and type(v) ~= "function" then return false end
     return true
   end
-  for _, name in ipairs({ "fill", "tiles", "tooltip", "click", "footer", "version" }) do
+  for _, name in ipairs({ "fill", "tiles", "tooltip", "click", "footer", "version", "filter" }) do
     if not optional(name) then return false end
   end
   local mode = spec.characters or "all"
@@ -302,7 +308,7 @@ function Wn.AddSection(spec)
     icons = spec.icons and true or false, columns = spec.columns, rows = spec.rows, fill = spec.fill,
     tiles = spec.tiles, tooltip = spec.tooltip, click = spec.click, footer = spec.footer,
     version = spec.version, empty = type(spec.empty) == "string" and spec.empty or nil,
-    seq = #sections + 1,
+    filter = spec.filter, seq = #sections + 1,
   }
   sections[#sections + 1] = s
   byKey[s.key] = s
@@ -349,12 +355,13 @@ function Wn.View(section, ctx)
   end
   local version
   if section.version then version = section.version() end
-  if v.built and v.version == version and v.character == ctx.character and v.search == ctx.search then
+  if v.built and v.version == version and v.character == ctx.character and v.search == ctx.search
+    and v.filter == ctx.filter then
     return v, false
   end
   local rows = section.rows(ctx)
   -- Marked built only once rows() returned, so a section that failed is tried again next draw.
-  v.built, v.version, v.character, v.search = true, version, ctx.character, ctx.search
+  v.built, v.version, v.character, v.search, v.filter = true, version, ctx.character, ctx.search, ctx.filter
   v.rows = type(rows) == "table" and rows or {}
   v.columns = columnsFor(section, ctx)
   v.builds = v.builds + 1
@@ -552,18 +559,53 @@ function Wn.LayoutRail()
   markRail()
 end
 
--- The picker ---------------------------------------------------------------------------------------------
+-- The pickers ---------------------------------------------------------------------------------------------
+--
+-- Two of them, built the same way: the character picker (every section) and the section's own filter
+-- (spec.filter, a zone on Chronicle's Kills and Loot), shown only on a section that has one. A source
+-- says what a picker lists and does: choices(section, ctx) -> { { value, label } }, chosen(value),
+-- choose(value), text(section, ctx) and enabled(section). A nil value travels as NONE.
 
-local function isChosen(data)
-  local section = byKey[Wn.state.section]
-  if not section then return false end
-  local ctx = Wn.Context(section)
-  if data == ALL then return ctx.character == nil end
-  return ctx.character == data
+local NONE = "\001none"
+
+local characterSource = {
+  choices = function(section)
+    local out = {}
+    for i, c in ipairs(Wn.Choices(section)) do out[i] = { value = c.guid, label = c.label } end
+    return out
+  end,
+  chosen = function(value)
+    local section = byKey[Wn.state.section]
+    if not section then return false end
+    return Wn.Context(section).character == value
+  end,
+  choose = function(value) Wn.Choose(value) end,
+  text = function(_, ctx) return Wn.PickerText(ctx) end,
+  enabled = function(section) return section.characters ~= "current" end,
+}
+
+local filterSource = {
+  choices = function(section, ctx) return Wn.FilterChoices(section, ctx) end,
+  chosen = function(value)
+    local key = Wn.state.section
+    return byKey[key] ~= nil and Wn.state.filter[key] == value
+  end,
+  choose = function(value) Wn.SetFilter(Wn.state.section, value) end,
+  text = function(section, ctx) return Wn.FilterText(section, ctx) end,
+  enabled = function() return true end,
+}
+
+local function encode(value)
+  if value == nil then return NONE end
+  return value
+end
+local function decode(data)
+  if data == NONE then return nil end
+  return data
 end
 
 -- The game's own dropdown (the 11.x menu) where the client has it.
-local function modernPicker(f)
+local function modernPicker(f, src)
   local dd = create("DropdownButton", nil, f, { "WowStyle1DropdownTemplate" })
   if not dd or not dd.SetupMenu then
     if dd then dd:Hide() end
@@ -572,10 +614,10 @@ local function modernPicker(f)
   local ok = pcall(dd.SetupMenu, dd, function(_, root)
     local section = byKey[Wn.state.section]
     if not section then return end
-    for _, c in ipairs(Wn.Choices(section)) do
-      root:CreateRadio(c.label, isChosen, function(data)
-        ns.Run("ryna window picker", Wn.Choose, data ~= ALL and data or nil)
-      end, c.guid or ALL)
+    for _, c in ipairs(src.choices(section, Wn.Context(section))) do
+      root:CreateRadio(c.label, function(data) return src.chosen(decode(data)) end, function(data)
+        ns.Run("ryna window picker", src.choose, decode(data))
+      end, encode(c.value))
     end
   end)
   if not ok then
@@ -584,54 +626,63 @@ local function modernPicker(f)
   end
   function dd.sync(section)
     if dd.GenerateMenu then pcall(dd.GenerateMenu, dd) end
-    if dd.SetEnabled then pcall(dd.SetEnabled, dd, section.characters ~= "current") end
+    if dd.SetEnabled then pcall(dd.SetEnabled, dd, src.enabled(section)) end
   end
   return dd
 end
 
--- Else a button that opens a list of its own under it.
-local function plainPicker(f)
-  local b = pushButton(f, "", 190, 22)
+-- Else a button that opens a list of its own under it (at most PICKER_MAX choices).
+local PICKER_MAX = 24
+local function plainPicker(f, src, width)
+  local b = pushButton(f, "", width, 22)
   local list = create("Frame", nil, f, { "BackdropTemplate" })
   backdrop(list, 0.97)
   list:SetFrameStrata("FULLSCREEN_DIALOG")
   list:SetPoint("TOPLEFT", b, "BOTTOMLEFT", 0, -2)
-  list:SetWidth(200)
+  list:SetWidth(width + 10)
   list:Hide()
   list.buttons = {}
   b.list = list
   function b.open()
     local section = byKey[Wn.state.section]
     if not section then return end
-    local choices = Wn.Choices(section)
-    for i, c in ipairs(choices) do
+    local choices = src.choices(section, Wn.Context(section))
+    local n = math.min(#choices, PICKER_MAX)
+    for i = 1, n do
+      local c = choices[i]
       local item = list.buttons[i]
       if not item then
-        item = textButton(list, "GameFontHighlightSmall", 188, 18)
+        item = textButton(list, "GameFontHighlightSmall", width - 2, 18)
         list.buttons[i] = item
       end
       item:ClearAllPoints()
       item:SetPoint("TOPLEFT", list, "TOPLEFT", 6, -6 - (i - 1) * 18)
-      item.text:SetText((isChosen(c.guid or ALL) and "> " or "  ") .. c.label)
-      local guid = c.guid
+      item.text:SetText((src.chosen(c.value) and "> " or "  ") .. c.label)
+      local value = c.value
       item:SetScript("OnClick", function()
         list:Hide()
-        ns.Run("ryna window picker", Wn.Choose, guid)
+        ns.Run("ryna window picker", src.choose, value)
       end)
       item:Show()
     end
-    for i = #choices + 1, #list.buttons do list.buttons[i]:Hide() end
-    list:SetHeight(12 + #choices * 18)
+    for i = n + 1, #list.buttons do list.buttons[i]:Hide() end
+    list:SetHeight(12 + n * 18)
     list:Show()
   end
   b:SetScript("OnClick", function()
     if list:IsShown() then list:Hide() else ns.Run("ryna window picker", b.open) end
   end)
   function b.sync(section, ctx)
-    b:SetText(Wn.PickerText(ctx))
-    if section.characters == "current" then b:Disable() else b:Enable() end
+    b:SetText(src.text(section, ctx))
+    if src.enabled(section) then b:Enable() else b:Disable() end
   end
   return b
+end
+
+local function picker(f, src, width)
+  local p = modernPicker(f, src) or plainPicker(f, src, width)
+  p:SetWidth(width)
+  return p
 end
 
 -- Picks a character (nil: all characters) for every section that follows the picker.
@@ -639,6 +690,36 @@ function Wn.Choose(guid)
   Wn.state.character = guid
   Wn.state.offset = 0
   Wn.Draw()
+end
+
+-- A section's filter choices: { { value, label } }, the first (value nil) its default.
+function Wn.FilterChoices(section, ctx)
+  if type(section.filter) ~= "function" then return {} end
+  local list = section.filter(ctx)
+  return type(list) == "table" and list or {}
+end
+
+-- What the filter picker reads: the chosen choice's label (the first's when none is).
+function Wn.FilterText(section, ctx)
+  local first
+  for _, c in ipairs(Wn.FilterChoices(section, ctx)) do
+    first = first or c.label
+    if c.value == ctx.filter then return c.label end
+  end
+  return first or ""
+end
+
+-- Sets section `key`'s filter (nil: its default) and redraws it if it is on screen.
+function Wn.SetFilter(key, value)
+  local section = byKey[key]
+  if not section or not section.filter then return false end
+  if value ~= nil and type(value) ~= "string" then return false end
+  Wn.state.filter[key] = value
+  if Wn.state.section == key then
+    Wn.state.offset = 0
+    Wn.Draw()
+  end
+  return true
 end
 
 -- The search box -------------------------------------------------------------------------------------------
@@ -844,6 +925,17 @@ function Wn.Draw()
     f.picker.sync(section, ctx)
     f.pickerFor = pickerFor
   end
+  local filterFor = section.filter and (pickerFor .. ":" .. tostring(ctx.filter)) or false
+  if f.filter and f.filterFor ~= filterFor then
+    if filterFor then
+      f.filter:Show()
+      if f.filter.sync then f.filter.sync(section, ctx) end
+    else
+      f.filter:Hide()
+      if f.filter.list then f.filter.list:Hide() end
+    end
+    f.filterFor = filterFor
+  end
   if f.searchFor ~= section.key then
     local box = f.search
     box.filling = true
@@ -930,8 +1022,10 @@ function Wn.Select(key)
   if not byKey[key] then return end
   if Wn.state.section ~= key then
     Wn.state.offset = 0
-    local list = Wn.frame and Wn.frame.picker and Wn.frame.picker.list
-    if list then list:Hide() end
+    for _, name in ipairs({ "picker", "filter" }) do
+      local list = Wn.frame and Wn.frame[name] and Wn.frame[name].list
+      if list then list:Hide() end
+    end
   end
   Wn.state.section = key
   local saved = settings()
@@ -1030,10 +1124,11 @@ function Wn.Create()
   search:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
   search.filling = false
   f.search = search
-  local picker = modernPicker(f) or plainPicker(f)
-  picker:SetWidth(190)
-  picker:SetPoint("RIGHT", search, "LEFT", -12, 0)
-  f.picker = picker
+  f.picker = picker(f, characterSource, 190)
+  f.picker:SetPoint("RIGHT", search, "LEFT", -12, 0)
+  f.filter = picker(f, filterSource, 150)
+  f.filter:SetPoint("RIGHT", f.picker, "LEFT", -10, 0)
+  f.filter:Hide()
 
   -- Tiles.
   f.tiles = {}
@@ -1173,6 +1268,7 @@ function Wn.Create()
     if f.hoverRow and tip then tip:Hide() end
     f.hoverRow = false
     if f.picker and f.picker.list then f.picker.list:Hide() end
+    if f.filter and f.filter.list then f.filter.list:Hide() end
   end)
   return f
 end

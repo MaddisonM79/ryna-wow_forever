@@ -371,7 +371,7 @@ Ryna.Window.AddSection({
   columns = { { title = "Item", width = 220 }, { title = "Low", width = 80, justify = "RIGHT" },
     { title = "Listed", width = 120, kind = "bar" } },        -- or function(ctx) -> columns
   version = function() return myVersion end,                  -- rows rebuilt only when this or ctx changes
-  rows = function(ctx)                                        -- ctx: character, current, all, search
+  rows = function(ctx)                                        -- ctx: character, current, all, search, filter
     return { { cells = { "Linen Cloth", "10c", "13,754" }, sort = { "linen cloth", 10, 13754 },
       quality = 1, icon = 132889, link = itemLink, bars = { [3] = { value = 13754, max = 20000 } } } }
   end,
@@ -380,12 +380,18 @@ Ryna.Window.AddSection({
   tooltip = function(row, tip, ctx, hadLink) tip:AddLine("…") end,   -- under the row's own tooltip
   click = function(row, ctx) end,
   footer = function(ctx) return "Your last auction-house visit, 2 hours ago." end,
+  -- optional: a second picker, left of the character picker, on this section only (Chronicle's
+  -- zones); the first choice is the default (value nil), and ctx.filter is the chosen value
+  filter = function(ctx) return { { value = nil, label = "All zones" }, { value = "Westfall", label = "Westfall" } } end,
 })
 ```
 
+Up to 8 columns.
+
 `Ryna.Window` also has `Open(key)`, `Toggle(key)`, `Hide()`, `IsShown()`, `Selected()`,
 `Refresh(key)` (redraw if that section is on screen; rows rebuild only when its version moved),
-`Choose(guid)`, `Characters()`, and the helpers the core uses itself: `Match(text, search)`,
+`Choose(guid)`, `SetFilter(key, value)` (a section's filter from outside, nil for its default),
+`Characters()`, and the helpers the core uses itself: `Match(text, search)`,
 `QualityColor(q)`, `ClassColor(class)`, `ClassName(class)`, `Money(copper)`, `ItemIcon(id)` and
 `TooltipSection()` (the section whose row tooltip is being drawn, so a tooltip hook can leave out a
 line that section already shows). A mod checks `Ryna.Window` exists before using it.
