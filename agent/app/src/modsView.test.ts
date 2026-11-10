@@ -41,8 +41,14 @@ async function render(mods: ModView[], result: ModsResult | null = null, install
   const app = createSSRApp({
     render: () => h(ModsView, { mods, installs, result, toggling: null, installing: null }),
   });
-  // Without the renderer's fragment markers, which say nothing about the structure.
-  return (await renderToString(app)).replace(/<!--[^]*?-->/g, "");
+  // Without the renderer's fragment markers, which say nothing about the structure. Removed until
+  // none are left, so taking one out can't leave another behind (CodeQL alert 19).
+  let html = await renderToString(app);
+  for (let before = ""; before !== html; ) {
+    before = html;
+    html = html.replace(/<!--[^]*?-->/g, "");
+  }
+  return html;
 }
 
 function count(html: string, re: RegExp): number {
