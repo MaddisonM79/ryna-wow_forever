@@ -1217,7 +1217,7 @@ this: at ingest, the snapshot is stored and the pooling step is skipped, and the
 
 **Unsupported: what the API refuses and what still answers.** Refusals are envelopes, 200 `ok:false`,
 with a new code **`AGENT_UNSUPPORTED`** and `detail { version, minimum, preferred, perfect, channel,
-update }` (`update` the download page, `https://ryna.io/wow/guide#update`). Its `message` is written
+update }` (`update` the guide's update steps, `https://ryna.io/wow/guide#upkeep`). Its `message` is written
 for the person, because released apps (through 0.3.9) show an unknown refusal's message as the error
 line in the app and write it into `AgentStatus.lua`'s `messages`, which every released addon shows on
 its Status tab: so a 0.3.x app below minimum still tells its person in both places, with no change.
@@ -1276,7 +1276,8 @@ is the manifest, the setting and one row, with no change to the judgment.
   - unsupported: "This version of Ryna is no longer supported, so nothing syncs to ryna.io. Update to
     carry on." Not dismissable by "Later"; the heartbeat keeps running.
   - the policy's `note`, when there is one, as a second line.
-- **The game**: the app writes `support = { band, perfect, note }` into `AgentStatus.lua`; the
+- **The game**: the app writes `support = { band, version, addon, perfect, note, update }` into
+  `AgentStatus.lua` (as built, 2026-11-10); the
   addon shows it as the first line of the `/ryna` Status tab (amber for reduced, red for unsupported,
   the same words as the app, "Open the Ryna app to update"), and for unsupported a **notice frame** at
   login, once per login, closed with a button. Never chat. Addons through 0.3.9 don't know `support`,
@@ -1302,7 +1303,14 @@ is the manifest, the setting and one row, with no change to the judgment.
 2. **The app** (ryna_agent): reads `support` from the heartbeat's answer (and the census upload's
    when signed out), the banner's states, `channel` in the heartbeat, `addonToc` in the snapshot,
    `support` and the `messages` line in `AgentStatus.lua`, `latest` filled. Ships with the next release.
+   As built (2026-11-10, PR `claude/version-support`): the last judgment is kept in the state
+   folder's `support.json` with when it came, shown only for the app version it judged (an update
+   never shows the old version's banner), and kept through a failed heartbeat to show. The app itself
+   sends no census upload yet (only `ryna census push` does, and keeps that answer's judgment), so a
+   signed-out app has none and shows current. `X-Ryna-Channel` goes on every request the agent makes.
 3. **The addon** (ryna_agent): the Status tab line and the notice frame, from `support`. Same release.
+   As built: the line leads `/ryna status` too, and the Messages tab leaves out the app's copy of the
+   sentence while the Status tab says it.
 4. **Channels**: the beta manifest in `release.yml`, the app's channel setting. Its own release.
 
 **Settled 2026-11-10, Maddison:**

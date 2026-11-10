@@ -96,7 +96,8 @@ let opts = WatchOptions::new(None, Duration::from_secs(60)).unwrap();
 let handle = control.clone();
 std::thread::spawn(move || watch_with_control(&config, &opts, &handle, &mut |event: WatchEvent| {
     // signedIn, installFound, accountFileChanged, pushing, pushed (with the API's counts),
-    // error, heartbeat, passFinished. Every event is Serialize ({"event": "pushed", ...}).
+    // error, heartbeat, support (the API's judgment of this version), contributionsPaused,
+    // passFinished. Every event is Serialize ({"event": "pushed", ...}).
 }));
 control.request_pass();                               // a pass now: wakes the wait, no restart
 control.cancel();                                     // on quit: at once while waiting
@@ -117,7 +118,19 @@ compares the two as dotted integers (`notInstalled`, `current`, `older`, `newer`
 
 After every pass, successful or not, the agent rewrites `Interface/AddOns/Ryna/AgentStatus.lua`
 in each install that has the addon (`RynaAgentStatus`: version, signed in and as whom, last push,
-that install's accounts, and the last error as a message), so the addon can show it in game.
+that install's accounts, the last error as a message, and the API's judgment of this version with
+the newer releases to offer), so the addon can show it in game.
+
+**Supported versions** (docs/ryna-agent-cores-mods.md 9.1). Every heartbeat's answer, and the
+ingest's and census upload's, carries the API's `support`: this version is `current`, `behind` (an
+update is offered), `reduced` (your characters still sync; what you add to the census and prices is
+paused) or `unsupported` (the API refuses the agent's writes with `AGENT_UNSUPPORTED`; the heartbeat
+still answers). The core keeps the last one in `support.json` in the state folder, with when it came
+and for this app version only, and passes it on (`Status.support`, the `support` event,
+`AgentStatus.lua`). It's there to show: nothing on this side refuses or skips anything because of
+it, and no judgment (or one it can't read) counts as `current`. `AGENT_UNSUPPORTED` is an update
+failure (`Fix::Update`) in the API's words; `CONTRIBUTIONS_PAUSED` (a census upload in reduced mode)
+is no failure; an ingest answered `pooled: false` is said in the activity log once, not every pass.
 
 ## Combat logs
 
@@ -287,6 +300,14 @@ there, a banner says "Ryna x.y.z is available" with **Update and restart** (down
 install, start the new version) and **Later** (hides it until a newer one, or a check from
 Settings). Settings has **Check for updates**. Each finding goes to the activity log. The app
 carries the addon, so an app update is also the addon update: the Installs list then offers it.
+
+The same banner shows the API's judgment of this version (How it runs, "Supported versions"):
+behind is the line above; reduced is amber and unsupported red, each with Maddison's sentence
+("This version of Ryna is getting old. ..." / "This version of Ryna is no longer supported, so
+nothing syncs to ryna.io. Update to carry on.") and the policy's note as a second line, and
+unsupported can't be put off with **Later**. When the updater has nothing to install, the banner
+offers **Check for updates** and the guide's update steps instead. In game, the addon shows the same
+sentence first on its `/ryna` Status tab, and an unsupported version a small notice at login.
 
 Every download is checked against the updater's public key, baked in at build time, and the
 signature must name the version `latest.json` announces (`requireSignedVersion`, so an old signed
@@ -463,9 +484,13 @@ on macOS, `%APPDATA%\ryna\app\data` on Windows, `~/.local/share/io.ryna.app` on 
 
 For each account: a snapshot of `RynaDB` (characters, gear, bags and bank, quests, professions,
 reputations, the guild roster and the addon's event journal), with the account folder's name
-replaced by the first 16 hex digits of its sha256, so the backend never learns it. After each run
-a heartbeat: the agent's version, the host name and OS, the install folders, each account's
-key, label and last push time, and the submission ID.
+replaced by the first 16 hex digits of its sha256, so the backend never learns it. The snapshot also
+carries `addonToc`: the `## Version:` of the Ryna addon installed in the game folder that account
+belongs to (null when it can't be read), which is what the API judges the addon by. After each run
+a heartbeat: the agent's version, the release channel (`channel`, always `stable` for now), the host
+name and OS, the install folders and each one's addon version, each account's key, label and last
+push time, and the submission ID. Every request also names the channel in an `X-Ryna-Channel`
+header, and the agent's version in its User-Agent (`ryna-agent/0.3.9`).
 
 ### Submission ID
 
