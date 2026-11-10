@@ -20,19 +20,21 @@ rust-version = "1.89"
 [workspace.dependencies]
 # AES-256-GCM for the Settings mod's backups (docs/wow.md 15 in the API repository): the zip is
 # encrypted on this machine under a data key the API mints; the API never sees the plaintext.
-aes-gcm = { version = "0.10", features = ["zeroize"] }
+aes-gcm = { version = "0.11", features = ["zeroize"] }
 anyhow = "1"
 # Standard base64 for the device key, its signatures and the seed kept in the keychain.
 base64 = "0.23"
 clap = { version = "4", features = ["derive", "env"] }
 directories = "6"
-# The device key (docs/ryna-agent-cores-mods.md 7.1): Ed25519, minted with the OS RNG.
-ed25519-dalek = { version = "2", features = ["rand_core"] }
+# The device key (docs/ryna-agent-cores-mods.md 7.1): Ed25519, its seed from the OS RNG (getrandom).
+ed25519-dalek = "3"
 # gzip for the combat digests and raw segments (already in the tree through Tauri).
 flate2 = "1"
 # This machine's name for the heartbeat, from the OS in-process (no `hostname` child process,
 # whose fork would hold the run lock's open file a moment longer; see state_dir::try_lock_named).
 gethostname = "1"
+# The OS's random numbers: the device key's seed and each backup's nonce, read straight from the OS.
+getrandom = "0.4"
 # keyring 3: the OS keychain on each target. On Linux the Secret Service (gnome-keyring, KeePassXC,
 # KWallet) over zbus, which is pure Rust (no libdbus, so CI needs no system libraries), with the
 # kernel keyring as the cache, and alone when no Secret Service answers (see auth::KeyringStore).
@@ -44,7 +46,6 @@ keyring = { version = "3", features = [
   "crypto-rust",
 ] }
 # Blocking, rustls with the webpki roots: no OpenSSL to link on any target.
-rand_core = { version = "0.6", features = ["getrandom"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

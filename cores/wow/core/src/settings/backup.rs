@@ -26,8 +26,8 @@ use std::ops::Range;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng, Payload};
-use aes_gcm::{Aes256Gcm, Key, Nonce};
+use aes_gcm::aead::{Aead, KeyInit, Payload};
+use aes_gcm::Aes256Gcm;
 use anyhow::{anyhow, bail, Context, Result};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
@@ -252,9 +252,9 @@ pub fn build(inv: &Inventory, include: Include, machine: &str, now: i64) -> Resu
 /// AES-256-GCM over `plain`: the ciphertext with its 16-byte tag at the end. The backup's id is the
 /// associated data, so a ciphertext can't be passed off as another backup's.
 pub fn encrypt(plain: &[u8], key: &[u8; 32], nonce: &[u8; 12], id: &str) -> Result<Vec<u8>> {
-    Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key))
+    Aes256Gcm::new(key.into())
         .encrypt(
-            Nonce::from_slice(nonce),
+            nonce.into(),
             Payload {
                 msg: plain,
                 aad: id.as_bytes(),
@@ -264,9 +264,9 @@ pub fn encrypt(plain: &[u8], key: &[u8; 32], nonce: &[u8; 12], id: &str) -> Resu
 }
 
 pub fn decrypt(ciphertext: &[u8], key: &[u8; 32], nonce: &[u8; 12], id: &str) -> Result<Vec<u8>> {
-    Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key))
+    Aes256Gcm::new(key.into())
         .decrypt(
-            Nonce::from_slice(nonce),
+            nonce.into(),
             Payload {
                 msg: ciphertext,
                 aad: id.as_bytes(),
@@ -277,9 +277,12 @@ pub fn decrypt(ciphertext: &[u8], key: &[u8; 32], nonce: &[u8; 12], id: &str) ->
         })
 }
 
-/// A fresh random content nonce.
+/// A fresh random 96-bit content nonce, from the OS's random numbers. Panics if the OS has none
+/// to give, as `OsRng` did.
 pub fn new_nonce() -> [u8; 12] {
-    Aes256Gcm::generate_nonce(&mut OsRng).into()
+    let mut nonce = [0u8; 12];
+    getrandom::fill(&mut nonce).expect("the OS gave no random numbers for the backup's nonce");
+    nonce
 }
 
 /// `len` bytes cut into parts of `size` (the last one shorter, when it doesn't divide).
@@ -1004,6 +1007,31 @@ mod tests {
         bad[3] ^= 1;
         assert!(decrypt(&bad, &key, &nonce, "id-1").is_err());
         assert_ne!(new_nonce(), new_nonce());
+    }
+
+    #[test]
+    fn a_backup_sealed_by_aes_gcm_0_10_opens_and_seals_the_same() {
+        // Captured from aes-gcm 0.10.3 before the move to 0.11 (2026-11-10). Backups already on
+        // ryna.io were sealed by 0.10, so this must keep opening them, and must seal the same
+        // bytes 0.10 would (AES-GCM is deterministic for a key, nonce, AAD and plaintext), so a
+        // backup made here opens on an install still on 0.10.
+        let key: [u8; 32] = core::array::from_fn(|i| i as u8);
+        let nonce: [u8; 12] = core::array::from_fn(|i| 0xa0 + i as u8);
+        let id = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+        let plain: &[u8] =
+            b"PK\x03\x04 Ryna settings backup fixture: SavedVariables/ElvUI.lua = { profile = 1 }";
+        const SEALED_BY_0_10: &str = "b6537f2965997bd10345f4b6730ea9b017df7972f3d42919ec2e40ef07df0073b74c67acce54365909fd76a16818ef9c34340324148553502d2b6a7e9950fe90c4ceea0959c981c0c9c2ce38f2f1d98fb1f158d163cfb72b9015434f04";
+        let sealed: Vec<u8> = (0..SEALED_BY_0_10.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&SEALED_BY_0_10[i..i + 2], 16).unwrap())
+            .collect();
+        assert_eq!(sealed.len(), plain.len() + 16, "a 16-byte tag at the end");
+        assert_eq!(decrypt(&sealed, &key, &nonce, id).unwrap(), plain);
+        assert_eq!(
+            hex(&encrypt(plain, &key, &nonce, id).unwrap()),
+            SEALED_BY_0_10
+        );
+        assert!(decrypt(&sealed, &key, &nonce, "another-id").is_err());
     }
 
     #[test]

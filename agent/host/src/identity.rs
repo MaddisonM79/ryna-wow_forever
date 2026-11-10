@@ -130,11 +130,12 @@ impl Ed25519Key {
         }
     }
 
-    /// A new key from the OS's random numbers.
+    /// A new key from the OS's random numbers: 32 bytes from the OS as the seed (what
+    /// `SigningKey::generate` does with its RNG). Panics if the OS has none to give, as `OsRng` did.
     pub fn generate() -> Self {
-        Ed25519Key {
-            signing: SigningKey::generate(&mut rand_core::OsRng),
-        }
+        let mut seed = zeroize::Zeroizing::new([0u8; 32]);
+        getrandom::fill(seed.as_mut()).expect("the OS gave no random numbers for the device key");
+        Ed25519Key::from_seed(&seed)
     }
 
     /// The seed as the keychain keeps it: standard base64 of the 32 bytes.
@@ -308,6 +309,37 @@ mod tests {
         // RFC 8032 TEST 1's signature over the empty message.
         assert_eq!(k.sign(b""), RFC8032_EMPTY_SIG_B64);
         assert_eq!(k.sign(b"x").len(), 88);
+    }
+
+    // A device key as ed25519-dalek 2.2.0 kept and used it, captured before the move to 3.0
+    // (2026-11-10): the seed as the keychain holds it, its public key, and 2.2.0's signature over
+    // a request body. The API verifies these signatures, so they must not change with the crate.
+    const KEPT_SEED_B64: &str = "AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dw=";
+    const KEPT_PUBLIC_B64: &str = "dVxMuSVsp83ErP3Gz+7ahJAX5bn5UU6ZGRvWfgsNQnY=";
+    const KEPT_ID: &str = "ba0a6041c97c6fae80adbc1c08629717";
+    const BODY: &[u8] = br#"{"schema":1,"account":"0123456789abcdef","character":"Ryna-Camelot"}"#;
+    const V2_SIG_B64: &str =
+        "7mXxrm+h5RvIh8q0/xEJdTJxBHBfhoroSixZaV4hk38deFIINkxBMsW6rEaOeLud1QzrrV68Uo7Agg5ZVcylAg==";
+    const V2_RFC8032_SIG_B64: &str =
+        "zDhxGuwQNaKEjaYlFYrJAOe0i2gAutIdiVVHkCq/5f8/m/mQFdFSsW9DUO2uuQ3/NIhwON9I2tK8JZyg8rQFAA==";
+
+    #[test]
+    fn a_key_kept_by_ed25519_dalek_2_loads_and_signs_as_it_did() {
+        let store = MemorySeedStore::default();
+        *store.seed.borrow_mut() = Some(KEPT_SEED_B64.into());
+        let k = load_or_mint(&store).unwrap();
+        assert_eq!(store.writes.get(), 0, "a kept key is never replaced");
+        assert_eq!(k.public_key_b64(), KEPT_PUBLIC_B64);
+        assert_eq!(k.submission_id(), KEPT_ID);
+        assert_eq!(k.seed_b64(), KEPT_SEED_B64);
+        // 2.x's signature verifies here.
+        assert!(verify(KEPT_PUBLIC_B64, BODY, V2_SIG_B64));
+        assert!(verify(RFC8032_PUBLIC_B64, BODY, V2_RFC8032_SIG_B64));
+        // Ed25519 signing is deterministic (RFC 8032), so signing here gives 2.x's exact bytes:
+        // whatever verified a 2.x signature (2.x itself, the API) verifies these.
+        assert_eq!(k.sign(BODY), V2_SIG_B64);
+        assert_eq!(test_key().sign(BODY), V2_RFC8032_SIG_B64);
+        assert!(!verify(KEPT_PUBLIC_B64, b"{}", V2_SIG_B64));
     }
 
     #[test]
