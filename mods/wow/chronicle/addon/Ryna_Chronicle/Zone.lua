@@ -1,4 +1,5 @@
--- Zone: the character's zone, and the `zone` and `death` journal events. (Turning the combat log on
+-- Zone: the character's zone, and the `zone` and `death` journal events. A zone change also starts the
+-- character's stay there (Places.lua). (Turning the combat log on
 -- in instances is the core addon's, its CombatLog.lua.)
 
 local _, ns = ...
@@ -31,6 +32,7 @@ function Z.Update()
     ns.Journal.Add("zone", {
       zone = zone, subzone = subzone, instance = instance, difficulty = difficulty, mapId = mapId,
     })
+    if ns.Places then ns.Places.Enter(zone) end
   end
 end
 

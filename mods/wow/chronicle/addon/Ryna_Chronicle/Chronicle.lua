@@ -2,10 +2,20 @@
 -- never journal events: a session has thousands of kills, and a row each would make the file large
 -- and logout slow. Three string-keyed maps on the record (Character.lua carries them over):
 --
---   kills[npcId]    { name, n, own, xp, looted, last, zone }   CHAT_MSG_COMBAT_XP_GAIN (+ units seen),
---                                                              the target dying, LOOT_OPENED
---   loot[itemId]    { name, link, quality, n, qty, last, from = { [source] = n } }   LOOT_SLOT_CLEARED
---   objects[id]     { n, last, zone }                          LOOT_OPENED from a game object
+--   kills[npcId]    { name, n, own, xp, looted, last, zone, zones }   CHAT_MSG_COMBAT_XP_GAIN (+ units
+--                                                              seen), the target dying, LOOT_OPENED
+--   loot[itemId]    { name, link, quality, n, qty, last, from = { [source] = n }, zones }
+--                                                              LOOT_SLOT_CLEARED
+--   objects[id]     { n, last, zone, zones }                   LOOT_OPENED from a game object
+--
+-- Zones (docs/ryna-agent-cores-mods.md 7.6): `zone` is the latest; `zones` counts the same unit as
+-- `n` per zone from the first one counted on (`zones[z] = n` on kills and objects, `{ n, qty }` on
+-- loot), keyed by the record's zone name (GetRealZoneText, Zone.lua), at most MAX_ZONES per entry,
+-- keeping the biggest. The first zone counted stamps `zonesSince` on the record; what an entry
+-- counted before it (n minus its zones) is its "Earlier travels". A kill counts in the zone where it
+-- happened, even when its name came later; loot in the zone where the window opened. The agent may
+-- place earlier kills from the player's own combat logs into a separate `logZones` map (its
+-- backfill, cores/wow/core/src/zones_backfill.rs); this file never writes `logZones`.
 --
 -- A loot source is "c:<npcId>" (a creature), "o:<objectId>" (a chest, vein, herb or pool),
 -- "i:<itemId>" (a container item; "i" when the client can't say which) or "f" (no source: fishing).
@@ -22,6 +32,7 @@ local NonEmpty = ns.NonEmpty
 
 local CAP = { kills = 2000, loot = 3000, objects = 2000 }
 local MAX_FROM = 8
+local MAX_ZONES = 8
 local SEEN_RING = 200    -- loot source GUIDs remembered, so a corpse reopened isn't counted twice
 local LOOT_SLOT_ITEM = 1 -- GetLootSlotType: 0 none, 1 item, 2 money, 3 currency
 
@@ -60,6 +71,98 @@ end
 local function num(v)
   if type(v) == "number" then return v end
   return tonumber(v) or 0
+end
+
+-- A zone's count in a `zones` map: a number, or loot's { n, qty }.
+local function zoneN(v)
+  if type(v) == "table" then return num(v.n) end
+  return num(v)
+end
+Ch.ZoneN = zoneN
+
+-- Adds `n` (and loot's `qty`) to e.zones[zone], keeping the MAX_ZONES biggest (a tie goes against
+-- the older zone, as `from` does). The first zone counted on the record stamps rec.zonesSince.
+local function addZone(e, zone, n, qty)
+  if type(zone) ~= "string" or zone == "" or ns.IsSecret(zone) then return end
+  local rec = ns.rec
+  if rec and rec.zonesSince == nil then rec.zonesSince = ns.Now() end
+  if type(e.zones) ~= "table" then e.zones = {} end
+  local zones = e.zones
+  local had = zones[zone]
+  local isNew = had == nil
+  if qty then
+    if type(had) ~= "table" then had = { n = zoneN(had), qty = 0 } end
+    had.n, had.qty = num(had.n) + n, num(had.qty) + qty
+    zones[zone] = had
+  else
+    zones[zone] = zoneN(had) + n
+  end
+  if not isNew then return end
+  local count, minKey, minN = 0, nil, nil
+  for k, v in pairs(zones) do
+    count = count + 1
+    if k ~= zone and (minN == nil or zoneN(v) < minN) then minKey, minN = k, zoneN(v) end
+  end
+  if count > MAX_ZONES and minKey ~= nil then zones[minKey] = nil end
+end
+Ch.AddZone = addZone
+Ch.MAX_ZONES = MAX_ZONES
+
+-- Reading an entry by zone (the window, the tooltips). `logZones` (kills only) holds what the agent
+-- placed from the player's combat logs; a zone's count is both.
+
+-- Entry `e` in `zone`: its count (n), loot's pieces (qty, nil elsewhere), and how much of n the
+-- combat logs placed.
+function Ch.InZone(e, zone)
+  if type(e) ~= "table" or zone == nil then return 0, nil, 0 end
+  local z = type(e.zones) == "table" and e.zones[zone] or nil
+  local fromLogs = type(e.logZones) == "table" and num(e.logZones[zone]) or 0
+  local qty = type(z) == "table" and num(z.qty) or nil
+  return zoneN(z) + fromLogs, qty, fromLogs
+end
+
+-- Every zone entry `e` has a count in: { [zone] = n } (zones and logZones together).
+function Ch.Zones(e)
+  local out = {}
+  if type(e) ~= "table" then return out end
+  if type(e.zones) == "table" then
+    for z, v in pairs(e.zones) do
+      local n = zoneN(v)
+      if n > 0 then out[z] = n end
+    end
+  end
+  if type(e.logZones) == "table" then
+    for z, v in pairs(e.logZones) do
+      local n = num(v)
+      if n > 0 then out[z] = (out[z] or 0) + n end
+    end
+  end
+  return out
+end
+
+-- What entry `e` counted outside its zones: before Ryna kept zones, or in a zone dropped at the cap
+-- ("Earlier travels"). Returns n, and loot's pieces.
+function Ch.Earlier(e)
+  if type(e) ~= "table" then return 0, 0 end
+  local n, qty = num(e.n), num(e.qty)
+  if type(e.zones) == "table" then
+    for _, v in pairs(e.zones) do
+      n = n - zoneN(v)
+      if type(v) == "table" then qty = qty - num(v.qty) end
+    end
+  end
+  if type(e.logZones) == "table" then
+    for _, v in pairs(e.logZones) do n = n - num(v) end
+  end
+  return math.max(0, n), math.max(0, qty)
+end
+
+-- Whether entry `e` reached the zone cap, so its earlier part may hold dropped zones too.
+function Ch.Capped(e)
+  if type(e) ~= "table" or type(e.zones) ~= "table" then return false end
+  local count = 0
+  for _ in pairs(e.zones) do count = count + 1 end
+  return count >= MAX_ZONES
 end
 
 -- A new entry in map `name` under `key`; past the cap, the entry with the oldest `last` goes first.
@@ -196,8 +299,10 @@ local function changed()
   if ns.Session then ns.Session.Changed() end
 end
 
--- `settled`: kills counted earlier by name (pendingByName), which the session already has.
-local function addKill(id, name, xp, n, own, settled)
+-- `settled`: kills counted earlier by name (pendingByName), which the session already has. `where`:
+-- those kills' zones ({ [zone] = n }, captured when each happened); else all `n` are in the zone the
+-- player is in now; `latestZone`: the last of them.
+local function addKill(id, name, xp, n, own, settled, where, latestZone)
   local e = entry("kills", id)
   if not e then return end
   e.n = num(e.n) + n
@@ -205,7 +310,13 @@ local function addKill(id, name, xp, n, own, settled)
   e.xp = num(e.xp) + xp
   e.looted = num(e.looted)
   e.last = ns.Now()
-  e.zone = ns.rec.zone
+  if type(where) == "table" then
+    for zone, k in pairs(where) do addZone(e, zone, k) end
+    e.zone = latestZone or ns.rec.zone
+  else
+    addZone(e, ns.rec.zone, n)
+    e.zone = ns.rec.zone
+  end
   if name then e.name = name end
   ns.Debug("chronicle: killed %s (%s)%s, %d in all", name or "?", id, own and ", mine" or "", e.n)
   if settled then
@@ -237,7 +348,7 @@ function Ch.LearnUnit(unit)
   if waiting then
     pendingByName[name] = nil
     pendingCount = pendingCount - 1
-    addKill(id, name, waiting.xp, waiting.n, waiting.own, true)
+    addKill(id, name, waiting.xp, waiting.n, waiting.own, true, waiting.zones, waiting.zone)
   end
 end
 
@@ -308,9 +419,14 @@ function Ch.OnXpMessage(text)
   end
   -- Not known yet: the session counts it by name now, the record once the id is seen.
   if ns.Session then ns.Session.Kill(nil, name, xp, 1) end
+  local zone = ns.rec and ns.rec.zone
   local w = pendingByName[name]
   if w then
     w.n, w.xp, w.own = w.n + 1, w.xp + xp, w.own and own
+    if zone then
+      w.zones[zone] = (w.zones[zone] or 0) + 1
+      w.zone = zone
+    end
     return
   end
   if pendingCount >= PENDING_MAX then
@@ -324,7 +440,9 @@ function Ch.OnXpMessage(text)
       pendingCount = pendingCount - 1
     end
   end
-  pendingByName[name] = { n = 1, xp = xp, own = own, at = GetTime() }
+  -- The zone it died in, kept with it: the player may have moved on by the time its id is known.
+  pendingByName[name] = { n = 1, xp = xp, own = own, at = GetTime(), zones = {}, zone = zone }
+  if zone then pendingByName[name].zones[zone] = 1 end
   pendingCount = pendingCount + 1
   ns.Debug("chronicle: killed %s, waiting to learn its id", name)
 end
@@ -430,6 +548,7 @@ local function countSource(guid)
     e.n = num(e.n) + 1
     e.last = ns.Now()
     e.zone = ns.rec.zone
+    addZone(e, ns.rec.zone, 1)
   end
 end
 
@@ -461,6 +580,7 @@ local function rememberSlot(i, sourceGuid)
   local _, name, quantity, _, quality = ns.Try(ns.Fn("GetLootSlotInfo"), i)
   s.open = true
   s.itemId, s.link, s.source = itemId, link, sourceKey(sourceGuid)
+  s.zone = ns.rec and ns.rec.zone -- where the window opened, whenever the slot is taken
   s.name = NonEmpty(name)
   s.quantity = type(quantity) == "number" and not ns.IsSecret(quantity) and quantity or 1
   s.quality = type(quality) == "number" and not ns.IsSecret(quality) and quality or nil
@@ -513,6 +633,7 @@ function Ch.OnSlotCleared(i)
   if s.link then e.link = s.link end
   if s.quality then e.quality = s.quality end
   addFrom(e, s.source)
+  addZone(e, s.zone, 1, s.quantity)
   Ch.lootVersion = (Ch.lootVersion or 0) + 1
   if ns.Session then ns.Session.Loot(s.quantity) end
   ns.Debug("chronicle: looted %s x%d from %s, %d in all", s.name or s.itemId, s.quantity, s.source, e.n)

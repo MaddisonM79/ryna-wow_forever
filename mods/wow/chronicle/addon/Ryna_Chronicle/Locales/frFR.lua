@@ -80,6 +80,9 @@ L["Ryna: looted %s (%d), mostly from %s (%d)"] = nil
 L["Ryna: looted %s (%d)"] = nil
 L["%d time"] = nil
 L["%d times"] = nil
+-- Under either, for a creature or item counted in more than one zone (or not where you are now):
+-- "12 here (Westfall) · 43 in all": the count in the zone you're in, that zone, the count in all zones.
+L["%d here (%s) · %d in all"] = nil
 -- Loot sources without a name of their own (%s: the game's id for it).
 L["fishing"] = nil
 L["a container"] = nil
@@ -238,9 +241,47 @@ L["From the journal's level-ups (it keeps 30 days) and /played."] = nil
 -- /chronicle with a core too old for the window (printed only when typed).
 L["the Ryna addon here is too old for its window. Update it from the Ryna companion app."] = nil
 -- /ryna help's line for the window's command. Keep /ryna chronicle, /chronicle and the section words
--- (session, characters, items, kills, loot, history) in English: they are what the player types.
+-- (session, characters, items, kills, loot, zones, history) in English: they are what the player types.
 L["/ryna chronicle (or /chronicle): Ryna's window; /chronicle session, characters, items, "
-  .. "kills, loot or history opens that section"] = nil
+  .. "kills, loot, zones or history opens that section"] = nil
+-- Chronicle by zone. The zone picker on Kills and Loot: every zone, the zone you're in ("This zone
+-- (Westfall)"; plain "This zone" when the game hasn't said), each zone, and "Earlier travels": what
+-- was counted before Ryna kept zones (a lifetime of places you went before).
+L["All zones"] = nil
+L["This zone (%s)"] = nil
+L["This zone"] = nil
+L["Earlier travels"] = nil
+-- Earlier travels explained (a tooltip). The second once something was counted in more than the eight
+-- zones Ryna keeps per creature or item, whose smallest zones then join the earlier ones.
+L["counted before Ryna kept zones"] = nil
+L["counted before Ryna kept zones, or in other zones"] = nil
+-- Kills and Loot with a zone picked: the footer's first sentence (%s: a date and time, or "not yet"),
+-- or Earlier travels' own footer.
+L["Counted by zone since %s."] = nil
+L["not yet"] = nil
+L["Earlier travels: counted before Ryna kept zones, or in zones past the eight it keeps."] = nil
+-- Kills with a zone picked: the column with the creature's kills in all zones; a tile with the kills
+-- placed in this zone from the player's own combat logs (by the Ryna companion app).
+L["In all"] = nil
+L["From your combat logs"] = nil
+-- A creature's or item's tooltip: "By zone", then per zone "12 (4 placed from your combat logs)", or
+-- for loot "22 (31 pieces)": times looted, then how many in all.
+L["By zone"] = nil
+L["%s (%s placed from your combat logs)"] = nil
+L["%s (%s pieces)"] = nil
+-- The Zones section: its columns (the zone, kills, kinds of creature killed, items looted, pieces
+-- looted, quests turned in, deaths, time spent there), its tiles, a row's tooltip ("First here: <date>",
+-- "Last here: 2 hours ago") and its click, and its footer (%s: dates, or "not yet").
+L["Zones"] = nil
+L["Pieces"] = nil
+L["Quests"] = nil
+L["Time"] = nil
+L["Time spent"] = nil
+L["Quests done"] = nil
+L["First here"] = nil
+L["Last here"] = nil
+L["Click to see its kills."] = nil
+L["Time, quests and deaths since %s; kills and loot by zone since %s."] = nil
 
 -- Characters.lua
 -- The Characters section: its columns over every character, its tiles, "now" (the character you're

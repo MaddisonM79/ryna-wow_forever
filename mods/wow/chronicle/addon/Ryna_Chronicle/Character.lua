@@ -129,6 +129,12 @@ function C.Login()
     kills = type(prev.kills) == "table" and prev.kills or {},
     loot = type(prev.loot) == "table" and prev.loot or {},
     objects = type(prev.objects) == "table" and prev.objects or {},
+    -- 7.6: when zones were first counted (the agent's combat-log backfill reads it), the agent's
+    -- record of that backfill, and the lifetime by zone (Places.lua) with when it starts.
+    zonesSince = prev.zonesSince,
+    zonesBackfill = type(prev.zonesBackfill) == "table" and prev.zonesBackfill or nil,
+    places = type(prev.places) == "table" and prev.places or {},
+    placesSince = prev.placesSince,
   }
   if type(rec.quests.active) ~= "table" then rec.quests.active = {} end
   if type(rec.quests.completed) ~= "table" then rec.quests.completed = {} end

@@ -14,6 +14,7 @@ local function onLogin()
   -- reads it now, so it goes.
   if ns.db then ns.db.census = nil end
   local rec = ns.Character.Login()
+  ns.Run("places seed", ns.Places.Seed, rec)
   ns.Journal.Add("session", { kind = "login", clock = time(), zone = rec.zone })
   ns.Debug("login: record built for %s, level %s %s, in %s", rec.fullName, rec.level, rec.class, rec.zone)
   ns.Run("nearby sightings", ns.Sightings.RegisterNearby)
@@ -29,6 +30,7 @@ ns.API.RegisterMod({
   version = ns.VERSION,
   onLogin = onLogin,
   onLogout = function()
+    ns.Places.Accrue()
     ns.Character.Logout()
     ns.Session.Save()
   end,

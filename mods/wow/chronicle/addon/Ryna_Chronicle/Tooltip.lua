@@ -2,8 +2,9 @@
 -- 12.2), with the `tooltips` setting on. Through TooltipDataProcessor where the client has it,
 -- GameTooltip's OnTooltipSetUnit / OnTooltipSetItem scripts otherwise. Only this character's kills
 -- and loot, and, with `tooltipHolders` on too, one line naming the account's other characters that
--- hold the item (Items.lua): "Alyra: 120 in the bank · Brennic: 34". Nothing here writes to
--- the record.
+-- hold the item (Items.lua): "Alyra: 120 in the bank · Brennic: 34". Where a creature or item was
+-- counted in more than one zone, or elsewhere than here, a line "12 here (Westfall) · 43 in all".
+-- Nothing here writes to the record.
 
 local _, ns = ...
 if ns.off then return end
@@ -82,6 +83,20 @@ function T.Drops(id)
   return list
 end
 
+-- "12 here (Westfall) · 43 in all", for an entry counted in more than one zone or in a zone other
+-- than the one you're in (7.6); nil otherwise. `total` is the entry's count in all zones.
+function T.ZoneLine(e, total)
+  local here = ns.rec and ns.NonEmpty(ns.rec.zone)
+  if not here or ns.IsSecret(here) then return nil end
+  local zones, count, only = ns.Chronicle.Zones(e), 0, nil
+  for zone in pairs(zones) do
+    count = count + 1
+    only = zone
+  end
+  if count == 0 or (count == 1 and only == here) then return nil end
+  return string.format(L["%d here (%s) · %d in all"], zones[here] or 0, plain(here), total)
+end
+
 function T.UnitLines(guid)
   local id = ns.Chronicle.CreatureId(guid)
   if not id then return nil end
@@ -96,6 +111,7 @@ function T.UnitLines(guid)
   else
     lines[1] = string.format(L["Ryna: killed %d (%d yours), last %s"], num(e.n), num(e.own), ago)
   end
+  lines[#lines + 1] = T.ZoneLine(e, num(e.n))
   local looted = num(e.looted)
   if looted > 0 then
     for _, d in ipairs(T.Drops(id)) do
@@ -118,11 +134,15 @@ function T.ItemLines(itemId)
     end
   end
   local times = ns.Plural(num(e.n), L["%d time"], L["%d times"])
+  local lines
   if bestKey ~= nil then
-    return { string.format(L["Ryna: looted %s (%d), mostly from %s (%d)"], times, num(e.qty),
+    lines = { string.format(L["Ryna: looted %s (%d), mostly from %s (%d)"], times, num(e.qty),
       plain(T.SourceName(bestKey)), best) }
+  else
+    lines = { string.format(L["Ryna: looted %s (%d)"], times, num(e.qty)) }
   end
-  return { string.format(L["Ryna: looted %s (%d)"], times, num(e.qty)) }
+  lines[#lines + 1] = T.ZoneLine(e, num(e.n))
+  return lines
 end
 
 -- Each line once: through the core's guard (Ryna.Tooltip, cores after 0.3.9), so a hook the client

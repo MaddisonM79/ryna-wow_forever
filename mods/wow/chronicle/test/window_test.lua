@@ -155,7 +155,7 @@ check(R.Window.AddSection({ key = "probe", group = "combat", label = "Probe", or
 
 local order = {}
 for _, s in ipairs(Wn.List()) do order[#order + 1] = s.key end
-eq(table.concat(order, " "), "session characters items kills loot history probe",
+eq(table.concat(order, " "), "session characters items kills loot zones history probe",
   "rail order: Me by order, then combat")
 
 -- /chronicle opens the window; the first time ever, on Session (the rail's first).
