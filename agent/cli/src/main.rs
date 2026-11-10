@@ -162,7 +162,7 @@ fn main() -> ExitCode {
 }
 
 fn dispatch(cli: Cli) -> Result<ExitCode> {
-    let config = Config::resolve(cli.api.clone(), cli.issuer.clone());
+    let config = Config::resolve(cli.api.clone(), cli.issuer.clone())?;
     match cli.command {
         Command::Login => login(&config),
         Command::Logout => logout(&config),

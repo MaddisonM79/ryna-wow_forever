@@ -109,7 +109,7 @@ fn main() {
                 .build(),
         )
         .setup(|app| {
-            let config = agent::config();
+            let config = agent::config().inspect_err(|e| eprintln!("ryna: {e}"))?;
             let signed_in = agent::signed_in(&config);
             app.manage(agent::Agent::new(config, app.path().app_config_dir().ok()));
             app.manage(updates::Updates::default());
