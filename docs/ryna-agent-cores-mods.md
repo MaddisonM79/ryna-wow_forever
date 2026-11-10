@@ -1149,30 +1149,176 @@ Maddison's; the agent can carry both old and new clients for a release or two.
 - **Data**: per table, per sync, no release.
 - **The addon**: still inside the agent; a new agent brings the matching addon, as today.
 
-**Supported versions, channels and notices (owed; Maddison, 2026-11-09).** "We need to add to the
-agent/portal/api, minimum versions supported (think RFM from CrowdStrike), ideal versions, and
-current version... which means we need version channeling and notifications when someone is in RFM
-or out in the cold." Not designed yet; this is the requirement as understood, to be confirmed
-before a design note:
+### 9.1 Supported versions, channels and notices (designed 2026-11-10)
 
-- *Three marks per thing that ships* (the agent, the addon and its mods, and the contract the API
-  speaks): **minimum** supported, **ideal**, and **current** (the newest released).
-- *Three states a person can be in.* At or above ideal: everything works. Between minimum and
-  ideal: **reduced functionality** (CrowdStrike's RFM: it keeps running and keeps what is safe, the
-  newer features are off, and it says so). Below minimum: **out in the cold** (the API refuses, with
-  a reason and the way back).
-- *The policy is data the API serves*, not a build constant, so a mark moves without a release:
-  every agent call already names its version, the answer carries the caller's state, and a refusal
-  is an envelope `ok: false` with its own code, never a broken upload.
-- *Channels.* Today there is one: the updater reads `releases/latest/download/latest.json`, and a
-  pre-release tag is kept out of it. Channeling means a manifest per channel (stable, and at least
-  one ahead of it), a person's choice of channel in the agent, and the three marks kept per channel.
-- *Notices, in every place the person looks*, per 7.5: the agent's window, the game (the core's
-  Status tab, from the file the agent writes; a notice frame for out in the cold; never chat), and
-  the portal's Agent page; and Admin sees who is in each state.
+Asked by Maddison on 2026-11-09 ("minimum versions supported (think RFM from CrowdStrike), ideal
+versions, and current version ... version channeling and notifications when someone is in RFM or out
+in the cold") and on 2026-11-10 ("min version support, preferred and perfect"). This is Nyx's design;
+the calls that are hers are listed at the end, with her answers once given.
 
-Today the pieces report versions (the ingest body's `agent`, the TOCs, `mod.json`) and nothing
-judges them.
+**How versions travel today** (checked 2026-11-10, both repositories' main):
+
+- The app's own version is in every body it sends: the snapshot's `agent`, the heartbeat's `agent`,
+  the census upload's `agent` (`ryna-agent/0.3.9`). It is reliable: Cargo, `package.json` and the tag
+  are held equal by `check-versions`.
+- Each install's core addon version is read from `Interface/AddOns/Ryna/Ryna.toc` (`## Version:`) by
+  the app and sent as the heartbeat's `installs[].addon`, by every released app since v0.2.0. Reliable.
+- The snapshot's `addon` is `RynaDB.addon`, which the addon wrote from its own Lua. **Every released
+  addon through 0.3.9 says `0.3.2` there** (the core and Chronicle each hard-coded it until 662e1b3,
+  2026-11-10, unreleased). So the API must never judge an addon by that field, and the addon must never
+  judge itself by its `ns.VERSION` while old copies are about.
+- `AgentStatus.lua` carries `latest = { addon = nil, agent = nil }` back to the addon; nothing fills it,
+  so the Status tab's "Update available" lines never show.
+- Mods carry `requires.core` in `mod.json` and their own TOC version; all release together today.
+- The only judgment that exists is the snapshot's `schema` (`SCHEMA_UNSUPPORTED`, accepted `[1]`).
+
+**What is versioned, and what carries the marks.** One set of marks, for **a Ryna release**
+(`0.3.9`), applied to two things that can each lag: **the app** (its own version, from every body it
+sends) and **each install's core addon** (its TOC, as the app reads it). They release together and
+the app carries the addon, but the addon can lag the app (the Installs list offers the update, it
+doesn't force it). The rest follows: a **bundled mod** versions with the release and is covered by the
+addon's mark (its `requires.core` stays the install-time check it is); the **saved-file schema** and
+the **upload format** keep their own gate, `schema` and `SCHEMA_UNSUPPORTED`, which is about format,
+not age. A mod fetched from git (stage 6) would get its own marks then; the policy's shape leaves room
+(below) and nothing uses it now. A person's band is the lower of the app's and their addons'.
+
+**The marks, one sentence each.**
+
+- **Perfect**: the newest release on the person's channel, the one the updater offers; at it there is
+  nothing to do.
+- **Preferred**: the oldest release that still gets everything; between preferred and perfect, everything
+  works and the only notice is the existing "Ryna x.y.z is available".
+- **Minimum**: the oldest release the API still talks to at all; between minimum and preferred is
+  **reduced mode**, below minimum is **unsupported** ("out in the cold").
+
+So a person is in one of four states: **current** (= perfect), **behind** (preferred ≤ v < perfect),
+**reduced** (minimum ≤ v < preferred), **unsupported** (v < minimum). A version the API can't read
+(`dev`, `unknown`, missing) counts as current: it is never a reason to refuse.
+
+**Reduced mode: what it keeps and drops.** The point of RFM is to keep a person working while
+keeping an old client from doing harm to others. An old client's harm is to the pools, which everyone
+reads: a parse or validation bug fixed in a later release (the 0.3.2 version field was one) would keep
+feeding wrong rows into the census or the price pools. Your own data hurts no one but you, and you
+can see it.
+
+| In reduced mode | Kept or dropped | Why |
+|---|---|---|
+| Your snapshots, journal, characters, bags, quests | **kept** | Yours, shown back to you; an older format is still parsed or refused by `schema` as today |
+| Your fights (encounters, digests, raw logs) | **kept** | Yours alone |
+| Settings backups, all of them | **kept** | Yours, and a backup is what you'd want before an update |
+| Heartbeat, the Agent page | **kept** | How you learn you're in reduced mode |
+| Contributing census sightings (from a snapshot, and `POST /census`) | **dropped** | Pooled: everyone reads it |
+| Contributing merchant offers and auction snapshots | **dropped** | Pooled: everyone's tooltips read it |
+| Receiving the pooled price files (`GET /agent/prices`) | **kept** | Reading the pool harms no one; taking it away is only pressure, and the in-game notice already does that |
+
+Dropping is the API's to do, not the client's, so it holds for an old app that knows nothing of
+this: at ingest, the snapshot is stored and the pooling step is skipped, and the answer says so
+(`pooled: false`, with the band). `POST /census` from a reduced app is a refusal with its own code.
+
+**Unsupported: what the API refuses and what still answers.** Refusals are envelopes, 200 `ok:false`,
+with a new code **`AGENT_UNSUPPORTED`** and `detail { version, minimum, preferred, perfect, channel,
+update }` (`update` the download page, `https://ryna.io/wow/guide#update`). Its `message` is written
+for the person, because released apps (through 0.3.9) show an unknown refusal's message as the error
+line in the app and write it into `AgentStatus.lua`'s `messages`, which every released addon shows on
+its Status tab: so a 0.3.x app below minimum still tells its person in both places, with no change.
+
+- **Refused**: `POST /agent/ingest`, `POST /agent/encounters` and its two PUTs, `POST /census`,
+  `GET /agent/prices` (the files' format may have moved on), and the backup writes (create, parts,
+  complete, delete).
+- **Still answer**: `POST /agent/heartbeat` (always; it records the version and answers with the
+  band, so the app can say why and where the update is), the backup reads (list, open, content: no
+  one loses their settings for having been away), and the policy itself (below).
+- **The portal and the connector are not versioned**: your characters stay readable on ryna.io
+  whatever your app's version, with the notice above them.
+
+**Where the policy lives.** Data the API serves, not numbers built into a client, so a mark moves
+without a release:
+
+- A D1 table, one row per channel: `minimum`, `preferred`, `perfect`, a `note` shown to people (one
+  line, optional: "0.3.4 mis-reads auction prices"), `updated_at`, `updated_by`. Perfect is set by
+  hand alongside a release in this build; the Admin page shows the channel's updater manifest beside it
+  so a stale one is visible (reading the manifest automatically is a later step, if forgetting proves
+  real).
+- **`GET /v1/wow/versions`**: the policy, public and tokenless (no person, no grant: it is about no
+  one, and a signed-out app needs it too). One more narrow exemption in `grant-gate.ts`, a GET of one
+  exact path, beside the census upload's.
+- Every agent answer that judges carries `support: { band, version, minimum, preferred, perfect,
+  channel, note, update }`: the heartbeat's, the ingest's.
+- **Who edits it**: Admin only (`wow:admin`), `PUT /v1/wow/admin/versions`, portal-only and audited
+  (`wow.admin.versions.put`, the old and new marks in `details`) like the other `/admin` routes; a
+  `portalOnly` entry in `scopes.ts`. The editor refuses marks out of order (minimum ≤ preferred ≤
+  perfect) and shows, before saving, how many people the change would put in reduced and unsupported.
+- **Failing open.** The app treats a policy it can't fetch as "current" and keeps the last one it
+  fetched only to show, never to refuse. On the API, a missing or unreadable policy row is "current"
+  for everyone. Unlike authorization (which fails closed), this is about helping people update, and
+  ryna.io being unreachable must never lock anyone out.
+- **The first policy** is open: no minimum, no preferred, perfect 0.3.9. Every released version is
+  current or behind; nobody is reduced or refused until Maddison sets a mark.
+
+**Channels.** A channel is an updater manifest and a row of marks. Today there is one, **stable**:
+`releases/latest/download/latest.json`, which a pre-release tag (`v0.4.0-rc.1`) never reaches. A
+second, **beta**, would be a manifest at a fixed release (`channel-beta/latest.json`) that
+`release.yml` rewrites for pre-release tags, a choice in the app's Settings (Stable or Beta; switching
+back to stable waits on the version rather than downgrading), and `channel` in the heartbeat. Beta's
+perfect is the newest pre-release; its minimum and preferred are stable's unless set. The first build
+ships the policy keyed by channel and the heartbeat's `channel` (always `stable`), so adding beta later
+is the manifest, the setting and one row, with no change to the judgment.
+
+**Notices, one view per place** (7.5: whole in the game, richer on the portal).
+
+- **The app**: the update banner it already has, in a colour per state, with **Update and restart**:
+  - behind: unchanged, "Ryna 0.3.10 is available."
+  - reduced: "This version of Ryna is getting old. Your characters still sync, but what you add to
+    everyone's census and prices is paused until you update."
+  - unsupported: "This version of Ryna is no longer supported, so nothing syncs to ryna.io. Update to
+    carry on." Not dismissable by "Later"; the heartbeat keeps running.
+  - the policy's `note`, when there is one, as a second line.
+- **The game**: the app writes `support = { band, perfect, note }` into `AgentStatus.lua`; the
+  addon shows it as the first line of the `/ryna` Status tab (amber for reduced, red for unsupported,
+  the same words as the app, "Open the Ryna app to update"), and for unsupported a **notice frame** at
+  login, once per login, closed with a button. Never chat. Addons through 0.3.9 don't know `support`,
+  so the app also writes the same sentence as a `messages` line (level `warn` or `error`), which those
+  addons already show. `latest.agent` and `latest.addon` are filled from the policy at last, `addon`
+  only when the TOC on disk is older (an old addon compares against its frozen `0.3.2`, so filling it
+  when they're equal would claim an update that isn't there).
+- **The portal's Agent page**: each computer's card shows its band beside the app and addon versions:
+  "Up to date", "Ryna 0.3.10 is available", "Reduced: update to keep contributing to the census and
+  prices", "Not supported: nothing from this computer syncs until you update", with the note and a
+  link to the guide's update steps.
+- **Admin**: a **Versions** tab on `/wow/admin`: the marks per channel and their editor (with the
+  preview of who moves), and every computer by band (person, host, app version, addon versions,
+  channel, last seen), counts at the top. Reading it is audited (`wow.admin.versions`).
+
+**Stages**, API first, each shippable alone:
+
+1. **API and portal** (private repo): the table with the open policy, `GET /v1/wow/versions`, the
+   band on the heartbeat, ingest, encounters, census, prices and backup routes (`AGENT_UNSUPPORTED`,
+   and reduced's `pooled: false` and census refusal), `support` on `GET /agent`, the Admin Versions
+   tab and its audited `PUT`, the Agent page's notices, `docs/wow.md` section 18. Live at once; with
+   the open policy nothing changes for anyone.
+2. **The app** (ryna_agent): reads `support` from the heartbeat's answer (and `GET /versions` when
+   signed out), the banner's states, `channel` in the heartbeat, `support` and the `messages` line in
+   `AgentStatus.lua`, `latest` filled. Ships with the next release.
+3. **The addon** (ryna_agent): the Status tab line and the notice frame, from `support`. Same release.
+4. **Channels**: the beta manifest in `release.yml`, the app's channel setting. Its own release.
+
+**Settled 2026-11-10, Maddison:**
+
+- **Perfect** is the newest release on the channel, the one the updater offers. She sets it on the
+  Admin page alongside each release (the page shows the updater manifest's newest beside it).
+- **Reduced mode stops contributing only**: census sightings and merchant and auction contributions
+  pause; your own snapshots, fights and backups keep syncing, and the pooled price files keep coming
+  down.
+- **The grace rule counts releases**: preferred trails perfect by **2** releases, minimum by **4**
+  (so with perfect at 0.3.9, preferred may be 0.3.7 and minimum 0.3.5). It is the rule she follows
+  when moving the marks; nothing moves them on a timer. A data-corruption or security fix may move
+  minimum sooner, by her word.
+- **Channels later, shape now**: the first build keys the policy by channel and sends
+  `channel: "stable"`; beta is stage 4, its own release.
+- **The wording is the plain one above**, the same sentence in the app, the game and the portal:
+  reduced, "This version of Ryna is getting old. Your characters still sync, but what you add to
+  everyone's census and prices is paused until you update."; unsupported, "This version of Ryna is no
+  longer supported, so nothing syncs to ryna.io. Update to carry on."
 
 ## 10. Security
 
@@ -1234,5 +1380,8 @@ judges them.
 - Settled 2026-11-09 (7.4): the journal is part of Chronicle, not a mod of its own; its sections
   start off, with one notice at the first dungeon; quest tracking is in, the map stays Questie's.
   Open: flight points, and the notice's wording.
+- Settled 2026-11-10 (9.1): supported versions. Perfect is the newest release; reduced mode stops
+  contributing to the pools and nothing else; the marks trail perfect by 2 and 4 releases; a beta
+  channel comes later; the notices' wording.
 - Settled 2026-11-07: the repository (A, `ryna_agent`); the Palworld agent goes MIT barring anything
   sensitive; Palworld mods are undefined for now; Chronicle is the first WoW mod.
