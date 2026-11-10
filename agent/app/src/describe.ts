@@ -12,6 +12,7 @@ import type {
   Status,
   UploadedFight,
 } from "./api";
+import { supportLog } from "./updateWords";
 
 const FLAVORS: Record<string, string> = {
   wowf: "World of Warcraft: Forever",
@@ -63,6 +64,11 @@ export function describe(e: AgentEvent): string | null {
       return e.label ? `${e.label}: ${e.advice}` : e.advice;
     case "heartbeat":
       return e.ok ? null : `Couldn't report in to the API${e.error ? `: ${e.error}` : ""}.`;
+    case "support":
+      // Said when the band moves to reduced or unsupported; the banner shows it all along.
+      return supportLog(e.support, e.changed);
+    case "contributionsPaused":
+      return `${e.label}: synced. What you add to everyone's census and prices is paused until you update.`;
     case "passFinished":
     case "fightQueued":
       return null;
