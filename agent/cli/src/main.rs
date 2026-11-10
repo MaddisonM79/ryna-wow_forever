@@ -140,9 +140,9 @@ enum Command {
 enum CensusCommand {
     /// Print this computer's submission ID (minting the device key on first use).
     Id,
-    /// Send every account's sightings (the `seen` events, less your own characters) to
-    /// /v1/wow/census, signed by the device key, with no sign-in. Use the global --install to
-    /// point at the game.
+    /// Send every account's sightings (the `seen` events, less every character Ryna has recorded
+    /// on this computer, on any account in any install) to /v1/wow/census, signed by the device
+    /// key, with no sign-in. Use the global --install to point at the game.
     Push {
         /// Build the uploads and say what they'd be (events, bytes, the ID), sending nothing.
         #[arg(long)]
@@ -499,26 +499,41 @@ fn census_push(config: &Config, install: Option<&Path>, dry_run: bool) -> Result
     let clock = SystemClock;
     let auth = Auth::new(config, &http, &store, &clock);
     let api = Api::new(&config.api, &http, &auth, Some(&key), &clock);
-    let mut failed = false;
+    // Every account's snapshot first, in every install found, so the census can leave out every
+    // character Ryna has recorded on this computer, not just the observing account's: a character
+    // on a second game account, seen by one on the first, is never sent as a stranger.
+    let mut snapshots = Vec::new();
+    let mut unread = Vec::new();
     for acct in &found.accounts {
-        let built =
-            match snapshot::read_file(&acct.path, &acct.account, None, acct.flavor.as_deref()) {
-                Ok(b) => b,
-                Err(e) => {
-                    eprintln!("{}: {e}", acct.path.display());
-                    failed = true;
-                    continue;
-                }
-            };
-        let label = built.snapshot.account.label.clone();
-        let uploads = census::uploads(&built.snapshot, now_secs());
+        match snapshot::read_file(&acct.path, &acct.account, None, acct.flavor.as_deref()) {
+            Ok(b) => snapshots.push(b.snapshot),
+            Err(e) => {
+                eprintln!("{}: {e}", acct.path.display());
+                unread.push(acct.path.display().to_string());
+            }
+        }
+    }
+    // An account that can't be read is one whose characters can't be left out of the others'
+    // sightings, so nothing is sent until it reads.
+    let send = !dry_run && unread.is_empty();
+    if !dry_run && !unread.is_empty() {
+        eprintln!(
+            "Nothing was sent: Ryna couldn't read {}, so it can't tell those characters from strangers.",
+            unread.join(", ")
+        );
+    }
+    let own = census::OwnCharacters::of(&snapshots);
+    let mut failed = !unread.is_empty();
+    for snapshot in &snapshots {
+        let label = snapshot.account.label.clone();
+        let uploads = census::uploads(snapshot, &own, now_secs());
         let events: usize = uploads.iter().map(|u| u.events.len()).sum();
         let bytes: usize = uploads.iter().map(|u| u.body().len()).sum();
         println!(
             "{label}: {events} sighting(s) in {} upload(s), {bytes} bytes",
             uploads.len()
         );
-        if dry_run {
+        if !send {
             continue;
         }
         for (i, u) in uploads.iter().enumerate() {

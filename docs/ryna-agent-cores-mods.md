@@ -241,7 +241,9 @@ person. The design:
   links to no account unless the person also signs in. The "Census privacy" rules in `docs/wow.md`
   (coarse last-seen, zone not subzone, no per-character hours, every lookup logged, no removal path)
   are unchanged; reading the census still needs an account, since lookups are logged to someone.
-- **What stays signed-in.** Everything about a person's own characters. The census is the one thing
+- **What stays signed-in.** Everything about a person's own characters, which for the census means
+  every character Ryna has recorded on this computer (every account's snapshot, in every install):
+  a sighting of any of them, by GUID or by full name, is left out of the uploads. The census is the one thing
   the agent does before, or without, signing in; the Census tab says "contributes without an account"
   in plain words, with the same switches to stop any of it.
 
