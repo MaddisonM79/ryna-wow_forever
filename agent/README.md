@@ -339,13 +339,30 @@ without a key.
 
 To try a release without publishing, run the `release` workflow by hand (Actions → release →
 Run workflow): everything builds and lands as the `release-X.Y.Z` workflow artifact. From a
-branch it is always a dry run; from a tag, untick `dry_run` to publish that tag.
+branch it is always a dry run, and unsigned (the `dry-run` environment holds no secrets); from a
+tag, untick `dry_run` to publish that tag.
+
+### Who can release
+
+Set up 2026-11-10 (Maddison's call):
+
+- Only a repository admin (Maddison) can create a `v*` tag, and nobody, admins included, can
+  move or delete one (two tag rulesets). `main` takes pushes, merges, force-pushes and deletes
+  from admins only, and every commit on it must be signed, with no exception (two branch rulesets).
+- `release.yml` refuses a lightweight tag, a tag GitHub can't verify, and a tag whose commit
+  isn't on `main`, before anything builds.
+- A published release is never changed. Immutable releases are on, and the workflow refuses a
+  tag that already has a release instead of re-uploading its files. A fix is a new version.
+  Releases published before 2026-11-10 (v0.3.9 and earlier) aren't immutable; their tags are
+  still locked by the ruleset.
 
 ### Secrets
 
 All optional: without them the release is unsigned and can't update anyone, and still builds.
-Maddison creates each one, keeps it in 1Password, and adds it as a repository secret in GitHub
-(Settings → Secrets and variables → Actions). Each group is used only when all of it is set.
+Maddison creates each one, keeps it in 1Password, and adds it as a secret of the `release`
+environment in GitHub (Settings → Environments → release; `gh secret set NAME --env release`),
+which admits only `v*` tags, so no other workflow or branch can read them. Each group is used
+only when all of it is set.
 
 | Secret | What it does |
 |---|---|

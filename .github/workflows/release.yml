@@ -6,7 +6,8 @@
 # Every secret is optional (agent/README.md "Releasing"); without them the release is unsigned
 # and can't update anyone, but still builds. Run it by hand (workflow_dispatch) to build all of
 # it without publishing: from a branch it is always a dry run; from a tag, untick dry_run to
-# publish that tag.
+# publish that tag. Only a signed tag on main publishes, and a tag that already has a release
+# never publishes again (agent/README.md "Who can release").
 name: release
 
 on:
@@ -45,6 +46,28 @@ jobs:
         with:
           node-version: "24"
       - run: node --test scripts/release.test.mjs
+      # Only a signed, annotated tag on a commit that is on main releases anything. The tag
+      # rulesets keep anyone but an admin from creating a v* tag and everyone from moving one.
+      - name: The tag is signed and on main
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ref="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME")"
+          if [ "$(jq -r .object.type <<<"$ref")" != tag ]; then
+            echo "::error::$GITHUB_REF_NAME is a lightweight tag; a release needs a signed one (git tag -s)"; exit 1
+          fi
+          verified="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$(jq -r .object.sha <<<"$ref")" --jq .verification.verified)"
+          if [ "$verified" != true ]; then
+            echo "::error::$GITHUB_REF_NAME isn't signed by a key GitHub verifies"; exit 1
+          fi
+          # main identical to, or ahead of, the tagged commit: the commit is on main.
+          status="$(gh api "repos/$GITHUB_REPOSITORY/compare/$GITHUB_SHA...main" --jq .status)"
+          case "$status" in
+            identical|ahead) echo "$GITHUB_REF_NAME: signed, and $GITHUB_SHA is on main" ;;
+            *) echo "::error::$GITHUB_SHA isn't on main (compare says $status)"; exit 1 ;;
+          esac
       - id: v
         env:
           EVENT: ${{ github.event_name }}
@@ -103,6 +126,9 @@ jobs:
 
   app:
     needs: versions
+    # The signing secrets belong to the `release` environment, which admits only v* tags. A run
+    # from a branch (always a dry run) uses `dry-run`, which holds none, so it builds unsigned.
+    environment: ${{ github.ref_type == 'tag' && 'release' || 'dry-run' }}
     strategy:
       fail-fast: false
       matrix:
@@ -292,11 +318,13 @@ jobs:
           # updater (releases/latest/download/latest.json) doesn't offer it.
           pre=()
           case "$TAG" in *-*) pre=(--prerelease) ;; esac
+          # A published release is never changed, not even its files: a fix is a new version.
+          # (Immutable releases refuse it too, for every release published since 2026-11-10.)
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/* --clobber
-          else
-            gh release create "$TAG" dist/* --verify-tag --title "Ryna $VERSION" --generate-notes "${pre[@]}"
+            echo "::error::$TAG already has a release, and a published release is never changed. Cut a new version."
+            exit 1
           fi
+          gh release create "$TAG" dist/* --verify-tag --title "Ryna $VERSION" --generate-notes "${pre[@]}"
       - name: Dry run
         if: needs.versions.outputs.publish != 'true'
         run: |
