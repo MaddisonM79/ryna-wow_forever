@@ -177,15 +177,23 @@ fn write_string(out: &mut Vec<u8>, b: &[u8]) {
     out.push(b'"');
 }
 
+/// The temporary file [`write_atomic`] writes first: `<path>.ryna-tmp`.
+pub fn tmp_path(path: &Path) -> std::path::PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(".ryna-tmp");
+    path.with_file_name(name)
+}
+
 /// Write `bytes` to `path` through `<path>.ryna-tmp` in the same folder, flushed to disk, then
 /// renamed over `path` (which replaces it on every OS). The folder must exist.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let name = path
-        .file_name()
-        .ok_or_else(|| std::io::Error::other(format!("{} has no file name", path.display())))?;
-    let mut tmp_name = name.to_os_string();
-    tmp_name.push(".ryna-tmp");
-    let tmp = path.with_file_name(tmp_name);
+    if path.file_name().is_none() {
+        return Err(std::io::Error::other(format!(
+            "{} has no file name",
+            path.display()
+        )));
+    }
+    let tmp = tmp_path(path);
     let result = (|| {
         let mut f = std::fs::File::create(&tmp)?;
         f.write_all(bytes)?;

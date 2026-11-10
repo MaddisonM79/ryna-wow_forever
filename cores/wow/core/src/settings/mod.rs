@@ -49,8 +49,9 @@ pub fn bak_path(path: &Path) -> PathBuf {
     path.with_file_name(name)
 }
 
-/// A Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`), with or without
-/// an extension, in any case: never a file there.
+/// A Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `CONIN$`, `CONOUT$`, `CLOCK$`, `COM1`–`COM9`
+/// and `LPT1`–`LPT9`, the superscript `¹²³` forms too), with or without an extension, in any case:
+/// never a file there.
 pub fn windows_device_name(part: &str) -> bool {
     let stem = part
         .split('.')
@@ -58,10 +59,18 @@ pub fn windows_device_name(part: &str) -> bool {
         .unwrap_or("")
         .trim_end()
         .to_ascii_uppercase();
-    matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || ((stem.starts_with("COM") || stem.starts_with("LPT"))
-            && stem.len() == 4
-            && matches!(stem.as_bytes()[3], b'1'..=b'9'))
+    matches!(
+        stem.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$" | "CLOCK$"
+    ) || stem
+        .strip_prefix("COM")
+        .or_else(|| stem.strip_prefix("LPT"))
+        .is_some_and(|n| {
+            matches!(
+                n,
+                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+            )
+        })
 }
 
 /// Whether `part` is one plain path component on every OS: not empty, `.` or `..`; no slash,
@@ -131,6 +140,15 @@ pub fn write_all(
                 ),
                 Ok(_) => {}
                 Err(_) => break,
+            }
+        }
+        // Nor the two files written beside it: the `.ryna.bak` copy and the temporary file.
+        for beside in [bak_path(&p), crate::lua_write::tmp_path(&p)] {
+            if std::fs::symlink_metadata(&beside).is_ok_and(|m| m.file_type().is_symlink()) {
+                bail!(
+                    "{} is a link, and Ryna doesn't write through links: nothing was written",
+                    beside.display()
+                );
             }
         }
         let existed = match std::fs::read(&p) {
@@ -446,6 +464,19 @@ mod tests {
                 .unwrap()
                 .next()
                 .is_none());
+            // A planted link where the .ryna.bak or the temporary file goes: nothing written.
+            let target = elsewhere.path().join("caught");
+            for beside in ["x.lua.ryna.bak", "x.lua.ryna-tmp"] {
+                std::fs::write(root.join("x.lua"), "old").unwrap();
+                std::os::unix::fs::symlink(&target, root.join(beside)).unwrap();
+                let e = write_all(root, &[("x.lua", b"new")], &no, false)
+                    .unwrap_err()
+                    .to_string();
+                assert!(e.contains("link"), "{beside}: {e}");
+                assert!(!target.exists(), "{beside}");
+                assert_eq!(std::fs::read(root.join("x.lua")).unwrap(), b"old");
+                std::fs::remove_file(root.join(beside)).unwrap();
+            }
         }
     }
 
@@ -463,8 +494,25 @@ mod tests {
             assert!(plain_component(ok), "{ok}");
         }
         for bad in [
-            "", ".", "..", "a/b", "a\\b", "c:", " x", "x ", "x.", "CON", "nul.txt", "Com1",
-            "LPT9.lua", "aux ",
+            "",
+            ".",
+            "..",
+            "a/b",
+            "a\\b",
+            "c:",
+            " x",
+            "x ",
+            "x.",
+            "CON",
+            "nul.txt",
+            "Com1",
+            "LPT9.lua",
+            "aux ",
+            "COM¹",
+            "lpt³.txt",
+            "CONIN$",
+            "conout$.lua",
+            "CLOCK$",
         ] {
             assert!(!plain_component(bad), "{bad}");
         }

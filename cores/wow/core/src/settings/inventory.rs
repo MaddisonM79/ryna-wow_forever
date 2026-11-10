@@ -200,8 +200,33 @@ impl Inventory {
 
     /// `Name-Realm` as a character, this account's if it has it, else a new one (its folder is made
     /// when something is copied to it). Only the command line's `copy --force` asks for this.
+    ///
+    /// A new one is split where its realm is a realm this account already has, so a Forever name
+    /// with a hyphen (`Newbie-Shammie-91`) lands in realm `91`, not in a made-up realm
+    /// `Shammie-91`; with no such realm it is split at the first `-`, as [`Character::parse`] does.
     pub fn new_character(&self, s: &str) -> Result<Character> {
-        self.character(s).or_else(|_| Character::parse(s))
+        if let Ok(c) = self.character(s) {
+            return Ok(c);
+        }
+        let whole = s.trim();
+        let realms: BTreeSet<&str> = self.characters.iter().map(|c| c.realm.as_str()).collect();
+        // The longest name first, so `A-B-C` with realms `C` and `B-C` takes realm `C`.
+        let known = whole
+            .char_indices()
+            .filter(|&(_, ch)| ch == '-')
+            .rev()
+            .find_map(|(i, _)| {
+                let (name, realm) = (whole[..i].trim(), whole[i + 1..].trim());
+                let realm = realms.iter().find(|r| r.eq_ignore_ascii_case(realm))?;
+                (super::plain_component(name) && super::plain_component(realm)).then(|| Character {
+                    name: name.to_string(),
+                    realm: realm.to_string(),
+                })
+            });
+        match known {
+            Some(c) => Ok(c),
+            None => Character::parse(s),
+        }
     }
 }
 
@@ -582,6 +607,25 @@ mod tests {
             "Maddie-Shammie-91"
         );
         assert!(inv.character("Maddie-Shammie-92").is_err());
+        // A new character (copy --force) with a hyphen lands in the realm the account has.
+        assert_eq!(
+            inv.new_character("Newbie-Shammie-91").unwrap(),
+            ch("Newbie-Shammie", "91")
+        );
+        assert_eq!(
+            inv.new_character("Newbie-Shammie-91").unwrap().rel_dir(),
+            "91/Newbie-Shammie"
+        );
+        // An existing one is still the one it has; a realm it doesn't have splits at the first `-`.
+        assert_eq!(
+            inv.new_character("maddie-shammie-91").unwrap(),
+            ch("Maddie-Shammie", "91")
+        );
+        assert_eq!(
+            inv.new_character("Bryn-Doomhowl").unwrap(),
+            ch("Bryn", "Doomhowl")
+        );
+        assert!(inv.new_character("x-../../Other/91").is_err());
     }
 
     #[test]
