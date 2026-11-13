@@ -48,17 +48,23 @@ ns.On("PLAYER_LOGOUT", function()
   ns.CallMods("onLogout")
 end)
 
--- When the client blocks or forbids something this addon (or one of its mods) did (the "blocked
+-- When the client blocks or forbids something this addon or one of its mods did (the "blocked
 -- from an action only available to the Blizzard UI" dialog), say which call it was, in chat and in
 -- RynaDB.blocked, so it can be found without a taint log.
+--
+-- Only ours. The client sends these events for every addon, and through 0.4.0 this printed each
+-- one with "Please report this line": HealBot moving its own frame in combat, which the client
+-- refuses as a matter of course, read as a Ryna fault. Another addon's goes to the debug log.
 local function noteBlocked(event, addon, fn)
   local what = tostring(fn)
-  if addon == ns.NAME or ns.modsByAddon[addon] then
-    ns.db.blocked = { event = event, fn = what, at = ns.Now(), addon = ns.VERSION }
+  local verb = event == "ADDON_ACTION_FORBIDDEN" and "forbade" or "blocked"
+  if not ns.IsOwnAddon(addon) then
+    ns.Debug("the client %s a call to %s by %s (another addon's, not reported)", verb, what, tostring(addon))
+    return
   end
-  -- Printed for every addon, not only this one: the client may blame a different name than the folder's.
+  ns.db.blocked = { event = event, fn = what, at = ns.Now(), addon = ns.VERSION }
   ns.PrintRaw(string.format("|cffff6060Ryna|r: the client %s a call to %s by %s (Ryna %s). Please report this line.",
-    event == "ADDON_ACTION_FORBIDDEN" and "forbade" or "blocked", what, tostring(addon), ns.VERSION))
+    verb, what, tostring(addon), ns.VERSION))
 end
 ns.On("ADDON_ACTION_FORBIDDEN", noteBlocked)
 ns.On("ADDON_ACTION_BLOCKED", noteBlocked)

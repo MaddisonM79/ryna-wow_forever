@@ -164,6 +164,16 @@ eq(N.Create(), N.frame, "one frame, made once")
 login({ messages = { { at = 5, level = "error", text = UNSUPPORTED } } })
 eq(St.Messages(10)[1].text, UNSUPPORTED, "no support table: the app's message is shown")
 
+-- Whose blocked call it is (Init.lua's noteBlocked): only this addon's and its mods' are reported.
+check(ns.IsOwnAddon("Ryna"), "the core is ours")
+check(ns.IsOwnAddon("Ryna_Chronicle"), "a mod's addon is ours by its name")
+ns.modsByAddon = { OddlyNamedMod = {} }
+check(ns.IsOwnAddon("OddlyNamedMod"), "a registered mod's addon is ours whatever it is called")
+ns.modsByAddon = nil
+check(not ns.IsOwnAddon("HealBot"), "HealBot is not ours")
+check(not ns.IsOwnAddon("Rynamite"), "a name that merely starts like ours is not ours")
+check(not ns.IsOwnAddon(nil), "no name is not ours")
+
 check(#chat == 0, "nothing in chat: " .. table.concat(chat, " / "))
 check(ns.errors.count == 0, "no errors caught: " .. tostring(ns.errors.last))
 

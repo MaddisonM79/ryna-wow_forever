@@ -128,6 +128,16 @@ local function debugEmit(msg)
   ns.PrintRaw("|cff7fb2ffRyna debug|r: |cffa0a0a0" .. msg .. "|r")
 end
 
+-- Whether `addon`, as the client names it in ADDON_ACTION_BLOCKED and ADDON_ACTION_FORBIDDEN, is
+-- this addon or one of its mods: the core's own name, a registered mod's addon, or a name that
+-- starts with the core's and an underscore (Ryna_Chronicle), so a mod blamed before it registered
+-- still counts. Anything else is someone else's addon.
+function ns.IsOwnAddon(addon)
+  if type(addon) ~= "string" then return false end
+  if addon == ns.NAME or (ns.modsByAddon and ns.modsByAddon[addon]) then return true end
+  return addon:sub(1, #ns.NAME + 1) == ns.NAME .. "_"
+end
+
 function ns.Debugging()
   return ns.Setting("debug") and true or false
 end
