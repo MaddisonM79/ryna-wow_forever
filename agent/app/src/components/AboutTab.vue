@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // About: what this is, its versions, where it lives, who made it and what it's made with.
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { api, errorText } from "../api";
 import { copyText } from "../clipboard";
+import { aboutAddon } from "../describe";
 import { status } from "../store";
 import UpdateControl from "./UpdateControl.vue";
 import credits from "../../../../credits.json";
@@ -31,6 +32,8 @@ const THIRD_PARTY = [
   { name: "ed25519-dalek", what: "the device key that signs what goes to ryna.io", licence: "BSD-3-Clause" },
   { name: "base64", what: "writing the device key and its signatures", licence: "MIT or Apache-2.0" },
 ];
+
+const addon = computed(() => aboutAddon(status.value?.installs ?? [], status.value?.addonBundled ?? null));
 
 const copied = ref<string | null>(null);
 const copyFailed = ref<string | null>(null);
@@ -71,7 +74,10 @@ async function copy(url: string): Promise<void> {
       </div>
       <div>
         <dt>Addon</dt>
-        <dd>{{ status.addonBundled ?? "None in this build" }}</dd>
+        <dd>
+          {{ addon.text }}
+          <span v-if="addon.old" class="chip update">Update it on the game's page</span>
+        </dd>
       </div>
       <div>
         <dt>Updates</dt>

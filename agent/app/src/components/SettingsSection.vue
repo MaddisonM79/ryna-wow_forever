@@ -32,6 +32,6 @@ async function toggleAutostart(e: Event): Promise<void> {
     </label>
     <p v-if="autostartError" class="banner error">{{ autostartError }}</p>
     <p class="muted">Each game's own settings are on its page.</p>
-    <p class="muted">Updates: Status and About have "Check for updates". A new Ryna brings the addon with it.</p>
+    <p class="muted">Updates: Status and About have "Check for updates". A new Ryna carries a new addon: install it on the game's page.</p>
   </section>
 </template>
