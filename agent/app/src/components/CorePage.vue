@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // A core's page: a tab row (Game, Accounts, Combat, Mods, Addon settings while the Settings mod is
 // on, Settings) over the core's sections. The
-// WoW core's sections are the window's own; another core shows the rows it lays out through the
-// agent's interface until it has sections of its own. The open tab is remembered per core.
+// WoW core's sections are the window's own; a fetched core's page is SidecarPage (its state, its
+// rows, its activity and its switch), with no tabs until it has something to put in them. The open tab is remembered per core.
 import { computed, nextTick, ref, watch } from "vue";
 import type { CoreView } from "../api";
 import { settingsModOn } from "../settingsWords";
@@ -14,6 +14,7 @@ import CombatSection from "./CombatSection.vue";
 import ModsSection from "./ModsSection.vue";
 import CoreSettings from "./CoreSettings.vue";
 import AddonSettingsSection from "./AddonSettingsSection.vue";
+import SidecarPage from "./SidecarPage.vue";
 
 const props = defineProps<{ core: CoreView }>();
 
@@ -80,20 +81,6 @@ async function onKey(e: KeyboardEvent): Promise<void> {
       <CoreSettings v-else-if="t.id === 'settings'" />
     </div>
   </template>
-  <div v-else class="tabpanel">
-    <section>
-      <h2>{{ core.name }}</h2>
-      <dl class="glance">
-        <div v-for="row in core.rows" :key="row.label">
-          <dt>{{ row.label }}</dt>
-          <dd>
-            <span v-if="row.chip" class="chip" :class="row.chip">{{ row.value }}</span>
-            <span v-else>{{ row.value }}</span>
-          </dd>
-        </div>
-      </dl>
-      <p v-if="!core.rows.length" class="muted">Nothing to show yet.</p>
-    </section>
-  </div>
+  <SidecarPage v-else :core="core" />
   </div>
 </template>

@@ -1,8 +1,10 @@
 // Agent events in plain words, for the activity log. Null means "not worth a line".
+import { sidecarProblem } from "./coreWords";
 import type {
   AccountView,
   AgentEvent,
   CombatStatus,
+  CoreView,
   InstallResult,
   InstallView,
   ModChange,
@@ -409,6 +411,8 @@ export const DEVICE_KEY_PROBLEM = "Device key unreadable: sign out and back in w
 /** What the header's chip needs from the status. */
 export type HeaderStatus = Pick<Status, "signedIn" | "watching" | "lastRun" | "lastError" | "deviceKeyError"> & {
   accounts: Pick<AccountView, "phase">[];
+  /** The provisioned cores; with fetched ones among them, any running core counts and an error names its core. */
+  cores?: Pick<CoreView, "kind" | "name" | "state" | "lastError">[];
 };
 
 /**
@@ -421,15 +425,23 @@ export type HeaderStatus = Pick<Status, "signedIn" | "watching" | "lastRun" | "l
 export function headerState(s: HeaderStatus): HeaderState {
   if (s.deviceKeyError) return { state: "problem", text: "Problem", detail: DEVICE_KEY_PROBLEM, chip: "error" };
   if (!s.signedIn) return { state: "signedOut", text: "Signed out", detail: null, chip: "waiting" };
-  if (!s.watching) return { state: "paused", text: "Paused", detail: null, chip: "update" };
+  const cores = s.cores ?? [];
+  const sidecars = cores.filter((c) => c.kind === "sidecar");
+  const wow = cores.find((c) => c.kind === "builtin");
+  const sidecarRunning = sidecars.some((c) => c.state.is === "running");
+  if (!s.watching && !sidecarRunning) return { state: "paused", text: "Paused", detail: null, chip: "update" };
   if (s.accounts.some((a) => a.phase === "pushing")) {
     return { state: "syncing", text: "Syncing…", detail: null, chip: "pushing" };
   }
   const failed = s.lastRun !== null && !s.lastRun.ok;
-  if (failed || s.lastError) {
-    const detail = s.lastRun?.advice ?? s.lastRun?.error ?? s.lastError ?? "the last sync didn't finish";
+  if (s.watching && (failed || s.lastError)) {
+    const words = s.lastRun?.advice ?? s.lastRun?.error ?? s.lastError ?? "the last sync didn't finish";
+    // With more than one core, an error says whose it is.
+    const detail = sidecars.length && wow ? `${wow.name}: ${words}` : words;
     return { state: "problem", text: "Problem", detail, chip: "error" };
   }
+  const other = sidecarProblem(sidecars);
+  if (other) return { state: "problem", text: "Problem", detail: other, chip: "error" };
   return { state: "connected", text: "Connected", detail: null, chip: "pushed" };
 }
 

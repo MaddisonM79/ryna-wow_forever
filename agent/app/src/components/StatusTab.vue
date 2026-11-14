@@ -3,6 +3,7 @@
 // card per core, side by side, each a few short rows, so the window's width is used and nothing
 // scrolls.
 import { computed } from "vue";
+import { runningCores } from "../coreWords";
 import { ago, headerState, when } from "../describe";
 import { now, status } from "../store";
 import type { PageId } from "../tabs";
@@ -30,6 +31,10 @@ const head = computed(() => (status.value ? headerState(status.value) : null));
             <span class="chip" :class="head.chip">{{ head.text }}</span>
             <span v-if="head.detail" class="error-text">{{ head.detail }}</span>
           </dd>
+        </div>
+        <div v-if="status.cores.length > 1">
+          <dt>Running</dt>
+          <dd>{{ runningCores(status) }} of {{ status.cores.length }} games</dd>
         </div>
         <div>
           <dt>Last sync</dt>

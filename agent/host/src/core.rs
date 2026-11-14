@@ -10,9 +10,10 @@
 //! error to show). It also answers, at any time, the rows for its status card
 //! ([`Core::status_rows`]) and what its heartbeat says ([`Core::heartbeat`]).
 //!
-//! Stage 1 has one core, WoW, built in (`runtime.kind = "builtin"`), so the trait is generic over
-//! its event type rather than object-safe. Sidecar cores (stage 4) speak the same interface as
-//! line-delimited JSON over stdin/stdout; nothing here models them yet beyond [`Runtime::Sidecar`].
+//! The trait is generic over its event type rather than object-safe: the app drives each core on a
+//! thread of its own through the same generic glue, the WoW core in-process (`runtime.kind =
+//! "builtin"`) and every sidecar core through [`crate::sidecar::SidecarCore`], which speaks this
+//! interface to a separate program as line-delimited JSON (docs/ryna-agent-cores-mods.md 13.4).
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -46,6 +47,9 @@ pub struct CoreManifest {
     /// Where its mods' manifests live, from the repository root (`mods/wow`).
     #[serde(default)]
     pub mods: Option<String>,
+    /// The operating systems it runs on (`macos`, `windows`, `linux`); absent means all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platforms: Option<Vec<String>>,
 }
 
 /// How the agent runs a core.
@@ -126,6 +130,13 @@ impl CoreManifest {
         if self.scopes.is_empty() || self.scopes.iter().any(|s| s.trim().is_empty()) {
             return bad("scopes are empty");
         }
+        if let Some(p) = &self.platforms {
+            if p.iter()
+                .any(|p| !matches!(p.as_str(), "macos" | "windows" | "linux"))
+            {
+                return bad("platforms names one that isn't macos, windows or linux");
+            }
+        }
         if let Runtime::Sidecar { bin, .. } = &self.runtime {
             if bin.trim().is_empty() {
                 return bad("sidecar names no bin");
@@ -133,6 +144,25 @@ impl CoreManifest {
         }
         Ok(())
     }
+
+    /// Whether it runs on this computer's operating system.
+    pub fn runs_here(&self) -> bool {
+        runs_on(self.platforms.as_deref(), this_platform())
+    }
+}
+
+/// This computer's operating system as a manifest's `platforms` names it.
+pub fn this_platform() -> &'static str {
+    match std::env::consts::OS {
+        "macos" => "macos",
+        "windows" => "windows",
+        _ => "linux",
+    }
+}
+
+/// Whether a core with `platforms` (None: all) runs on `os`.
+pub fn runs_on(platforms: Option<&[String]>, os: &str) -> bool {
+    platforms.is_none_or(|p| p.iter().any(|p| p == os))
 }
 
 /// How a core gets its tokens. Stage 1: the sign-in settings and the store the agent keeps the
@@ -143,6 +173,20 @@ pub trait TokenProvider: Send + Sync {
     fn config(&self) -> &Config;
     /// Where the refresh and access tokens are kept.
     fn store(&self) -> Box<dyn TokenStore>;
+    /// The one access token every core uses (refreshed when it's near its end), or None when
+    /// signed out. A sidecar core is handed it with each `sync`.
+    fn access_token(&self) -> Result<Option<String>, crate::auth::AuthError> {
+        let http =
+            crate::http::HttpTransport::new().map_err(crate::auth::AuthError::Unavailable)?;
+        let store = self.store();
+        crate::auth::Auth::new(
+            self.config(),
+            &http,
+            store.as_ref(),
+            &crate::util::SystemClock,
+        )
+        .access_token()
+    }
 }
 
 /// The real one: the OS keychain, under the issuer's names (`KeyringStore::for_issuer`).
@@ -355,6 +399,24 @@ mod tests {
         );
         assert_eq!(m.detect, Detect::default());
         assert_eq!(m.mods, None);
+        assert_eq!(m.platforms, None);
+        assert!(m.runs_here());
+    }
+
+    #[test]
+    fn platforms_say_where_a_core_runs() {
+        let mut v = wow_like();
+        v["platforms"] = json!(["macos"]);
+        let m = CoreManifest::parse(&v.to_string()).unwrap();
+        assert!(runs_on(m.platforms.as_deref(), "macos"));
+        assert!(!runs_on(m.platforms.as_deref(), "windows"));
+        assert!(runs_on(None, "linux"));
+        assert_eq!(m.runs_here(), cfg!(target_os = "macos"));
+        v["platforms"] = json!(["amiga"]);
+        assert!(CoreManifest::parse(&v.to_string())
+            .unwrap_err()
+            .to_string()
+            .contains("platforms"));
     }
 
     #[test]

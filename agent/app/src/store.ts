@@ -5,6 +5,8 @@ import {
   api,
   errorText,
   onAgentEvent,
+  onCoreEvent,
+  onCoreFetch,
   onLoginFinished,
   onWatchState,
   type AgentEvent,
@@ -12,6 +14,7 @@ import {
   type Phase,
   type Status,
 } from "./api";
+import { describeCoreEvent } from "./coreWords";
 import { describe } from "./describe";
 import { startUpdates } from "./updates";
 
@@ -20,6 +23,8 @@ export interface LogLine {
   at: number;
   text: string;
   level: "info" | "error";
+  /** The core a line is about (a fetched core's id); none for the agent's and WoW's own. */
+  core?: string;
 }
 
 const LOG_SIZE = 50;
@@ -37,9 +42,11 @@ let nextId = 1;
 /** The device key error last written to the activity log, so each one is logged once. */
 let loggedKeyError: string | null = null;
 
-export function log(text: string, level: LogLine["level"] = "info"): void {
-  activity.value = [{ id: nextId++, at: Date.now() / 1000, text, level }, ...activity.value].slice(0, LOG_SIZE);
+export function log(text: string, level: LogLine["level"] = "info", core?: string): void {
+  const line: LogLine = { id: nextId++, at: Date.now() / 1000, text, level, ...(core ? { core } : {}) };
+  activity.value = [line, ...activity.value].slice(0, LOG_SIZE);
 }
+
 
 /** Empty the activity log (this window's copy: nothing is stored anywhere else). */
 export function clearActivity(): void {
@@ -153,6 +160,19 @@ export async function signOut(): Promise<void> {
 export async function start(): Promise<void> {
   await Promise.all([
     onAgentEvent(onEvent),
+    onCoreEvent((e) => {
+      const line = describeCoreEvent(e.name, e.event);
+      if (line) log(line.text, line.level, e.core);
+      refreshSoon();
+    }),
+    onCoreFetch((e) => {
+      if (e.core && e.finished) {
+        const name = status.value?.cores.find((c) => c.id === e.core)?.name ?? e.core;
+        if (e.error) log(`Couldn't get ${name}: ${e.error}`, "error", e.core);
+        else log(`${name} downloaded and its signature checked.`, "info", e.core);
+      }
+      refreshSoon();
+    }),
     onWatchState((watching) => {
       if (status.value) status.value.watching = watching;
     }),

@@ -1,6 +1,7 @@
-//! The app's side of the agent: one core run at a time on its own thread (the WoW core, driven
-//! through `ryna_agent::core::Core`), the sign-in, and the status the window shows. Nothing here outlives the app: quitting cancels the loop and any
-//! sign-in, and there is no service, scheduled task or launchd job behind it.
+//! The app's side of the agent: the WoW core on its own thread (driven through
+//! `ryna_agent::core::Core`), every fetched core beside it on threads of their own (`cores`), the
+//! sign-in, and the status the window shows. Nothing here outlives the app: quitting cancels every
+//! loop, sidecar and sign-in, and there is no service, scheduled task or launchd job behind it.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -8,13 +9,15 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use ryna_agent::auth::{self, AuthError, DeviceLogin, KeyringStore, TokenStore};
+use ryna_agent::auth::{self, Auth, AuthError, DeviceLogin, KeyringStore, TokenStore};
 use ryna_agent::cancel::CancelToken;
 use ryna_agent::config::Config;
 pub use ryna_agent::core::Phase;
 use ryna_agent::core::{Activity, Core, CoreContext, CoreControl, KeychainTokens, StatusRow};
 use ryna_agent::fix::Fix;
+use ryna_agent::http::HttpTransport;
 use ryna_agent::identity::{self, DeviceKey};
+use ryna_agent::util::SystemClock;
 use ryna_wow_core::addon_install;
 use ryna_wow_core::discovery::{self, Install};
 use ryna_wow_core::mods::{self as core_mods, ModChange, ModStatus};
@@ -26,6 +29,7 @@ use ryna_wow_core::wow_core::WowCore;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::cores::CoreState;
 use crate::settings::Settings;
 
 /// How often the loop looks for new saves while the app is open.
@@ -157,16 +161,52 @@ impl Live {
 
     /// One event's effect on the rows and the last error (what the core's `activity` says of it).
     pub fn observe(&mut self, activity: &Activity) {
-        if let Some((key, phase)) = &activity.row {
-            self.phases.insert(key.clone(), *phase);
-        }
-        if let Some(error) = &activity.error {
-            self.last_error = Some(error.clone());
-        }
-        if activity.clears_error {
-            self.last_error = None;
-        }
+        apply(&mut self.phases, &mut self.last_error, activity);
     }
+}
+
+/// An event's effect on a core's rows and its last error (any core's).
+pub fn apply(
+    phases: &mut BTreeMap<String, Phase>,
+    last_error: &mut Option<String>,
+    activity: &Activity,
+) {
+    if let Some((key, phase)) = &activity.row {
+        phases.insert(key.clone(), *phase);
+    }
+    if let Some(error) = &activity.error {
+        *last_error = Some(error.clone());
+    }
+    if activity.clears_error {
+        *last_error = None;
+    }
+}
+
+/// The app's settings as they stand.
+pub fn settings(app: &AppHandle) -> Settings {
+    app.state::<Agent>().live().settings.clone()
+}
+
+/// Change the settings and keep them.
+pub fn update_settings(app: &AppHandle, f: impl FnOnce(&mut Settings)) -> Result<(), String> {
+    let agent = app.state::<Agent>();
+    let settings = {
+        let mut live = agent.live();
+        f(&mut live.settings);
+        live.settings.clone()
+    };
+    if let Some(dir) = &agent.settings_dir {
+        settings
+            .save(dir)
+            .map_err(|e| format!("Couldn't save the setting: {e}"))?;
+    }
+    Ok(())
+}
+
+/// A failure for the header to show until a good pass clears it (the cores answer refusing the
+/// sign-in, say).
+pub fn note_error(app: &AppHandle, words: String) {
+    app.state::<Agent>().live().last_error = Some(words);
 }
 
 /// The app's managed state.
@@ -230,6 +270,10 @@ pub fn signed_in(config: &Config) -> bool {
 /// Start the watch loop unless one is running. The new loop's thread first waits for the last
 /// one to end, so a restart never runs two passes at once (the core's run lock would refuse it).
 pub fn start_watch(app: &AppHandle) {
+    // An answer that leaves WoW out removes it: nothing of it runs or shows.
+    if !crate::cores::wow_provisioned(app) {
+        return;
+    }
     let agent = app.state::<Agent>();
     {
         let mut live = agent.live();
@@ -270,6 +314,7 @@ pub fn cancel(app: &AppHandle) {
 /// On quit: stop the loop and any sign-in that is polling.
 pub fn shutdown(app: &AppHandle) {
     cancel(app);
+    crate::cores::shutdown(app);
     cancel_login(app);
 }
 
@@ -286,6 +331,7 @@ pub fn sync_now(app: &AppHandle) {
         Some(control) => control.sync(),
         None => start_watch(app),
     }
+    crate::cores::sync_now(app);
 }
 
 /// Restart the loop if it's running (after a setting it reads at start changed).
@@ -360,7 +406,8 @@ fn clear_login(app: &AppHandle, token: &CancelToken) {
     }
 }
 
-/// Begin the device grant and return the code to show (the core's `start_device_login`); the
+/// Begin the device grant (for the header's Sign in, and a core's "Allow <name> on this
+/// computer": the same one approval, for every provisioned core) and return the code to show; the
 /// polling (`poll_device_login`) carries on on its own thread with a cancel token kept here, so
 /// `cancel_login` stops it. When it ends, `login-finished` is emitted, and on success a pass runs.
 pub fn start_login(app: &AppHandle) -> Result<LoginCode, String> {
@@ -379,7 +426,17 @@ pub fn start_login(app: &AppHandle) -> Result<LoginCode, String> {
         token
     };
     let config = agent.config.clone();
-    let login = match auth::start_device_login(&config) {
+    // One resource and every provisioned core's scope, as the cores answer last said (the
+    // agent's resource and WoW's scope before any answer).
+    let (resource, scopes) = crate::cores::sign_in_request(app);
+    let scopes: Vec<&str> = scopes.iter().map(String::as_str).collect();
+    let started = HttpTransport::new()
+        .map_err(AuthError::Unavailable)
+        .and_then(|http| {
+            Auth::new(&config, &http, &keychain(&config), &SystemClock)
+                .start_device_login_for(&resource, &scopes)
+        });
+    let login = match started {
         Ok(login) => login,
         Err(e) => {
             clear_login(app, &token);
@@ -402,6 +459,7 @@ pub fn start_login(app: &AppHandle) -> Result<LoginCode, String> {
         let finished = LoginFinished::from_result(&result);
         let _ = handle.emit(LOGIN_FINISHED, &finished);
         if finished.ok {
+            // The new sign-in may cover cores the old one didn't: ask again, then sync.
             sync_now(&handle);
         }
     });
@@ -433,6 +491,7 @@ pub fn login_link(app: &AppHandle) -> Option<String> {
 /// Forget the sign-in on this computer and stop syncing.
 pub fn logout(app: &AppHandle) -> Result<(), String> {
     stop_watch(app);
+    crate::cores::stop_all(app);
     let agent = app.state::<Agent>();
     keychain(&agent.config).clear()?;
     let mut live = agent.live();
@@ -553,8 +612,8 @@ pub struct Status {
     /// What the API last said about this version (the band, the marks, the note), with when; null
     /// when it hasn't said. Shown in the update banner; never a reason to stop syncing.
     pub support: Option<KnownSupport>,
-    /// Each core's status card, as the core lays it out (through the core interface; the window
-    /// still draws its own cards from the fields above in stage 1).
+    /// Every core the person is provisioned for (and this build can show), in the agent's order:
+    /// its card, its page's state. An unprovisioned core is in none of the window.
     pub cores: Vec<CoreView>,
     /// The WoW core's mods: on or off, what's bundled, what's installed in each install.
     pub mods: Vec<ModStatus>,
@@ -564,23 +623,60 @@ pub struct Status {
     pub keep_raw: bool,
 }
 
-/// A core's card: what it is, and its rows.
+/// A provisioned core's card and page: what it is, its rows, and what its page shows.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CoreView {
     pub id: String,
     pub name: String,
     pub version: String,
+    /// `builtin` (WoW) or `sidecar` (fetched).
+    pub kind: &'static str,
     pub rows: Vec<StatusRow>,
+    pub state: CoreState,
+    /// The person's switch (WoW: always on; its loop is the header's).
+    pub on: bool,
+    /// Where it runs; empty means everywhere.
+    pub platforms: Vec<String>,
+    /// Its last failure that a good pass hasn't cleared.
+    pub last_error: Option<String>,
 }
 
-fn core_view<C: Core>(core: &C, ctx: Option<&CoreContext>) -> CoreView {
+fn core_view<C: Core>(core: &C, ctx: Option<&CoreContext>, watching: bool) -> CoreView {
     let m = core.manifest();
     CoreView {
         id: m.id.clone(),
         name: m.name.clone(),
         version: m.version.clone(),
+        kind: "builtin",
         rows: ctx.map(|ctx| core.status_rows(ctx)).unwrap_or_default(),
+        state: if watching {
+            CoreState::Running
+        } else {
+            CoreState::Stopped {
+                message: None,
+                fix: None,
+            }
+        },
+        on: true,
+        platforms: m.platforms.clone().unwrap_or_default(),
+        last_error: None,
+    }
+}
+
+impl From<crate::cores::SideView> for CoreView {
+    fn from(v: crate::cores::SideView) -> Self {
+        CoreView {
+            id: v.id,
+            name: v.name,
+            version: v.version,
+            kind: "sidecar",
+            rows: v.rows,
+            state: v.state,
+            on: v.on,
+            platforms: v.platforms,
+            last_error: v.last_error,
+        }
     }
 }
 
@@ -634,7 +730,14 @@ pub fn status(app: &AppHandle) -> Status {
     let device_key = agent.device_key();
     let device_key_error = device_key.as_ref().err().cloned();
     let ctx = context(&agent.config, device_key.ok(), install_override.clone());
-    let cores = vec![core_view(&wow, ctx.as_ref())];
+    // Only the provisioned cores, WoW first (the agent's order), then each fetched one.
+    let mut cores = Vec::new();
+    if crate::cores::wow_provisioned(app) {
+        let mut view = core_view(&wow, ctx.as_ref(), watching);
+        view.last_error = live_error.clone();
+        cores.push(view);
+    }
+    cores.extend(crate::cores::views(app).into_iter().map(CoreView::from));
     let mods = ctx
         .as_ref()
         .map(|ctx| wow.mod_statuses(ctx))
@@ -1018,6 +1121,7 @@ mod tests {
             expires_at: 1_800_000_600,
             interval: 5,
             device_code: "secret".into(),
+            resource: "https://api.ryna.io/agent".into(),
         };
         let shown = LoginCode::from(&login);
         assert_eq!(shown.link, "https://idp.test/device?user_code=ABCD-EFGH");
@@ -1162,8 +1266,14 @@ mod tests {
             ["failed: there's no folder to keep the agent's state in"]
         );
 
-        let view = core_view(&FakeCore { refuse: false }, Some(&ctx));
+        let view = core_view(&FakeCore { refuse: false }, Some(&ctx), true);
         assert_eq!((view.id.as_str(), view.rows.len()), ("wow", 1));
-        assert!(core_view(&FakeCore { refuse: false }, None).rows.is_empty());
+        assert_eq!((view.kind, &view.state), ("builtin", &CoreState::Running));
+        let idle = core_view(&FakeCore { refuse: false }, None, false);
+        assert!(idle.rows.is_empty());
+        assert!(matches!(
+            idle.state,
+            CoreState::Stopped { message: None, .. }
+        ));
     }
 }

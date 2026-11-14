@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { api } from "../api";
+import { runningCores } from "../coreWords";
 import { headerState, signInNote } from "../describe";
 import { cancelSignIn, login, loginBusy, loginError, signIn, signOut, status } from "../store";
 
@@ -17,6 +18,9 @@ const head = computed(() => (status.value ? headerState(status.value) : null));
       <template v-if="head">
         <span class="chip" :class="head.chip" role="status">{{ head.text }}</span>
         <span v-if="head.detail" class="error-text detail">{{ head.detail }}</span>
+        <span v-else-if="status && status.cores.length > 1 && head.state !== 'signedOut'" class="muted">
+          {{ runningCores(status) }} of {{ status.cores.length }} running
+        </span>
       </template>
     </div>
     <div class="actions">

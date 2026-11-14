@@ -305,7 +305,7 @@ pub fn heartbeat(found: &Discovery, state_dir: &Path, now: i64) -> CoreHeartbeat
 mod tests {
     use super::*;
     use crate::auth::testing::MemoryStore;
-    use crate::config::{test_config, DEFAULT_RESOURCE, INGEST_SCOPE};
+    use crate::config::{test_config, INGEST_SCOPE, LEGACY_RESOURCE};
     use crate::discovery::testing::product;
     use ryna_agent::auth::TokenStore;
     use ryna_agent::config::Config;
@@ -329,7 +329,8 @@ mod tests {
         assert_eq!(m.id, "wow");
         assert_eq!(m.runtime, Runtime::Builtin);
         assert_eq!(m.version, crate::AGENT_VERSION);
-        assert_eq!(m.resource, DEFAULT_RESOURCE);
+        // What the core needs, as documentation: the host signs in from the cores answer.
+        assert_eq!(m.resource, LEGACY_RESOURCE);
         assert_eq!(m.scopes, [INGEST_SCOPE]);
         assert_eq!(m.mods.as_deref(), Some("mods/wow"));
         // Every default root discovery looks in on this OS is listed (with ~ for the home folder).
