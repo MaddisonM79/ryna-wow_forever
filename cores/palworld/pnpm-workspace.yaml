@@ -1,0 +1,4 @@
+# pnpm 11 build-script allowlist: only these dependencies may run install scripts.
+# esbuild's postinstall checks its platform binary; it bundles dist/agent.mjs.
+allowBuilds:
+  esbuild: true

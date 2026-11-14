@@ -1,0 +1,22 @@
+{
+  "id": "palworld",
+  "name": "Palworld",
+  "version": "0.4.1",
+  "runtime": { "kind": "sidecar", "bin": "node", "args": ["agent.mjs", "serve"] },
+  "resource": "https://api.ryna.io/agent",
+  "scopes": ["palworld:ingest"],
+  "platforms": ["macos"],
+  "detect": {
+    "folders": ["~/Library/Containers/com.pocketpair.palworld.mac/Data/Library/Application Support/Epic/Pal/Saved/SaveGames"]
+  },
+  "data": {
+    "reads": [
+      "*/*/Level.sav",
+      "*/*/LevelMeta.sav",
+      "*/*/WorldOption.sav",
+      "*/*/LocalData.sav",
+      "*/*/Players/*.sav"
+    ],
+    "writes": []
+  }
+}

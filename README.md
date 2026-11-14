@@ -166,13 +166,19 @@ workspace (`Cargo.toml` at the root) holds the agent and the cores' Rust halves.
   (`mods/wow/automation`), the chores (quests, vendors, trainers, mail, rolls, invites and the like),
   each off until ticked, Prices (`mods/wow/prices`), vendor prices on item tooltips, and Settings (`mods/wow/settings`, `kind: "agent"`: no addon folder; the
   core's `settings` module), addon settings copied between characters and backed up encrypted.
+  `cores/palworld` is the Palworld core (Node, macOS): it reads the Mac App Store build's saves
+  and pushes them, run by the agent as a sidecar and fetched as a signed core package only for
+  people set up for it. Its save parser is a port of palworld-save-tools (MIT), and the built
+  package includes ooz-wasm (GPL-3.0-or-later); `cores/palworld/NOTICE.md` has both.
 - `mods/`: each core's mods (`mods/wow`), from stage 2 of the design.
-- `scripts/`: version checks, the release manifest, the CLI smoke test, and `capture.sh`, which
-  turns a real `Ryna.lua` into a scrubbed test fixture.
+- `scripts/`: version checks, the release manifest, the CLI smoke test, `core-package.mjs` (a
+  fetched core's package), and `capture.sh`, which turns a real `Ryna.lua` into a scrubbed test
+  fixture.
 
 Releases are built by `.github/workflows/release.yml` from a `vX.Y.Z` tag: macOS (both chips),
-Windows and Linux (an AppImage), the addon zip, `SHA256SUMS`, and the updater's signed artifacts
-and `latest.json`.
+Windows and Linux (an AppImage), the addon zip, the Palworld core's packages
+(`ryna-core-palworld-<version>-<target>.tar.gz`, both Macs), `SHA256SUMS`, and the updater's signed
+artifacts (the core packages' `.sig` files among them) and `latest.json`.
 
 ## Thanks
 

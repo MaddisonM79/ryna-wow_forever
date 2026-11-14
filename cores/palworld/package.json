@@ -1,0 +1,28 @@
+{
+  "name": "ryna-palworld-core",
+  "version": "0.4.1",
+  "private": true,
+  "description": "Ryna's Palworld core: parses the Mac App Store Palworld saves and pushes snapshots, run by the Ryna agent as a sidecar.",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@11.28.10",
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --target=node26 --outfile=dist/agent.mjs --legal-comments=eof --log-level=warning",
+    "agent": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "ooz-wasm": "2.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

@@ -1,7 +1,7 @@
 # A release, from a `v*` tag: the CLI for four targets, the app for macOS (arm64 and x86_64),
-# Windows x64 and Linux x86_64 (an AppImage), the addon zip, SHA256SUMS, and (when the updater
-# key is set up) the updater's signed artifacts and latest.json, all on one GitHub Release with
-# generated notes.
+# Windows x64 and Linux x86_64 (an AppImage), the addon zip, the Palworld core's packages for both
+# Macs, SHA256SUMS, and (when the updater key is set up) the updater's signed artifacts, the core
+# packages' .sig files and latest.json, all on one GitHub Release with generated notes.
 #
 # Every secret is optional (agent/README.md "Releasing"); without them the release is unsigned
 # and can't update anyone, but still builds. Run it by hand (workflow_dispatch) to build all of
@@ -256,8 +256,80 @@ jobs:
           path: dist-app/*
           if-no-files-found: error
 
+  # The Palworld core's packages (docs/ryna-agent-cores-mods.md 13.3), fetched by the app only for a
+  # person provisioned for the core: ryna-core-palworld-<version>-<target>.tar.gz for both Mac
+  # targets, each Node's official build (pinned and checked against SHASUMS256.txt by
+  # scripts/core-package.mjs), the bundle and core.json. Each gets a .sig made with the updater's
+  # key by the same Tauri CLI that signs the app's updater artifacts, so the app checks it against
+  # agent/app/updater.pub. Without the key they're built unsigned and the app won't install them.
+  core:
+    needs: versions
+    environment: ${{ github.ref_type == 'tag' && 'release' || 'dry-run' }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          package_json_file: cores/palworld/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26"
+      - run: pnpm install --frozen-lockfile
+        working-directory: cores/palworld
+      - run: pnpm typecheck
+        working-directory: cores/palworld
+      - run: pnpm test
+        working-directory: cores/palworld
+      - run: pnpm build
+        working-directory: cores/palworld
+      - name: The core packages
+        env:
+          VERSION: ${{ needs.versions.outputs.version }}
+        run: |
+          set -euo pipefail
+          node scripts/core-package.mjs --out dist-core
+          for target in aarch64-apple-darwin x86_64-apple-darwin; do
+            test -f "dist-core/ryna-core-palworld-${VERSION}-${target}.tar.gz"
+          done
+      # The runner is Apple silicon: the arm64 package's Node runs the bundle and answers hello.
+      - name: Smoke-test the arm64 package
+        env:
+          VERSION: ${{ needs.versions.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/core" "$RUNNER_TEMP/saves"
+          tar -xzf "dist-core/ryna-core-palworld-${VERSION}-aarch64-apple-darwin.tar.gz" -C "$RUNNER_TEMP/core"
+          cd "$RUNNER_TEMP/core"
+          codesign --verify ./node
+          hello="{\"type\":\"hello\",\"protocol\":1,\"api\":\"https://api.example.invalid\",\"stateDir\":\"$RUNNER_TEMP/state\",\"agent\":\"ryna-agent/${VERSION}\",\"gameFolder\":\"$RUNNER_TEMP/saves\"}"
+          out="$(printf '%s\n%s\n' "$hello" '{"type":"stop"}' | ./node agent.mjs serve)"
+          test "$out" = "{\"type\":\"ready\",\"protocol\":1,\"core\":\"palworld\",\"version\":\"${VERSION}\"}"
+      # The Tauri CLI from agent/app's lockfile: the same tool and key as the app's updater .sig files.
+      - name: Sign the packages (only with the updater key)
+        env:
+          VERSION: ${{ needs.versions.outputs.version }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "updater signing: off (needs TAURI_SIGNING_PRIVATE_KEY); the core packages are unsigned"
+            exit 0
+          fi
+          (cd agent/app && pnpm install --frozen-lockfile)
+          for f in dist-core/ryna-core-palworld-*.tar.gz; do
+            (cd agent/app && pnpm exec tauri signer sign --app-version "$VERSION" "$GITHUB_WORKSPACE/$f")
+            test -s "$f.sig"
+          done
+          ls -l dist-core
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: core-palworld
+          path: dist-core/*
+          if-no-files-found: error
+
   release:
-    needs: [versions, cli, app]
+    needs: [versions, cli, app, core]
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -1,0 +1,554 @@
+{
+ "schema": 2,
+ "agent": {
+  "version": "test"
+ },
+ "world": {
+  "id": "0123456789ABCDEF0123456789ABCDEF",
+  "name": "Test Islands",
+  "hostName": null,
+  "day": 20,
+  "savedAt": "2026-10-07T14:10:20.432000Z",
+  "gameTimeTicks": null,
+  "realTimeTicks": null,
+  "gameBuild": null,
+  "clock": null,
+  "bossesDown": [],
+  "spawners": {},
+  "nodes": [],
+  "settings": {
+   "Difficulty": "Easy"
+  }
+ },
+ "players": [
+  {
+   "uid": "00000000-0000-0000-0000-000000000001",
+   "name": "Tamer",
+   "level": 25,
+   "exp": 0,
+   "hp": null,
+   "shield": null,
+   "stomach": null,
+   "statusPoints": {
+    "attack": 11,
+    "moveSpeed": 2,
+    "gliderSpeed": 2
+   },
+   "exStatusPoints": {},
+   "techPoints": 20,
+   "ancientTechPoints": 0,
+   "unlockedRecipes": [],
+   "position": null,
+   "lastOnline": null,
+   "platform": null,
+   "partyContainer": "c-party",
+   "palboxContainer": "c-box",
+   "quests": {
+    "completed": [],
+    "active": [
+     "Main_DefeatForestBoss"
+    ],
+    "progress": [
+     {
+      "id": "Main_DefeatForestBoss",
+      "step": 2,
+      "counts": {
+       "QuestBlock_DeliveryItem_TotalDeliveredCount": 3,
+       "CanCompleteFlag_0": 0
+      }
+     }
+    ]
+   },
+   "records": {
+    "bossesDefeated": [],
+    "towerBossesDefeated": [],
+    "towerClears": {},
+    "speciesCaptured": 1,
+    "captures": {
+     "PinkCat": 9
+    },
+    "paldeckUnlocked": [
+     "PinkCat"
+    ],
+    "relics": 0,
+    "notesFound": 0,
+    "fastTravelUnlocked": [],
+    "areasFound": [],
+    "dungeonsCleared": 0,
+    "crafted": {},
+    "relicsByType": {},
+    "relicsPickedUp": 0,
+    "relicIds": [],
+    "itemPickupIds": [],
+    "notes": [],
+    "itemPickups": 0,
+    "npcsTalkedTo": 0,
+    "emotesLearned": 0,
+    "worldMapsUnlocked": [],
+    "fixedDungeonsCleared": 7,
+    "rigsCleared": 1,
+    "predatorsDefeated": 2,
+    "campsConquered": 1,
+    "condensations": {
+     "2": 16,
+     "5": 1
+    },
+    "butchered": {
+     "PinkCat": 7
+    },
+    "fished": {
+     "FishShadow_LazyCatfish_Nushi": 1
+    }
+   },
+   "inventory": {
+    "common": [
+     {
+      "item": "Bow",
+      "count": 1
+     },
+     {
+      "item": "Money",
+      "count": 783
+     }
+    ],
+    "essential": [],
+    "weapons": [],
+    "armor": [],
+    "food": [],
+    "drop": []
+   },
+   "gear": [
+    {
+     "kind": "weapon",
+     "item": "Bow",
+     "durability": 87.2,
+     "ammo": 3,
+     "passives": [
+      "Fire"
+     ],
+     "section": "common"
+    }
+   ],
+   "appearance": null,
+   "skins": [],
+   "local": null
+  }
+ ],
+ "guilds": [
+  {
+   "id": "guild-1",
+   "name": "Unnamed Guild",
+   "baseCampLevel": 8,
+   "adminUid": null,
+   "members": [
+    {
+     "uid": "00000000-0000-0000-0000-000000000001",
+     "name": "Tamer",
+     "role": 1
+    }
+   ],
+   "baseIds": [
+    "base-1"
+   ],
+   "chest": [
+    {
+     "item": "PalEgg_Fire_01",
+     "count": 1
+    }
+   ],
+   "chestContainer": "c-guild-chest",
+   "research": [
+    {
+     "id": "Handcraft1",
+     "workAmount": 0
+    }
+   ],
+   "currentResearchId": "Handcraft1"
+  }
+ ],
+ "bases": [
+  {
+   "id": "base-1",
+   "name": null,
+   "guildId": "guild-1",
+   "position": {
+    "x": -123888,
+    "y": 158000,
+    "z": 0,
+    "mapX": 0,
+    "mapY": 0
+   },
+   "areaRange": 3500,
+   "workerContainer": "c-workers",
+   "structures": {
+    "ElectricGenerator": 1,
+    "Expedition": 1,
+    "FarmBlockV2_wheet": 1,
+    "HatchingPalEgg": 1,
+    "ItemChest": 1,
+    "MultiElectricHatchingPalEgg": 2
+   },
+   "storage": [
+    {
+     "structure": "ItemChest",
+     "container": "c-chest",
+     "items": [
+      {
+       "item": "PalEgg_Dark_01",
+       "count": 1
+      },
+      {
+       "item": "Wood",
+       "count": 15
+      }
+     ],
+     "slots": 0,
+     "used": 4
+    },
+    {
+     "structure": "HatchingPalEgg",
+     "container": "c-hatcher",
+     "items": [
+      {
+       "item": "PalEgg_Normal_01",
+       "count": 1
+      }
+     ],
+     "slots": 0,
+     "used": 1
+    },
+    {
+     "structure": "MultiElectricHatchingPalEgg",
+     "container": "c-multi-hatcher",
+     "items": [
+      {
+       "item": "PalEgg_Ice_01",
+       "count": 1
+      },
+      {
+       "item": "PalEgg_Normal_05",
+       "count": 1
+      }
+     ],
+     "slots": 0,
+     "used": 2
+    }
+   ],
+   "storageTotals": [
+    {
+     "item": "PalEgg_Dark_01",
+     "count": 1
+    },
+    {
+     "item": "PalEgg_Ice_01",
+     "count": 1
+    },
+    {
+     "item": "PalEgg_Normal_01",
+     "count": 1
+    },
+    {
+     "item": "PalEgg_Normal_05",
+     "count": 1
+    },
+    {
+     "item": "Wood",
+     "count": 15
+    }
+   ],
+   "crops": [
+    {
+     "crop": "Wheat",
+     "state": 3,
+     "progress": 0.5
+    }
+   ],
+   "work": [
+    {
+     "id": "w-chest",
+     "type": "Transport",
+     "task": "Transport_ItemChest",
+     "structure": "ItemChest",
+     "workers": [
+      "a"
+     ],
+     "progress": null,
+     "workAmount": 0
+    },
+    {
+     "id": "w-hatch",
+     "type": "Progress",
+     "task": "HatchingPalEgg_0",
+     "structure": null,
+     "workers": [],
+     "progress": null,
+     "workAmount": 150
+    },
+    {
+     "id": "w-gen",
+     "type": "Assign",
+     "task": "ElectricGenerator_0",
+     "structure": "ElectricGenerator",
+     "workers": [
+      "a"
+     ],
+     "progress": null,
+     "workAmount": 0
+    }
+   ],
+   "production": [],
+   "incubators": [
+    {
+     "structure": "HatchingPalEgg",
+     "egg": {
+      "kind": "egg",
+      "item": "PalEgg_Normal_01",
+      "species": "PinkCat"
+     },
+     "temperatureDiff": -1,
+     "hatchSeconds": 150,
+     "hatchProgress": 90.2,
+     "hatchState": 1
+    },
+    {
+     "structure": "MultiElectricHatchingPalEgg",
+     "egg": {
+      "kind": "egg",
+      "item": "PalEgg_Normal_05",
+      "species": "BOSS_Alpaca"
+     },
+     "temperatureDiff": null,
+     "hatchSeconds": null,
+     "hatchProgress": null,
+     "hatchState": null,
+     "multi": true
+    },
+    {
+     "structure": "MultiElectricHatchingPalEgg",
+     "egg": {
+      "kind": "egg",
+      "item": "PalEgg_Ice_01",
+      "species": "Penguin"
+     },
+     "temperatureDiff": null,
+     "hatchSeconds": null,
+     "hatchProgress": null,
+     "hatchState": null,
+     "multi": true
+    },
+    {
+     "structure": "MultiElectricHatchingPalEgg",
+     "egg": null,
+     "temperatureDiff": null,
+     "hatchSeconds": null,
+     "hatchProgress": null,
+     "hatchState": null,
+     "multi": true
+    }
+   ],
+   "raid": null,
+   "power": [
+    {
+     "structure": "ElectricGenerator",
+     "stored": 247997.2,
+     "consumePerSecond": 12.5,
+     "generatePerSecond": 0,
+     "workers": [
+      "a"
+     ]
+    }
+   ],
+   "expeditions": [
+    {
+     "structure": "Expedition",
+     "mission": "DUNGEON_GRASS",
+     "state": 2,
+     "startedAtPlaySeconds": 77750,
+     "pals": [
+      "c"
+     ]
+    }
+   ]
+  }
+ ],
+ "pals": [
+  {
+   "instanceId": "c",
+   "ownerUid": null,
+   "species": "Deer",
+   "nickname": null,
+   "alpha": false,
+   "lucky": false,
+   "favourite": false,
+   "favouriteIndex": null,
+   "gender": null,
+   "level": 2,
+   "exp": 0,
+   "rank": 1,
+   "workAddRanks": {},
+   "talents": {
+    "hp": 0,
+    "attack": 0,
+    "defense": 0
+   },
+   "souls": {
+    "hp": 0,
+    "attack": 0,
+    "defense": 0,
+    "workSpeed": 0
+   },
+   "passives": [],
+   "activeSkills": [],
+   "learnedSkills": [],
+   "hp": null,
+   "stomach": null,
+   "sanity": null,
+   "friendship": 0,
+   "sick": null,
+   "workOff": [],
+   "ownedAt": null,
+   "container": "c-cage",
+   "slot": 0,
+   "lastPosition": null,
+   "location": {
+    "kind": "expedition",
+    "baseId": "base-1"
+   }
+  },
+  {
+   "instanceId": "a",
+   "ownerUid": null,
+   "species": "PinkCat",
+   "nickname": null,
+   "alpha": false,
+   "lucky": false,
+   "favourite": false,
+   "favouriteIndex": null,
+   "gender": "Male",
+   "level": 16,
+   "exp": 0,
+   "rank": 1,
+   "workAddRanks": {},
+   "talents": {
+    "hp": 0,
+    "attack": 88,
+    "defense": 0
+   },
+   "souls": {
+    "hp": 0,
+    "attack": 0,
+    "defense": 0,
+    "workSpeed": 0
+   },
+   "passives": [
+    "Swift"
+   ],
+   "activeSkills": [
+    "AirCanon"
+   ],
+   "learnedSkills": [],
+   "hp": null,
+   "stomach": null,
+   "sanity": null,
+   "friendship": 0,
+   "sick": "Cold",
+   "workOff": [],
+   "ownedAt": null,
+   "container": "c-workers",
+   "slot": 4,
+   "lastPosition": null,
+   "location": {
+    "kind": "base",
+    "baseId": "base-1"
+   }
+  },
+  {
+   "instanceId": "b",
+   "ownerUid": null,
+   "species": "SheepBall",
+   "nickname": null,
+   "alpha": false,
+   "lucky": true,
+   "favourite": true,
+   "favouriteIndex": 3,
+   "gender": null,
+   "level": 1,
+   "exp": 0,
+   "rank": 3,
+   "workAddRanks": {
+    "Seeding": 1
+   },
+   "talents": {
+    "hp": 0,
+    "attack": 0,
+    "defense": 0
+   },
+   "souls": {
+    "hp": 0,
+    "attack": 0,
+    "defense": 0,
+    "workSpeed": 0
+   },
+   "passives": [],
+   "activeSkills": [],
+   "learnedSkills": [],
+   "hp": null,
+   "stomach": null,
+   "sanity": null,
+   "friendship": 0,
+   "sick": null,
+   "workOff": [],
+   "ownedAt": null,
+   "container": "c-party",
+   "slot": 0,
+   "lastPosition": null,
+   "location": {
+    "kind": "party",
+    "playerUid": "00000000-0000-0000-0000-000000000001"
+   }
+  }
+ ],
+ "eggs": [
+  {
+   "item": "PalEgg_Normal_05",
+   "species": "Alpaca",
+   "alpha": true,
+   "where": "Base 1: MultiElectricHatchingPalEgg"
+  },
+  {
+   "item": "PalEgg_Dark_01",
+   "species": "Anubis",
+   "alpha": false,
+   "where": "Base 1: ItemChest"
+  },
+  {
+   "item": "PalEgg_Fire_01",
+   "species": "Kitsunebi",
+   "alpha": true,
+   "where": "guild chest"
+  },
+  {
+   "item": "PalEgg_Ice_01",
+   "species": "Penguin",
+   "alpha": false,
+   "where": "Base 1: MultiElectricHatchingPalEgg"
+  },
+  {
+   "item": "PalEgg_Normal_01",
+   "species": "PinkCat",
+   "alpha": false,
+   "where": "Base 1: HatchingPalEgg"
+  }
+ ],
+ "locksCleared": [],
+ "enemyCamps": [],
+ "dungeons": [],
+ "dungeonMarkers": [],
+ "oilRigs": [],
+ "supply": {
+  "lastDropSecondsAgo": null,
+  "lastGuid": null,
+  "lastAtPlaySeconds": null,
+  "drops": []
+ }
+}
