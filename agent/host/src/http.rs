@@ -116,6 +116,45 @@ impl Transport for HttpTransport {
     }
 }
 
+/// GET `url` whole into memory, up to `limit` bytes, telling `progress` (bytes so far, the total
+/// when the server says) as it arrives: a core package (`package`). Redirects follow the same
+/// rule as every other call (https only). `Err` is the words for why not.
+pub fn download(
+    url: &str,
+    limit: u64,
+    progress: &mut dyn FnMut(u64, Option<u64>),
+) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let client = reqwest::blocking::Client::builder()
+        .user_agent(crate::user_agent())
+        .redirect(redirect_policy())
+        .timeout(Duration::from_secs(600))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut res = client.get(url).send().map_err(|e| describe(&e))?;
+    if !res.status().is_success() {
+        return Err(format!("HTTP {} for {url}", res.status().as_u16()));
+    }
+    let total = res.content_length();
+    if total.is_some_and(|t| t > limit) {
+        return Err(format!("{url} is larger than {limit} bytes"));
+    }
+    let mut body = Vec::with_capacity(total.unwrap_or(0).min(limit) as usize);
+    let mut chunk = vec![0u8; 64 * 1024];
+    loop {
+        let n = res.read(&mut chunk).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        body.extend_from_slice(&chunk[..n]);
+        if body.len() as u64 > limit {
+            return Err(format!("{url} is larger than {limit} bytes"));
+        }
+        progress(body.len() as u64, total);
+    }
+    Ok(body)
+}
+
 /// What a redirect may lead to: `https://`, or `http://` to a loopback host (local development),
 /// at most 10 hops. A redirect to anything else is refused rather than followed, since a POST
 /// body (a refresh token, a device code) would go with it in the clear.

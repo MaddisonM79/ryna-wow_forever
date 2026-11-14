@@ -72,12 +72,60 @@ export interface StatusRow {
   chip: "pushed" | "waiting" | "update" | "error" | null;
 }
 
-/** A core's card, as the core lays it out through the agent's interface (not drawn yet). */
+/** What a core's page shows about it (cores.rs `CoreState`). */
+export type CoreState =
+  | { is: "running" }
+  | { is: "stopped"; message: string | null; fix: string | null }
+  | { is: "off" }
+  /** Provisioned, but this computer's sign-in doesn't cover it yet. */
+  | { is: "allow" }
+  | { is: "fetching"; done: number; total: number | null }
+  | { is: "fetchFailed"; message: string }
+  /** It doesn't run on this operating system. */
+  | { is: "notHere"; platforms: string[] }
+  | { is: "signedOut" };
+
+/** A provisioned core: its card and its page (agent.rs `CoreView`). */
 export interface CoreView {
   id: string;
   name: string;
   version: string;
+  /** `builtin` (WoW, in the app) or `sidecar` (fetched, a separate program). */
+  kind: "builtin" | "sidecar";
   rows: StatusRow[];
+  state: CoreState;
+  /** The person's switch for a fetched core (WoW: always true). */
+  on: boolean;
+  /** Where it runs; empty means everywhere. */
+  platforms: string[];
+  /** Its last failure that a good pass hasn't cleared. */
+  lastError: string | null;
+}
+
+/** A sidecar core's event (ryna_agent::sidecar::SidecarEvent). */
+export type SidecarEvent =
+  | { event: "started"; version: string }
+  | { event: "event"; kind: "waiting" | "pushing" | "pushed" | "error" | "info"; row: string | null; message: string }
+  | { event: "status"; rows: StatusRow[] }
+  | { event: "passFinished"; ok: boolean }
+  | { event: "failed"; message: string; fix: Fix; advice: string }
+  | { event: "exited"; message: string }
+  | { event: "stopped"; message: string; fix: string | null };
+
+/** `core-event`: a sidecar core's event, with which core. */
+export interface CoreEvent {
+  core: string;
+  name: string;
+  event: SidecarEvent;
+}
+
+/** `core-fetch`: a package fetch's progress or end (`core` null: the cores answer changed). */
+export interface CoreFetch {
+  core: string | null;
+  done?: number;
+  total?: number | null;
+  finished?: boolean;
+  error?: string | null;
 }
 
 /** One install's copy of a mod (the core's `ModInstall`). */
@@ -440,6 +488,10 @@ export const api = {
   installAddon: (path: string | null = null) => invoke<InstallResult>("install_addon", { path }),
   /** Turns a mod on or off, and installs or removes its folders. */
   setModEnabled: (id: string, on: boolean) => invoke<ModToggleResult>("set_mod_enabled", { id, on }),
+  /** Turns a fetched core on or off on this computer. */
+  setCoreEnabled: (id: string, on: boolean) => invoke<void>("set_core_enabled", { id, on }),
+  /** Fetches a core's package again after a failure. */
+  retryCoreFetch: (id: string) => invoke<void>("retry_core_fetch", { id }),
   setAutostart: (enabled: boolean) => invoke<boolean>("set_autostart", { enabled }),
   openPortal: () => invoke<void>("open_portal"),
   /** Opens one of the project's own pages (GitHub, ryna.io) in the browser; anything else is refused by the command. */
@@ -469,6 +521,14 @@ export function onSettingsProgress(f: (p: SettingsProgress) => void): Promise<Un
 
 export function onAgentEvent(f: (e: AgentEvent) => void): Promise<UnlistenFn> {
   return listen<AgentEvent>("agent-event", (e) => f(e.payload));
+}
+
+export function onCoreEvent(f: (e: CoreEvent) => void): Promise<UnlistenFn> {
+  return listen<CoreEvent>("core-event", (e) => f(e.payload));
+}
+
+export function onCoreFetch(f: (e: CoreFetch) => void): Promise<UnlistenFn> {
+  return listen<CoreFetch>("core-fetch", (e) => f(e.payload));
 }
 
 export function onWatchState(f: (watching: boolean) => void): Promise<UnlistenFn> {

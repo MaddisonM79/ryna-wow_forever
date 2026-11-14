@@ -281,6 +281,25 @@ fn logout(config: &Config) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
+/// The cores this person is provisioned for, as the app last heard (the CLI runs WoW alone).
+fn cores_line(cores: &ryna_agent::provisioned::Cores) -> String {
+    let names: Vec<String> = cores
+        .cores
+        .iter()
+        .map(|c| {
+            if c.allowed {
+                c.name.clone()
+            } else {
+                format!(
+                    "{} (not allowed on this computer yet: allow it in the app)",
+                    c.name
+                )
+            }
+        })
+        .collect();
+    format!("Cores: {}", names.join(", "))
+}
+
 fn when(secs: Option<i64>) -> String {
     secs.map_or_else(|| "never".to_string(), iso_utc)
 }
@@ -293,6 +312,12 @@ fn status(config: &Config, install: Option<&Path>, from: Option<&Path>) -> Resul
             "Device client: not issued yet (set RYNA_CLIENT_ID); `login` can't run until it is."
         );
     }
+    println!(
+        "{}",
+        cores_line(&ryna_agent::provisioned::current(
+            state_dir::state_dir().as_deref()
+        ))
+    );
     let beside = addon_install::beside_binary();
     // stage 1: direct; the core interface takes this in stage 2 (the full status, not just its rows).
     let s = ryna_wow_core::status::status(config, install, from.or(beside.as_deref()));
@@ -875,4 +900,27 @@ fn combat(
     });
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(ExitCode::SUCCESS)
+}
+
+#[cfg(test)]
+mod cores_tests {
+    use super::cores_line;
+    use ryna_agent::provisioned::{Cores, ProvisionedCore};
+
+    #[test]
+    fn status_lists_the_provisioned_cores() {
+        assert_eq!(
+            cores_line(&Cores::wow_alone()),
+            "Cores: World of Warcraft: Forever"
+        );
+        let mut cores = Cores::wow_alone();
+        cores.cores.push(ProvisionedCore {
+            id: "palworld".into(),
+            name: "Palworld".into(),
+            scope: "palworld:ingest".into(),
+            allowed: false,
+        });
+        assert!(cores_line(&cores)
+            .ends_with(", Palworld (not allowed on this computer yet: allow it in the app)"));
+    }
 }

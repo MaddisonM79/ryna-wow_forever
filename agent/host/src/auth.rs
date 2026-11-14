@@ -12,8 +12,19 @@
 //!   lifetime rather than every run;
 //! - a refresh that got no answer is sent again straight away with the same token, inside the
 //!   replay window, where the IdP hands back the answer that was lost.
+//!
+//! **One sign-in, every core** (docs/ryna-agent-cores-mods.md 13.2). A sign-in names ONE resource
+//! (the agent's) and a scope per core the person is provisioned for, as the API's cores answer
+//! says (`start_device_login_for`). The refresh grant sends that sign-in's resource and never a
+//! `scope` (passing one would narrow the whole chain for good), so the one access token carries
+//! every core's scope and every core uses it. The resource is kept with the refresh token, in the
+//! same keychain value; a sign-in made before stage 4 kept none and was made for
+//! `config::LEGACY_RESOURCE`, which it goes on refreshing for with no new approval. Several cores
+//! share the token, so every refresh in this process is serialised, and one that waited looks
+//! again for the token another just stored rather than spending the refresh token a second time.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
+use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -31,9 +42,32 @@ const DEVICE_CODE_PATH: &str = "/api/auth/device/code";
 /// The IdP's token endpoint, as palworld-agent's signin.ts calls it.
 const TOKEN_PATH: &str = "/api/auth/oauth2/token";
 const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
-/// `offline_access` is what earns a refresh token; `openid email` as signin.ts asks.
+/// What every sign-in asks for besides the cores' scopes: `offline_access` is what earns a
+/// refresh token; `openid email` as signin.ts asks.
+pub const BASE_SCOPES: [&str; 3] = ["openid", "email", "offline_access"];
+
+/// The WoW core's sign-in, what a first sign-in asks for when the API hasn't said otherwise.
 pub fn scope() -> String {
-    format!("openid email offline_access {INGEST_SCOPE}")
+    scope_for(&[INGEST_SCOPE])
+}
+
+/// The `scope` a sign-in asks for: the base scopes, then each of `scopes` (space-separated lists
+/// are split), each once, in order.
+pub fn scope_for(scopes: &[&str]) -> String {
+    let mut seen: Vec<&str> = BASE_SCOPES.to_vec();
+    for one in scopes.iter().flat_map(|s| s.split_whitespace()) {
+        if !seen.contains(&one) {
+            seen.push(one);
+        }
+    }
+    seen.join(" ")
+}
+
+/// Held for the length of every refresh (and every sign-in's store) in this process.
+static REFRESH: Mutex<()> = Mutex::new(());
+
+fn refresh_lock() -> MutexGuard<'static, ()> {
+    REFRESH.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// Short enough that a resend lands well inside the IdP's 30 s replay window.
@@ -131,6 +165,16 @@ impl AccessToken {
 pub trait TokenStore {
     fn refresh_token(&self) -> Result<Option<String>, String>;
     fn set_refresh_token(&self, token: &str) -> Result<(), String>;
+    /// The resource the kept sign-in was made for; None when it recorded none (a sign-in made
+    /// before stage 4: `Config::unrecorded_resource`).
+    fn sign_in_resource(&self) -> Result<Option<String>, String> {
+        Ok(None)
+    }
+    /// Keep a refresh token with the resource its sign-in was made for, in one write. A store
+    /// that can't record the resource keeps the token alone.
+    fn set_sign_in(&self, token: &str, _resource: &str) -> Result<(), String> {
+        self.set_refresh_token(token)
+    }
     /// A convenience; losing it only costs a refresh, so reading it never fails.
     fn access_token(&self) -> Option<AccessToken>;
     fn set_access_token(&self, token: &AccessToken) -> Result<(), String>;
@@ -287,10 +331,16 @@ impl TokenStore for KeyringStore {
         }
     }
     fn refresh_token(&self) -> Result<Option<String>, String> {
-        Self::get(&self.refresh_account)
+        Ok(Self::get(&self.refresh_account)?.map(|v| decode_sign_in(&v).0))
     }
     fn set_refresh_token(&self, token: &str) -> Result<(), String> {
         Self::set(&self.refresh_account, token)
+    }
+    fn sign_in_resource(&self) -> Result<Option<String>, String> {
+        Ok(Self::get(&self.refresh_account)?.and_then(|v| decode_sign_in(&v).1))
+    }
+    fn set_sign_in(&self, token: &str, resource: &str) -> Result<(), String> {
+        Self::set(&self.refresh_account, &encode_sign_in(token, resource))
     }
     fn access_token(&self) -> Option<AccessToken> {
         Self::get(&self.access_account)
@@ -304,6 +354,26 @@ impl TokenStore for KeyringStore {
     fn clear(&self) -> Result<(), String> {
         Self::delete(&self.access_account)?;
         Self::delete(&self.refresh_account)
+    }
+}
+
+/// The keychain's refresh-token value with its sign-in's resource: `@<resource> <token>`. A value
+/// without the `@` is a bare token, as every build before stage 4 kept it (no resource recorded).
+/// Kept in one value so the token and its resource can never disagree. An older build reading the
+/// new form sends it as a token, is refused, and asks for a new sign-in.
+fn encode_sign_in(token: &str, resource: &str) -> String {
+    format!("@{resource} {token}")
+}
+
+fn decode_sign_in(value: &str) -> (String, Option<String>) {
+    match value
+        .strip_prefix('@')
+        .and_then(|rest| rest.split_once(' '))
+    {
+        Some((resource, token)) if !resource.is_empty() => {
+            (token.trim().to_string(), Some(resource.to_string()))
+        }
+        _ => (value.to_string(), None),
     }
 }
 
@@ -339,6 +409,9 @@ pub struct DeviceLogin {
     pub interval: u64,
     #[serde(skip)]
     pub device_code: String,
+    /// The one resource this sign-in asked for: kept with its refresh token once it's allowed.
+    #[serde(skip)]
+    pub resource: String,
 }
 
 impl std::fmt::Debug for DeviceLogin {
@@ -351,6 +424,7 @@ impl std::fmt::Debug for DeviceLogin {
             .field("expires_at", &self.expires_at)
             .field("interval", &self.interval)
             .field("device_code", &REDACTED)
+            .field("resource", &self.resource)
             .finish()
     }
 }
@@ -462,8 +536,9 @@ pub struct Auth<'a> {
     store: &'a dyn TokenStore,
     clock: &'a dyn Clock,
     cached: RefCell<Option<AccessToken>>,
-    /// After a 401: don't fall back to the access token the keychain kept.
-    forgotten: Cell<bool>,
+    /// After a 401: the token that was refused, so the keychain's copy of it isn't used again
+    /// (a newer one another core's refresh stored meanwhile is).
+    forgotten: RefCell<Option<String>>,
 }
 
 impl<'a> Auth<'a> {
@@ -479,8 +554,18 @@ impl<'a> Auth<'a> {
             store,
             clock,
             cached: RefCell::new(None),
-            forgotten: Cell::new(false),
+            forgotten: RefCell::new(None),
         }
+    }
+
+    /// The resource the kept sign-in was made for, which every refresh is sent with: the one it
+    /// recorded, else (a sign-in from before stage 4) `Config::unrecorded_resource`.
+    pub fn sign_in_resource(&self) -> Result<String, AuthError> {
+        Ok(self
+            .store
+            .sign_in_resource()
+            .map_err(AuthError::Store)?
+            .unwrap_or_else(|| self.config.unrecorded_resource().to_string()))
     }
 
     /// Whether a refresh token is kept. Doesn't touch the network.
@@ -513,8 +598,13 @@ impl<'a> Auth<'a> {
 
     /// Forget the access token in hand (after a 401), so the next call refreshes.
     pub fn forget_access_token(&self) {
-        *self.cached.borrow_mut() = None;
-        self.forgotten.set(true);
+        let refused = self
+            .cached
+            .borrow_mut()
+            .take()
+            .or_else(|| self.store.access_token())
+            .map(|a| a.token);
+        *self.forgotten.borrow_mut() = refused;
     }
 
     fn post_form(
@@ -544,18 +634,18 @@ impl<'a> Auth<'a> {
             .map_err(|_| format!("sign-in provider answered {} with no JSON", res.status))
     }
 
-    fn keep(&self, access: AccessToken, refresh: &str) -> Result<(), AuthError> {
+    fn keep(&self, access: AccessToken, refresh: &str, resource: &str) -> Result<(), AuthError> {
         if let Err(e) = self.store.set_access_token(&access) {
             eprintln!("couldn't keep the access token for the next run: {e}");
         }
         *self.cached.borrow_mut() = Some(access);
-        self.forgotten.set(false);
+        *self.forgotten.borrow_mut() = None;
         let mut last = String::new();
         for i in 0..STORE_TRIES {
             if i > 0 {
                 self.clock.sleep(Duration::from_secs(1));
             }
-            match self.store.set_refresh_token(refresh) {
+            match self.store.set_sign_in(refresh, resource) {
                 Ok(()) => return Ok(()),
                 Err(e) => last = e,
             }
@@ -580,19 +670,32 @@ impl<'a> Auth<'a> {
             .map(|_| ())
     }
 
-    /// Ask the provider for a device code. Nothing is stored until the poll succeeds.
+    /// Ask the provider for a device code for the config's resource and the WoW core's scope:
+    /// a first sign-in, before the API has said which cores the person has. Nothing is stored
+    /// until the poll succeeds.
     pub fn start_device_login(&self) -> Result<DeviceLogin, AuthError> {
+        self.start_device_login_for(&self.config.resource, &[INGEST_SCOPE])
+    }
+
+    /// Ask for a device code for one `resource` with the base scopes and `scopes` (every
+    /// provisioned core's, as the cores answer's `signIn` names them). Nothing is stored until
+    /// the poll succeeds; then the new refresh token and this resource replace the old.
+    pub fn start_device_login_for(
+        &self,
+        resource: &str,
+        scopes: &[&str],
+    ) -> Result<DeviceLogin, AuthError> {
         if !self.config.client_id_issued() {
             return Err(AuthError::NoClientId);
         }
-        let scope = scope();
+        let scope = scope_for(scopes);
         let res = self
             .post_form(
                 DEVICE_CODE_PATH,
                 &[
                     ("client_id", &self.config.client_id),
                     ("scope", &scope),
-                    ("resource", &self.config.resource),
+                    ("resource", resource),
                 ],
                 Duration::from_secs(30),
             )
@@ -621,6 +724,7 @@ impl<'a> Auth<'a> {
             expires_at: self.clock.now() + expires_in,
             interval: answer.interval.unwrap_or(10).max(1) as u64,
             device_code,
+            resource: resource.to_string(),
         })
     }
 
@@ -661,7 +765,15 @@ impl<'a> Auth<'a> {
                 })?;
                 let exp = self.clock.now() + t.expires_in.unwrap_or(900);
                 let signed_in_as = identity_from_jwt(&access);
-                self.keep(AccessToken { token: access, exp }, &refresh)?;
+                {
+                    // A refresh in flight on another thread would store the old chain over this.
+                    let _held = refresh_lock();
+                    self.keep(
+                        AccessToken { token: access, exp },
+                        &refresh,
+                        &login.resource,
+                    )?;
+                }
                 on_status(LoginStatus::Approved);
                 return Ok(Session { signed_in_as });
             }
@@ -685,19 +797,38 @@ impl<'a> Auth<'a> {
         Err(AuthError::Expired)
     }
 
-    /// An access token for a push, or None when this agent was never signed in.
+    /// The kept access token, when it has more than a minute left and isn't the one a 401 refused.
+    fn usable_stored(&self) -> Option<AccessToken> {
+        let now = self.clock.now();
+        let forgotten = self.forgotten.borrow();
+        self.store
+            .access_token()
+            .filter(|a| a.exp - now > MIN_TTL)
+            .filter(|a| forgotten.as_deref() != Some(a.token.as_str()))
+    }
+
+    /// The one access token every core uses, or None when this agent was never signed in.
     pub fn access_token(&self) -> Result<Option<String>, AuthError> {
         let now = self.clock.now();
-        let fresh = |a: &AccessToken| a.exp - now > MIN_TTL;
-        if let Some(a) = self.cached.borrow().as_ref().filter(|a| fresh(a)) {
+        if let Some(a) = self
+            .cached
+            .borrow()
+            .as_ref()
+            .filter(|a| a.exp - now > MIN_TTL)
+        {
             return Ok(Some(a.token.clone()));
         }
-        if !self.forgotten.get() {
-            if let Some(a) = self.store.access_token().filter(fresh) {
-                let token = a.token.clone();
-                *self.cached.borrow_mut() = Some(a);
-                return Ok(Some(token));
-            }
+        if let Some(a) = self.usable_stored() {
+            let token = a.token.clone();
+            *self.cached.borrow_mut() = Some(a);
+            return Ok(Some(token));
+        }
+        let _held = refresh_lock();
+        // Another core may have refreshed while this one waited for the lock: its token is ours.
+        if let Some(a) = self.usable_stored() {
+            let token = a.token.clone();
+            *self.cached.borrow_mut() = Some(a);
+            return Ok(Some(token));
         }
         let Some(refresh) = self.store.refresh_token().map_err(AuthError::Store)? else {
             return Ok(None);
@@ -705,11 +836,13 @@ impl<'a> Auth<'a> {
         if !self.config.client_id_issued() {
             return Err(AuthError::NoClientId);
         }
+        let resource = self.sign_in_resource()?;
+        // Never a `scope`: the IdP would narrow the whole refresh chain to it for good.
         let fields = [
             ("grant_type", "refresh_token"),
             ("refresh_token", refresh.as_str()),
             ("client_id", self.config.client_id.as_str()),
-            ("resource", self.config.resource.as_str()),
+            ("resource", resource.as_str()),
         ];
         let mut resend = 0;
         let t = loop {
@@ -734,7 +867,7 @@ impl<'a> Auth<'a> {
         };
         let exp = self.clock.now() + t.expires_in.unwrap_or(900);
         let token = access.clone();
-        if let Err(e) = self.keep(AccessToken { token: access, exp }, &new_refresh) {
+        if let Err(e) = self.keep(AccessToken { token: access, exp }, &new_refresh, &resource) {
             // The old refresh token is spent; this run can still push with the access token.
             eprintln!("{e}: the sign-in is lost once this run ends; sign in again");
         }
@@ -791,11 +924,13 @@ pub fn identity_from_jwt(token: &str) -> Option<String> {
 #[doc(hidden)]
 pub mod testing {
     use super::*;
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
 
     #[derive(Default)]
     pub struct MemoryStore {
         pub refresh: RefCell<Option<String>>,
+        /// The kept sign-in's resource (None: a sign-in from before stage 4).
+        pub resource: RefCell<Option<String>>,
         pub access: RefCell<Option<AccessToken>>,
         pub fail_writes: Cell<u32>,
         /// Plays a Linux box with no Secret Service.
@@ -830,6 +965,14 @@ pub mod testing {
             *self.refresh.borrow_mut() = Some(token.into());
             Ok(())
         }
+        fn sign_in_resource(&self) -> Result<Option<String>, String> {
+            Ok(self.resource.borrow().clone())
+        }
+        fn set_sign_in(&self, token: &str, resource: &str) -> Result<(), String> {
+            self.set_refresh_token(token)?;
+            *self.resource.borrow_mut() = Some(resource.into());
+            Ok(())
+        }
         fn access_token(&self) -> Option<AccessToken> {
             self.access.borrow().clone()
         }
@@ -839,6 +982,7 @@ pub mod testing {
         }
         fn clear(&self) -> Result<(), String> {
             *self.refresh.borrow_mut() = None;
+            *self.resource.borrow_mut() = None;
             *self.access.borrow_mut() = None;
             Ok(())
         }
@@ -902,9 +1046,10 @@ mod tests {
             "{first}"
         );
         assert!(
-            first.contains("resource=https%3A%2F%2Fapi.ryna.io%2Fwow%2Fingest"),
+            first.contains("resource=https%3A%2F%2Fapi.ryna.io%2Fagent"),
             "{first}"
         );
+        assert_eq!(first.matches("resource=").count(), 1, "{first}");
         assert!(http
             .form(1)
             .contains("grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code"));
@@ -913,9 +1058,224 @@ mod tests {
         let sleeps: Vec<u64> = clock.sleeps.borrow().iter().map(|d| d.as_secs()).collect();
         assert_eq!(sleeps, vec![5, 5, 10, 10]);
         assert_eq!(store.refresh.borrow().as_deref(), Some("rt-1"));
+        // The sign-in remembers the resource it was made for.
+        assert_eq!(
+            store.resource.borrow().as_deref(),
+            Some("https://api.ryna.io/agent")
+        );
         assert_eq!(store.access.borrow().as_ref().unwrap().token, "at-1");
         assert_eq!(auth.access_token().unwrap().as_deref(), Some("at-1"));
         assert_eq!(http.remaining(), 0);
+    }
+
+    #[test]
+    fn a_sign_in_for_every_provisioned_core_names_one_resource_and_their_scopes() {
+        let config = test_config();
+        let http = ScriptedTransport::new();
+        http.json(200, device_answer()).json(
+            200,
+            json!({ "access_token": "at-1", "refresh_token": "rt-1", "expires_in": 900 }),
+        );
+        let store = MemoryStore::with_refresh("old");
+        let clock = FakeClock::at(NOW);
+        let auth = Auth::new(&config, &http, &store, &clock);
+        let login = auth
+            .start_device_login_for(
+                "https://api.test/agent",
+                &["wow:ingest", "palworld:ingest wow:ingest"],
+            )
+            .unwrap();
+        assert_eq!(login.resource, "https://api.test/agent");
+        let form = http.form(0);
+        assert!(
+            form.contains("scope=openid+email+offline_access+wow%3Aingest+palworld%3Aingest&"),
+            "{form}"
+        );
+        assert_eq!(form.matches("resource=").count(), 1, "{form}");
+        assert!(
+            form.contains("resource=https%3A%2F%2Fapi.test%2Fagent"),
+            "{form}"
+        );
+        auth.poll_device_login(&login, &CancelToken::new(), &mut |_| {})
+            .unwrap();
+        // The new refresh token and its resource replace the old.
+        assert_eq!(store.refresh.borrow().as_deref(), Some("rt-1"));
+        assert_eq!(
+            store.resource.borrow().as_deref(),
+            Some("https://api.test/agent")
+        );
+        assert_eq!(auth.sign_in_resource().unwrap(), "https://api.test/agent");
+    }
+
+    #[test]
+    fn scopes_are_the_base_then_each_once() {
+        assert_eq!(scope(), "openid email offline_access wow:ingest");
+        assert_eq!(scope_for(&[]), "openid email offline_access");
+        assert_eq!(
+            scope_for(&["a b", "openid", "b c"]),
+            "openid email offline_access a b c"
+        );
+    }
+
+    #[test]
+    fn a_refresh_sends_the_sign_ins_resource_and_never_a_scope() {
+        let config = test_config();
+        let clock = FakeClock::at(NOW);
+        let http = ScriptedTransport::new();
+        http.json(
+            200,
+            json!({ "access_token": "at-2", "refresh_token": "rt-2", "expires_in": 900 }),
+        );
+        let store = MemoryStore::with_refresh("rt-1");
+        *store.resource.borrow_mut() = Some("https://api.test/agent".into());
+        let auth = Auth::new(&config, &http, &store, &clock);
+        assert_eq!(auth.access_token().unwrap().as_deref(), Some("at-2"));
+        let form = http.form(0);
+        assert!(!form.contains("scope="), "{form}");
+        assert!(
+            form.contains("resource=https%3A%2F%2Fapi.test%2Fagent"),
+            "{form}"
+        );
+        assert_eq!(
+            store.resource.borrow().as_deref(),
+            Some("https://api.test/agent")
+        );
+    }
+
+    #[test]
+    fn a_sign_in_from_before_stage_4_refreshes_for_wows_resource_with_no_new_approval() {
+        let config = test_config();
+        let clock = FakeClock::at(NOW);
+        let http = ScriptedTransport::new();
+        http.json(
+            200,
+            json!({ "access_token": "at-2", "refresh_token": "rt-2", "expires_in": 900 }),
+        );
+        // A bare refresh token: no resource recorded.
+        let store = MemoryStore::with_refresh("rt-1");
+        let auth = Auth::new(&config, &http, &store, &clock);
+        assert_eq!(
+            auth.sign_in_resource().unwrap(),
+            crate::config::LEGACY_RESOURCE
+        );
+        assert_eq!(auth.access_token().unwrap().as_deref(), Some("at-2"));
+        let form = http.form(0);
+        assert!(
+            form.contains("resource=https%3A%2F%2Fapi.ryna.io%2Fwow%2Fingest")
+                && !form.contains("scope="),
+            "{form}"
+        );
+        // The rotated token is kept with that resource, now written down.
+        assert_eq!(store.refresh.borrow().as_deref(), Some("rt-2"));
+        assert_eq!(
+            store.resource.borrow().as_deref(),
+            Some(crate::config::LEGACY_RESOURCE)
+        );
+    }
+
+    #[test]
+    fn the_keychain_keeps_the_resource_in_the_refresh_tokens_value() {
+        assert_eq!(
+            decode_sign_in(&encode_sign_in("rt-1", "https://api.ryna.io/agent")),
+            (
+                "rt-1".to_string(),
+                Some("https://api.ryna.io/agent".to_string())
+            )
+        );
+        // What every earlier build wrote: a bare token, no resource.
+        assert_eq!(decode_sign_in("rt-legacy"), ("rt-legacy".to_string(), None));
+        assert_eq!(decode_sign_in("@"), ("@".to_string(), None));
+    }
+
+    /// A store several threads share, as the keychain is.
+    #[derive(Default)]
+    struct SharedStore {
+        refresh: Mutex<Option<(String, String)>>,
+        access: Mutex<Option<AccessToken>>,
+    }
+
+    impl TokenStore for SharedStore {
+        fn refresh_token(&self) -> Result<Option<String>, String> {
+            Ok(self.refresh.lock().unwrap().as_ref().map(|r| r.0.clone()))
+        }
+        fn set_refresh_token(&self, token: &str) -> Result<(), String> {
+            self.set_sign_in(token, "https://api.test/agent")
+        }
+        fn sign_in_resource(&self) -> Result<Option<String>, String> {
+            Ok(self.refresh.lock().unwrap().as_ref().map(|r| r.1.clone()))
+        }
+        fn set_sign_in(&self, token: &str, resource: &str) -> Result<(), String> {
+            *self.refresh.lock().unwrap() = Some((token.into(), resource.into()));
+            Ok(())
+        }
+        fn access_token(&self) -> Option<AccessToken> {
+            self.access.lock().unwrap().clone()
+        }
+        fn set_access_token(&self, token: &AccessToken) -> Result<(), String> {
+            *self.access.lock().unwrap() = Some(token.clone());
+            Ok(())
+        }
+        fn clear(&self) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    /// An IdP whose refresh tokens are single-use: a spent one is refused (as one replayed past
+    /// the window would be), and it counts every refresh it answers.
+    #[derive(Default)]
+    struct OneUseIdp {
+        live: Mutex<u32>,
+        spent_twice: Mutex<u32>,
+        refreshes: Mutex<u32>,
+    }
+
+    impl Transport for OneUseIdp {
+        fn post(&self, req: &Request) -> Result<crate::http::Response, String> {
+            let form = String::from_utf8(req.body.clone()).unwrap();
+            // Widen the race: two unserialised refreshes would both read the same token.
+            std::thread::sleep(Duration::from_millis(30));
+            let mut live = self.live.lock().unwrap();
+            let body = if form.contains(&format!("refresh_token=rt-{}&", *live)) {
+                *live += 1;
+                *self.refreshes.lock().unwrap() += 1;
+                json!({ "access_token": format!("at-{}", *live), "refresh_token": format!("rt-{}", *live), "expires_in": 900 })
+            } else {
+                *self.spent_twice.lock().unwrap() += 1;
+                json!({ "error": "invalid_grant" })
+            };
+            Ok(crate::http::Response {
+                status: 200,
+                content_type: "application/json".into(),
+                body: body.to_string().into_bytes(),
+            })
+        }
+    }
+
+    #[test]
+    fn two_cores_refreshing_at_once_spend_the_refresh_token_once() {
+        let config = test_config();
+        let idp = std::sync::Arc::new(OneUseIdp::default());
+        let store = std::sync::Arc::new(SharedStore::default());
+        store.set_sign_in("rt-0", "https://api.test/agent").unwrap();
+        let threads: Vec<_> = (0..4)
+            .map(|_| {
+                let (idp, store, config) = (idp.clone(), store.clone(), config.clone());
+                std::thread::spawn(move || {
+                    let clock = FakeClock::at(NOW);
+                    Auth::new(&config, idp.as_ref(), store.as_ref(), &clock)
+                        .access_token()
+                        .unwrap()
+                })
+            })
+            .collect();
+        let tokens: Vec<_> = threads.into_iter().map(|t| t.join().unwrap()).collect();
+        assert_eq!(*idp.spent_twice.lock().unwrap(), 0);
+        assert_eq!(*idp.refreshes.lock().unwrap(), 1, "one refresh, shared");
+        assert!(
+            tokens.iter().all(|t| t.as_deref() == Some("at-1")),
+            "{tokens:?}"
+        );
+        assert_eq!(store.refresh_token().unwrap().as_deref(), Some("rt-1"));
     }
 
     #[test]
@@ -1073,6 +1433,27 @@ mod tests {
     }
 
     #[test]
+    fn a_resource_the_refresh_chain_doesnt_cover_needs_a_new_sign_in() {
+        // The IdP refuses a refresh for a resource outside the token's set (invalid_target): one
+        // resource per sign-in, so that is a sign-in that has to be made again, not a blip.
+        let config = test_config();
+        let clock = FakeClock::at(NOW);
+        let http = ScriptedTransport::new();
+        http.json(
+            400,
+            json!({ "error": "invalid_target", "error_description": "resource not allowed" }),
+        );
+        let store = MemoryStore::with_refresh("rt-1");
+        let e = Auth::new(&config, &http, &store, &clock)
+            .access_token()
+            .unwrap_err();
+        assert!(e.needs_login(), "{e}");
+        assert!(matches!(e, AuthError::Lapsed(ref why) if why == "invalid_target"));
+        // Nothing spent on our side: the kept token is left for the new sign-in to replace.
+        assert_eq!(store.refresh.borrow().as_deref(), Some("rt-1"));
+    }
+
+    #[test]
     fn not_signed_in_is_none_and_logout_clears() {
         let config = test_config();
         let http = ScriptedTransport::new();
@@ -1103,6 +1484,15 @@ mod tests {
         assert_eq!(auth.access_token().unwrap().as_deref(), Some("old"));
         auth.forget_access_token();
         assert_eq!(auth.access_token().unwrap().as_deref(), Some("new"));
+        assert!(http.form(0).contains("refresh_token=r0"));
+        // A newer token another core stored after the 401 is used, not refreshed past.
+        auth.forget_access_token();
+        *store.access.borrow_mut() = Some(AccessToken {
+            token: "newer".into(),
+            exp: NOW + 3600,
+        });
+        assert_eq!(auth.access_token().unwrap().as_deref(), Some("newer"));
+        assert_eq!(http.requests.borrow().len(), 1);
     }
 
     #[test]
@@ -1264,6 +1654,7 @@ mod tests {
             expires_at: 42,
             interval: 5,
             device_code: "secret-device".into(),
+            resource: "https://api.test/agent".into(),
         };
         let device = DeviceAnswer {
             device_code: Some("secret-device".into()),

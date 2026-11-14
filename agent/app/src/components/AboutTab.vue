@@ -31,6 +31,8 @@ const THIRD_PARTY = [
   { name: "sha2", what: "hashing account folder names before they leave", licence: "MIT or Apache-2.0" },
   { name: "ed25519-dalek", what: "the device key that signs what goes to ryna.io", licence: "BSD-3-Clause" },
   { name: "base64", what: "writing the device key and its signatures", licence: "MIT or Apache-2.0" },
+  { name: "minisign-verify", what: "checking a downloaded game's package was signed by this project", licence: "MIT" },
+  { name: "tar", what: "unpacking a downloaded game's package", licence: "MIT or Apache-2.0" },
 ];
 
 const addon = computed(() => aboutAddon(status.value?.installs ?? [], status.value?.addonBundled ?? null));

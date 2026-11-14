@@ -12,6 +12,9 @@
 //! - [`fix`]: what fixes a failure, in words with no command in them.
 //! - [`cancel`]: the cancel (and wake) handle the loops and the sign-in share.
 //! - [`util`]: the clock, file times, and how to name this machine.
+//! - [`provisioned`]: the cores a person is provisioned for (the API's cores answer, kept).
+//! - [`package`]: a fetched core's package: its URL, its signature, unpacking it.
+//! - [`sidecar`]: a core run as a separate program, over line-delimited JSON.
 
 pub mod auth;
 pub mod cancel;
@@ -21,6 +24,9 @@ pub mod fix;
 pub mod http;
 pub mod identity;
 pub mod mods;
+pub mod package;
+pub mod provisioned;
+pub mod sidecar;
 pub mod state_dir;
 pub mod util;
 

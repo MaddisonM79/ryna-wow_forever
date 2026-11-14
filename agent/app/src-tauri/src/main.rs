@@ -7,6 +7,7 @@
 mod addon_settings;
 mod agent;
 mod commands;
+mod cores;
 mod frame;
 mod game;
 mod settings;
@@ -114,12 +115,15 @@ fn main() {
             let config = agent::config().inspect_err(|e| eprintln!("ryna: {e}"))?;
             let signed_in = agent::signed_in(&config);
             app.manage(agent::Agent::new(config, app.path().app_config_dir().ok()));
+            app.manage(std::sync::Mutex::new(cores::Sidecars::default()));
             app.manage(updates::Updates::default());
             let tray = try_build_tray(app);
             app.manage(Tray(tray));
             if signed_in {
                 agent::start_watch(app.handle());
             }
+            // The cores answer: now, then hourly; it fetches and starts each fetched core.
+            cores::begin(app.handle());
             // The window is created hidden (tauri.conf.json `visible: false`) and the plugin has
             // restored its frame by now; show it once the frame is known to fit a monitor.
             if let Some(window) = app.get_webview_window("main") {
@@ -151,6 +155,8 @@ fn main() {
             commands::set_combat_settings,
             commands::install_addon,
             commands::set_mod_enabled,
+            commands::set_core_enabled,
+            commands::retry_core_fetch,
             commands::set_autostart,
             commands::open_portal,
             commands::open_link,

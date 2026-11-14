@@ -15,13 +15,20 @@ testing = []
 base64.workspace = true
 directories.workspace = true
 ed25519-dalek.workspace = true
+# gzip for a fetched core package (docs/ryna-agent-cores-mods.md 13.3).
+flate2.workspace = true
 gethostname.workspace = true
 getrandom.workspace = true
 keyring.workspace = true
+# A fetched core package's signature: minisign, the format the Tauri updater's .sig files are in
+# (already in the tree through tauri-plugin-updater). MIT.
+minisign-verify = "0.3"
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+# Unpacking a core package (already in the tree through Tauri). MIT or Apache-2.0.
+tar = { version = "0.4", default-features = false }
 thiserror.workspace = true
 zeroize.workspace = true
 

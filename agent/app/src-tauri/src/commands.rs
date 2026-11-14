@@ -139,6 +139,22 @@ pub async fn set_mod_enabled(
     blocking(move || agent::set_mod_enabled(&app, &id, on)).await
 }
 
+/// Turns a fetched core (Palworld) on or off on this computer.
+#[tauri::command]
+pub async fn set_core_enabled(app: AppHandle, id: String, on: bool) -> Result<(), String> {
+    blocking(move || crate::cores::set_on(&app, &id, on)).await
+}
+
+/// Retry on a core whose package couldn't be fetched.
+#[tauri::command]
+pub async fn retry_core_fetch(app: AppHandle, id: String) -> Result<(), String> {
+    blocking(move || {
+        crate::cores::retry_fetch(&app, &id);
+        Ok(())
+    })
+    .await
+}
+
 /// Turns launch at login on or off; returns what the OS now says.
 #[tauri::command]
 pub async fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {

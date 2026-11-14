@@ -24,6 +24,9 @@ pub struct Settings {
     /// (Chronicle: on).
     #[serde(default)]
     pub mods: BTreeMap<String, bool>,
+    /// Each fetched core the person turned off (or back on), by id; a core not here is on.
+    #[serde(default)]
+    pub cores: BTreeMap<String, bool>,
 }
 
 fn yes() -> bool {
@@ -37,11 +40,17 @@ impl Default for Settings {
             send_digests: true,
             keep_raw: false,
             mods: BTreeMap::new(),
+            cores: BTreeMap::new(),
         }
     }
 }
 
 impl Settings {
+    /// Whether the fetched core `id` is on (the person's choice; on unless turned off).
+    pub fn core_on(&self, id: &str) -> bool {
+        self.cores.get(id).copied().unwrap_or(true)
+    }
+
     /// What the watch loop does with the combat logs.
     pub fn combat(&self) -> ryna_wow_core::combat::CombatOptions {
         ryna_wow_core::combat::CombatOptions {
@@ -88,7 +97,9 @@ mod tests {
             send_digests: false,
             keep_raw: true,
             mods: BTreeMap::from([("chronicle".to_string(), false)]),
+            cores: BTreeMap::from([("palworld".to_string(), false)]),
         };
+        assert!(!s.core_on("palworld") && s.core_on("satisfactory"));
         s.save(dir.path()).unwrap();
         assert_eq!(Settings::load(dir.path()), s);
         std::fs::write(dir.path().join(FILE), "{ not json").unwrap();
@@ -99,6 +110,8 @@ mod tests {
         assert!(old.send_digests && !old.keep_raw);
         // Settings written before mods: none chosen, so each is its default.
         assert!(old.mods.is_empty());
+        // And before fetched cores: every one on.
+        assert!(old.core_on("palworld"));
         let v: serde_json::Value =
             serde_json::from_slice(&serde_json::to_vec(&s).unwrap()).unwrap();
         assert_eq!(v["mods"]["chronicle"], serde_json::json!(false));

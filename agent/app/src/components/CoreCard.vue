@@ -4,6 +4,7 @@
 // drawn from the rows it lays out through the agent's interface (`CoreView.rows`).
 import { computed } from "vue";
 import type { CoreView } from "../api";
+import { corePanel } from "../coreWords";
 import { accountsLine, combatState, FIGHTS_LABEL, gameLine, lastFightLine, when } from "../describe";
 import { now, status } from "../store";
 
@@ -16,6 +17,8 @@ const accounts = computed(() => (wow.value ? accountsLine(wow.value.accounts, no
 const combat = computed(() => (wow.value ? combatState(wow.value.combat) : null));
 const install = computed(() => wow.value?.installs.find((i) => i.forever) ?? wow.value?.installs[0] ?? null);
 /** The addon's state without the game's name in front, which the card already says. */
+/** A fetched core's state panel, said in one chip on the card. */
+const panel = computed(() => (props.core.id === "wow" ? null : corePanel(props.core)));
 const addonText = computed(() => game.value?.text.replace(/^World of Warcraft: Forever · /, "") ?? "");
 </script>
 
@@ -65,7 +68,10 @@ const addonText = computed(() => game.value?.text.replace(/^World of Warcraft: F
         </div>
       </dl>
     </template>
-    <dl v-else class="glance">
+    <p v-if="!wow && panel" class="lead core-state" :class="`state-${panel.state}`">
+      <span class="chip" :class="panel.tone === 'error' ? 'error' : 'waiting'">{{ panel.title }}</span>
+    </p>
+    <dl v-if="!wow" class="glance">
       <div v-for="row in core.rows" :key="row.label">
         <dt>{{ row.label }}</dt>
         <dd>
@@ -73,7 +79,7 @@ const addonText = computed(() => game.value?.text.replace(/^World of Warcraft: F
           <span v-else>{{ row.value }}</span>
         </dd>
       </div>
-      <div v-if="!core.rows.length">
+      <div v-if="!core.rows.length && !panel">
         <dt>Version</dt>
         <dd>{{ core.version }} <span class="muted">· nothing to show yet</span></dd>
       </div>
