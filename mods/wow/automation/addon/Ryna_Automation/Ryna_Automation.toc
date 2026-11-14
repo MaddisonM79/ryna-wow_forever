@@ -2,7 +2,7 @@
 ## Title: Ryna Automation
 ## Notes: Does the chores you tick: quests, vendors, trainers, mail, loot rolls, invites, resurrections, dialogs and cinematics. Nothing until you turn it on; hold Shift to pause it. A mod of Ryna; /ryna for settings.
 ## Author: Ryna contributors
-## Version: 0.4.0
+## Version: 0.4.1
 ## Dependencies: Ryna
 ## LoadOnDemand: 0
 

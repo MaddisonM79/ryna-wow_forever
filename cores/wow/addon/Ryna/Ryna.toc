@@ -2,7 +2,7 @@
 ## Title: Ryna
 ## Notes: The Ryna companion app's in-game half: settings, the journal and the panel its mods (Ryna_Chronicle and others) build on. /ryna for settings.
 ## Author: Ryna contributors
-## Version: 0.4.0
+## Version: 0.4.1
 ## SavedVariables: RynaDB
 
 Core.lua

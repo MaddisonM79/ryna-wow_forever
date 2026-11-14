@@ -2,7 +2,7 @@
   "id": "automation",
   "core": "wow",
   "name": "Automation",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "summary": "Does the chores you tick: quests, vendors, trainers, mail, loot rolls, invites, resurrections, dialogs and cinematics. Nothing until you turn it on.",
   "kind": "addon",
   "actsInGame": true,

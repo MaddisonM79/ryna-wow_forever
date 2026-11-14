@@ -25,7 +25,7 @@ body:
     attributes:
       label: Ryna version
       description: The app's About page shows it; for the CLI, `ryna --version`.
-      placeholder: "0.4.0"
+      placeholder: "0.4.1"
     validations:
       required: true
   - type: dropdown

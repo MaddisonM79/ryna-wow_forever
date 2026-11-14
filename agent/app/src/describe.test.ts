@@ -1,6 +1,6 @@
 import { describe as group, expect, it } from "vitest";
 import type { AddonState, InstallView } from "./api";
-import { addonRow, ago, describe, installedLines, installedMessage, signInNote } from "./describe";
+import { aboutAddon, addonRow, ago, describe, installedLines, installedMessage, signInNote } from "./describe";
 
 function install(addon: AddonState, addonVersion: string | null): InstallView {
   return { path: "/wow/_forever_", flavor: "wowf", forever: true, hasAddon: addon !== "notInstalled", addonVersion, addon };
@@ -154,5 +154,24 @@ group("the sign-in note", () => {
     expect(signInNote({ signedIn: true, signInUntilReboot: true })).toMatch(/gnome-keyring or KeePassXC/);
     expect(signInNote({ signedIn: true, signInUntilReboot: false })).toBeNull();
     expect(signInNote({ signedIn: false, signInUntilReboot: true })).toBeNull();
+  });
+});
+
+group("About's addon line", () => {
+  const install = (addonVersion: string | null, hasAddon = true) => ({ hasAddon, addonVersion });
+
+  it("is this app's version when the game folder holds the same, or no addon", () => {
+    expect(aboutAddon([install("0.4.0")], "0.4.0")).toEqual({ text: "0.4.0", old: false });
+    expect(aboutAddon([install(null, false)], "0.4.0")).toEqual({ text: "0.4.0", old: false });
+    expect(aboutAddon([], null)).toEqual({ text: "None in this build", old: false });
+  });
+
+  it("shows the game folder's copy beside the app's when they differ, the oldest of several", () => {
+    expect(aboutAddon([install("0.4.0"), install("0.3.6")], "0.4.0")).toEqual({
+      text: "0.3.6 in the game folder · 0.4.0 with this app",
+      old: true,
+    });
+    expect(aboutAddon([install("0.10.0")], "0.9.1").old).toBe(false);
+    expect(aboutAddon([install("0.3.6")], null).text).toBe("0.3.6 in the game folder · none in this build");
   });
 });

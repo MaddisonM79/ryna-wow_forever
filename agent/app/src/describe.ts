@@ -121,6 +121,17 @@ export function gameLine(installs: InstallView[], bundled: string | null): { tex
   return { text: parts.join(" · "), chip: row ? row.chip : "waiting" };
 }
 
+/**
+ * About's addon line: the copy in the game folder (the oldest, with several) beside the one this
+ * app carries, when they differ. The app's own version says nothing about what the game loads.
+ */
+export function aboutAddon(installs: readonly Pick<InstallView, "hasAddon" | "addonVersion">[], bundled: string | null): { text: string; old: boolean } {
+  const inGame = installs.flatMap((i) => (i.hasAddon && i.addonVersion ? [i.addonVersion] : [])).sort(compareVersions)[0] ?? null;
+  if (!inGame || inGame === bundled) return { text: bundled ?? "None in this build", old: false };
+  if (!bundled) return { text: `${inGame} in the game folder · none in this build`, old: false };
+  return { text: `${inGame} in the game folder · ${bundled} with this app`, old: compareVersions(inGame, bundled) < 0 };
+}
+
 /** The Status tab's accounts line: how many, and the newest push. */
 export function accountsLine(accounts: AccountView[], now = Date.now() / 1000): { text: string; chip: "pushed" | "waiting" | "error" } {
   if (!accounts.length) return { text: "No saved data yet", chip: "waiting" };

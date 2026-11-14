@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Support, UpdateCheck } from "./api";
 import { describe as describeEvent } from "./describe";
 import {
+  addonSentence,
   banner,
   bannerText,
   checkButton,
@@ -87,6 +88,7 @@ describe("the banner, by the API's judgment", () => {
       dismissable: true,
       key: "0.3.0",
       guide: null,
+      addon: null,
     });
     expect(banner(newer, null, judged("current"))?.tone).toBe("update");
     expect(banner(newer, "0.3.0", judged("behind"))).toBeNull();
@@ -112,6 +114,7 @@ describe("the banner, by the API's judgment", () => {
       dismissable: true,
       key: "reduced:0.3.0",
       guide: null,
+      addon: null,
     });
     expect(banner(newer, b.key, judged("reduced"))).toBeNull();
     // A newer release brings it back.
@@ -135,6 +138,51 @@ describe("the banner, by the API's judgment", () => {
     // Only a link the app may open.
     expect(banner(current, null, judged("reduced", { update: "https://example.test/x" }))?.guide).toBeNull();
     expect(banner(current, null, judged("reduced", { update: null }))?.guide).toBeNull();
+  });
+
+  // mcarnes, 2026-11-13: the app at 0.4.0 said "this version is no longer supported" and "Up to
+  // date" at once, because the addon in the game folder was still 0.3.6.
+  const oldInGame = { version: "0.4.0", addon: "0.3.6", minimum: "0.3.9", preferred: null, perfect: "0.4.0" };
+  const older = { installs: [{ addon: "older" as const }], bundled: "0.4.0" };
+
+  it("names the addon in the game folder when that alone is below the mark, and offers to install this app's", () => {
+    const b = banner(current, null, judged("unsupported", oldInGame), older)!;
+    expect(b.tone).toBe("unsupported");
+    expect(b.text).toBe(
+      "The Ryna addon in your game folder is 0.3.6, which is no longer supported, so nothing syncs to ryna.io. Update the addon to carry on.",
+    );
+    expect(b.addon).toEqual({ installed: "0.3.6", to: "0.4.0", action: "install" });
+    expect(b.canInstall).toBe(false);
+    expect(b.dismissable).toBe(false);
+    // Even with a newer app on offer, the addon is what stops the sync.
+    expect(banner(newer, null, judged("unsupported", oldInGame), older)?.addon?.action).toBe("install");
+    expect(supportLog(judged("unsupported", oldInGame), true)).toBe(addonSentence("unsupported", "0.3.6"));
+  });
+
+  it("says the same in amber for reduced, and Later holds until the addon changes", () => {
+    const reduced = { ...oldInGame, minimum: null, preferred: "0.3.9" };
+    const b = banner(current, null, judged("reduced", reduced), older)!;
+    expect(b.tone).toBe("reduced");
+    expect(b.text).toBe(addonSentence("reduced", "0.3.6"));
+    expect(b.key).toBe("reduced:addon:0.3.6");
+    expect(banner(current, b.key, judged("reduced", reduced), older)).toBeNull();
+    expect(banner(current, b.key, judged("reduced", { ...reduced, addon: "0.3.7" }), older)?.tone).toBe("reduced");
+  });
+
+  it("asks the API again when the game folder already holds this app's addon", () => {
+    const b = banner(current, null, judged("unsupported", oldInGame), { installs: [{ addon: "current" }], bundled: "0.4.0" })!;
+    expect(b.addon).toEqual({ installed: "0.3.6", to: "0.4.0", action: "sync" });
+  });
+
+  it("stays about the app when the app is below the mark too, or its addon wouldn't clear it", () => {
+    const both = judged("unsupported", { ...oldInGame, version: "0.3.4" });
+    expect(banner(newer, null, both, older)).toMatchObject({ text: UNSUPPORTED_SENTENCE, addon: null, canInstall: true });
+    const carriesOld = banner(current, null, judged("unsupported", oldInGame), { ...older, bundled: "0.3.8" })!;
+    expect(carriesOld).toMatchObject({ text: UNSUPPORTED_SENTENCE, addon: null, guide: "https://ryna.io/wow/guide#upkeep" });
+    expect(banner(current, null, judged("unsupported", oldInGame), { ...older, bundled: null })?.addon).toBeNull();
+    // No addon judged, or nothing known about the game folders: as before.
+    expect(banner(current, null, judged("unsupported", { ...oldInGame, addon: null }), older)?.addon).toBeNull();
+    expect(banner(current, null, judged("unsupported", oldInGame))?.addon).toBeNull();
   });
 
   it("logs a band only when it moves to reduced or unsupported", () => {
