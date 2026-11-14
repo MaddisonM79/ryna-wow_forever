@@ -1,0 +1,3 @@
+# Signed test fixtures are checked byte for byte: a checkout must never rewrite their line endings
+# (on Windows the 6-byte package fixture gained a CR and its signature stopped matching).
+agent/host/tests/fixtures/** -text
