@@ -325,6 +325,7 @@ installed copy.
 | `app/updater.pub` (every clone) | the production key, so the app can update itself from this repository's releases |
 | no `app/updater.pub` (only if you delete it) | an empty `pubkey`: the app never checks, and its button says "Updates aren't set up in this build" |
 | `app/updater.pub` and `TAURI_SIGNING_PRIVATE_KEY` | also `createUpdaterArtifacts` (and the `app` target on macOS): `Ryna.app.tar.gz` + `.sig`, the NSIS installer's `.sig`, or the AppImage's `.sig` |
+| the same updater key | each fetched core's package, `ryna-core-palworld-X.Y.Z-<target>.tar.gz` + `.sig` (the two macOS targets), built by `scripts/core-package.mjs`; the app checks the signature against `app/updater.pub` before unpacking |
 | all six Azure values (below) | `bundle.windows.signCommand`: `artifact-signing-cli` signs the exe and the installer, before the updater signs the installer |
 
 A plain `cargo build -p ryna-wow-app` reads `tauri.conf.json` alone, so it's the one build

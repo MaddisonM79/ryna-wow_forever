@@ -1,13 +1,15 @@
 # Ryna agent: notes for Claude
 
-This repo is the on-machine half of Ryna for World of Warcraft: Forever. It holds the game addon
-(a core plus mods), the CLI and the Tauri desktop app. The hosted API and portal are private and
+This repo is the on-machine half of Ryna: the agent (CLI and Tauri desktop app) and its cores, World
+of Warcraft: Forever (the game addon, a core plus mods) and Palworld. The hosted API and portal are private and
 live elsewhere. `README.md` covers installing; `docs/ryna-agent-cores-mods.md` covers the design.
 
 ## Layout
 
 - `cores/wow/addon/Ryna`: the core addon (Lua 5.1), with its README for the mod API.
 - `cores/wow/core`: the WoW core in Rust (parsing, the combat log, install discovery).
+- `cores/palworld`: the Palworld core, a Node program the agent fetches as a signed package and runs as
+  a sidecar (`serve`; docs section 13). Shown only to a person provisioned for it. macOS saves only.
 - `mods/wow/<id>/`: mods (`automation`, `chronicle`, `prices`, `settings`), each with `addon/`,
   `mod.json` and `test/*_test.lua`.
 - `agent/cli`, `agent/host`: Rust crates. `agent/app`: the desktop app (Vue 3, pnpm, vitest, Tauri 2).
@@ -48,6 +50,9 @@ Agent (`.github/workflows/agent.yml`): `cargo fmt --all --check`, `cargo clippy 
 --locked -- -D warnings`, `cargo test --locked`, `node --test scripts/release.test.mjs` and
 `node scripts/check-versions.mjs`. In `agent/app`: `pnpm typecheck` and `pnpm test`.
 
+Palworld core (`.github/workflows/palworld.yml`), in `cores/palworld`: `pnpm install --frozen-lockfile`,
+`pnpm typecheck`, `pnpm test`, `pnpm build`.
+
 ## Rules for this repo
 
 - **Seen in game, richer on the portal.** Every feature that records, pools or does something has
@@ -58,6 +63,11 @@ Agent (`.github/workflows/agent.yml`): `cargo fmt --all --check`, `cargo clippy 
 - **The game install is read only.** Never write under `/Applications/World of Warcraft/`, and
   never run the game. Maddison runs the in-game probes.
 - **Don't open `WTF/Account/*/SavedVariables`** or other personal files in the install.
+- **Palworld fixtures are scrubbed.** Nothing from a real world goes in `cores/palworld/test`: capture
+  through `scripts/capture-rawdata.ts`, which scrubs names and ids before it writes. Never read the
+  game's save container for a test, and never put a token in a log, an event or the state file.
+- **A core nobody is provisioned for doesn't exist in the window** (docs 13.1): no entry, no greyed
+  row, nothing in Settings or About.
 - **Installed third-party addons are evidence, never a source.** Note their licence, and never
   copy their code.
 - **Never record anything about another person** beyond what the docs already allow: nothing about
@@ -75,4 +85,4 @@ Agent (`.github/workflows/agent.yml`): `cargo fmt --all --check`, `cargo clippy 
   is never changed. `agent/README.md` "Who can release" has the whole of it. Every `uses:` is
   pinned to a commit SHA; Dependabot opens PRs on Tuesdays.
 
-<!-- global: v2, reviewed 2026-11-08 -->
+<!-- global: v2, reviewed 2026-11-14 -->
