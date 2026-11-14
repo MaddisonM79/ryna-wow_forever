@@ -1137,6 +1137,9 @@ with that core's scope. The IdP work (the new client, allowing several resources
 refresh per core under one consent, and retiring the two old clients once nobody uses them) is
 Maddison's; the agent can carry both old and new clients for a release or two.
 
+**Superseded 2026-11-13 by section 13.2**: no new client; the agent's existing device client is linked
+to each core's resource, and a sign-in asks only for the cores the person is provisioned for.
+
 ## 9. Releases and updates
 
 - **The agent**: as today, a `vX.Y.Z` tag, the release workflow, signed and notarized builds, the
@@ -1377,6 +1380,8 @@ is the manifest, the setting and one row, with no change to the judgment.
    creatures never targeted; the Chronicle window (0.2.x plan) reads community numbers from the same
    files, and the quest pool is what Chronicle's Quests section (7.4, J3) is measured against.
 4. **The Palworld core.** The Node agent as a sidecar, the identity change, the launchd job retired.
+   Detailed in section 13 (2026-11-13), with cores shown only to the people provisioned for them; the
+   Satisfactory core's relay is proposed in section 14.
 5. **Palworld mods**, per the reading Maddison picks.
 6. **Git-fetched mods and a mods index**, once someone outside wants to write one.
 
@@ -1404,3 +1409,200 @@ is the manifest, the setting and one row, with no change to the judgment.
   channel comes later; the notices' wording.
 - Settled 2026-11-07: the repository (A, `ryna_agent`); the Palworld agent goes MIT barring anything
   sensitive; Palworld mods are undefined for now; Chronicle is the first WoW mod.
+
+## 13. Stage 4 in detail: cores a person is set up for, and the Palworld core (2026-11-13)
+
+Asked by Maddison on 2026-11-13: "we need to move the palworld agent to [the Ryna app], same for
+satisfactory. they should only appear once they are provisioned for it." Her three calls that day:
+the Palworld core's program is **fetched when the person is provisioned**, not bundled in every
+build; **one sign-in**, with the identity work done by Nyx; Satisfactory is **a relay, designed
+first** (section 14). The rest of this section is Nyx's design for those calls.
+
+### 13.1 Provisioned
+
+A person is **provisioned** for a core when the portal's roster grants them that core's app
+(`app:<domain>:use`, the same grant every other caller is held to). WoW's role is flagged
+`everyone`, so the WoW core is everyone's; Palworld and Satisfactory are granted by hand.
+
+- The agent asks the API: `GET /v1/portal/agent/cores`, with any core's token, answers the cores
+  this person is provisioned for (`{ cores: [{ id, resource, scope }] }`). It says nothing about
+  anyone else and nothing about cores they aren't granted: an unprovisioned core is simply absent.
+- The agent asks at start, after sign-in, every hour while open and on Sync now, and keeps the last
+  answer in its state folder. **A core is only ever removed on an answer that leaves it out**: no
+  answer (offline, the API down) keeps what was there, so a blip never hides a running core.
+- **A core the person isn't provisioned for does not exist in the window**: no sidebar entry, no
+  greyed row, no word in Settings or About, nothing downloaded, nothing on the consent screen.
+  Signed out, the window shows the WoW core alone, as today.
+- A provisioned core the platform can't run (Palworld on Windows and Linux today, 13.4) shows its
+  entry with one line saying so, rather than vanishing: the person was told they have it.
+
+### 13.2 One sign-in, a token per core
+
+No new client. The agent's device client (the one in every released build) is linked at the IdP to
+each core's resource. What changes is what a sign-in asks for:
+
+- A sign-in asks for the resources and scopes of **the cores the person is provisioned for and
+  nothing else**. The first sign-in can't know, so it asks for WoW's alone, exactly as today; an
+  installed app keeps working with no new approval.
+- When the cores answer names a core the stored sign-in doesn't cover, that core's page shows one
+  button, **Allow Palworld on this computer**, which runs one device approval for every provisioned
+  core together. The consent screen names only those. The new refresh token replaces the old one.
+- An access token is for one core: the refresh grant is sent with that core's `resource`, which the
+  IdP narrows to (it refuses a resource the sign-in didn't cover). The host keeps one access token
+  per resource. A core never sees the refresh token or another core's token.
+- The API's gate doesn't change: an `agent` principal reaches only its resource's routes, with that
+  resource's scope, and the person still needs the app's grant on every call. Taking a grant away
+  stops the core at its next push (403) and removes it at the next cores answer.
+- The Palworld agent's old device client stays valid until the launchd job is retired on every Mac
+  that runs it (one today), then is removed from `AGENT_CLIENT_IDS` and the IdP.
+
+### 13.3 A core that is fetched
+
+A fetched core is a **core package** on the same GitHub release as the app:
+`ryna-core-<id>-<version>-<target>.tar.gz` and its `.sig`, signed in the release workflow with the
+updater's key. The app verifies the signature against the public key it already carries
+(`agent/app/updater.pub`) before unpacking anything, so a package is trusted exactly as far as an
+app update is, and nothing else can be installed this way.
+
+- The host builds the URL itself from its own version and target; no manifest of URLs is read from
+  the network. It fetches a core only when the person is provisioned for it and has allowed it.
+- It unpacks to `<state>/cores/<id>/<version>/`, through a temporary folder and a rename, and
+  removes other versions of that core once the new one has run a pass.
+- An app update means a new core package: versions stay equal (the version check covers
+  `cores/palworld/core.json` and its `package.json`).
+- A fetch that fails is a line on the core's page with Retry, and the hourly check tries again.
+- Its manifest's runtime is `{ "kind": "sidecar", "bin": "node", "args": ["agent.mjs", "serve"] }`
+  and gains `"platforms": ["macos"]`; a builtin core has no package.
+
+The Palworld package holds Node's own binary for the target (the official build, pinned by version
+and checked against Node's published SHASUMS in the workflow; it keeps Node's signature), the
+agent's esbuild bundle, and `core.json`.
+
+### 13.4 The sidecar interface
+
+The agent starts the sidecar when the core starts and stops it when the core stops or the app
+quits; it is never left running. They speak line-delimited JSON, one object a line, UTF-8.
+
+The agent writes to the sidecar's stdin:
+
+```jsonc
+{ "type": "hello", "protocol": 1, "api": "https://api.ryna.io", "stateDir": "/…/io.ryna.app/cores/palworld",
+  "agent": "ryna-agent/0.5.0", "gameFolder": null }
+{ "type": "sync", "token": "<access token for this core's resource>", "force": false }
+{ "type": "stop" }
+```
+
+The sidecar writes to stdout:
+
+```jsonc
+{ "type": "ready", "protocol": 1, "core": "palworld", "version": "0.5.0" }
+{ "type": "event", "event": { "kind": "pushed", "row": "<world id>", "message": "World 1 pushed" } }
+{ "type": "status", "rows": [{ "label": "World 1", "value": "saved 2 min ago, pushed", "chip": "pushed" }] }
+{ "type": "done", "ok": true }                     // the pass a "sync" asked for has ended
+{ "type": "error", "message": "…", "fix": "…" }    // it can't run at all
+```
+
+- `event.kind` is one of `waiting`, `pushing`, `pushed`, `error`, `info`; `row` is the core's key
+  for the thing it is about (a world). The agent maps these to its activity log and the row phases
+  it already has. Anything else on stdout, and all of stderr, goes to the debug log, never the window.
+- **The agent paces**: it sends `sync` on its timer (five minutes, as launchd did), when a watched
+  save changes, and on Sync now. A `sync` during a pass is answered when that pass ends.
+- **The token comes with each `sync`.** The sidecar holds it for that pass only, keeps no
+  credential on disk and never touches the keychain. A 401 or 403 from the API is an `error` event
+  with the API's words; the agent decides whether that means sign in again.
+- Stdin closing is `stop`. A sidecar that doesn't exit within five seconds of `stop` is killed.
+  One that exits by itself is restarted once a minute at most, and three failures in a row stop
+  the core with its last words shown.
+- A `protocol` the agent doesn't know stops the core with "this core needs a newer Ryna".
+
+### 13.5 The Palworld core
+
+`cores/palworld/`: the Node agent from the private monorepo (`apps/palworld-agent` 0.8.1), MIT like
+the rest of this repository, after the audit section 3 asked for (no credential, personal path,
+server address or world id in the source, fixtures or tests).
+
+- **Stays**: the save parser (`gvas`, `rawdata`, `sav`, Oodle through `ooz-wasm`), the snapshot
+  builder, the settle wait, the fingerprint, the ingest push and the heartbeat, with their tests.
+- **Goes**: launchd, `install.sh`, the Node copy with Full Disk Access, the agent's own sign-in and
+  keychain code, its lock and log files, the once-a-day signed-out notification. The agent is the
+  process that reads the saves, signs in and says what is wrong.
+- **New**: `serve` (13.4). `snapshot OUT.json` stays for checking a parser fix by hand.
+- **The wire contract** was held by importing the API's zod schema in a test. In a public
+  repository it is held the way the WoW core's is: scrubbed fixtures on both sides, and the
+  snapshot `SCHEMA` number, which the API still refuses when it doesn't know it.
+- **macOS only for now.** The saves it reads are the Mac App Store build's (`PlM`, in the game's
+  container). The first read of another app's container makes macOS ask once, for Ryna. The Steam
+  build on Windows and Linux writes a different format and is its own piece of work.
+- Its heartbeat's `agent` becomes `ryna-agent/<v> palworld/<v>`; the portal's Agent page reads the
+  same fields.
+
+**The move on Maddison's Mac** is the last step, after a release carries the core: Ryna pushes a
+world, the portal's Agent page shows it, then the launchd job is unloaded and its folder removed,
+then `apps/palworld-agent` leaves the monorepo. Until then both can run: a save already stored at
+that agent version is skipped by ingest.
+
+### 13.6 The window
+
+- The sidebar's cores are the provisioned ones, in the agent's order (WoW, Palworld, Satisfactory).
+- A sidecar core's page is the parts the agent already has: the status card from its `status`
+  rows, its activity lines, and Settings with its on/off switch. No Game, Accounts, Combat or Mods
+  tab until the core has something to put there.
+- Three states are new: **Allow** (13.2), **Getting Palworld…** with the fetch's progress (13.3),
+  and **not on this computer yet** (13.4's platforms).
+- The header's chip and the Status page count every running core; an error names its core.
+
+### 13.7 Order
+
+1. The API: the cores answer, and `core` on each agent resource in the contract.
+2. The host: tokens per resource, the incremental approval, the cores answer and its cache, the
+   sidecar runtime, the package fetch and its signature check.
+3. `cores/palworld`: the move, `serve`, the fixtures, its CI job, the release's package step.
+4. The window (13.6).
+5. The IdP: link the client to Palworld's resource (production, on Maddison's word).
+6. A release, then the move on her Mac (13.5).
+
+### 13.8 Hers to call
+
+- **The Allow step** (13.2): a second approval when a core is added, so the consent screen never
+  names a game the person doesn't have. The alternative is asking for every core at every sign-in,
+  which shows Palworld and Satisfactory to every WoW player.
+- **The window's three new states** (13.6) get a mockup before they ship.
+- **Windows and Linux Palworld** (Steam saves): whether and when.
+
+## 14. The Satisfactory core: a relay (proposal, 2026-11-13)
+
+Not built. Maddison chose "relay, design first"; this is the design for her to agree to or change.
+
+**Today.** The Satisfactory server runs on one PC with the Ficsit Remote Monitoring mod listening
+on `localhost:8080`. A cloudflared tunnel publishes it, a Cloudflare Access application admits one
+service token, and the API calls through both: the sampler every five minutes, the portal's and
+the connector's live reads, and writes when they are switched on. Three things on that PC have to
+be set up and kept alive by hand (the tunnel, its service, the Access token's yearly rotation).
+
+**With Ryna.** The Satisfactory core runs on the game PC, signed in as its person, and holds one
+outbound WebSocket to the API. The API sends each FRM request down it and the core answers from
+`127.0.0.1:8080`. Nothing listens on the PC for the internet, and the tunnel, its DNS name, the
+Access application and its token all go away.
+
+- **Resource and scope**: `https://api.ryna.io/frm/relay`, `frm:relay` ("Let ryna.io read your
+  Satisfactory factory through this computer while Ryna is open"). One route:
+  `GET /v1/frm/agent/relay` (the upgrade).
+- **Who may be the origin**: FRM is one factory today. A new permission, `frm:host`, says whose
+  Ryna is the factory's origin; provisioned for the app without it, a person sees the factory in
+  the portal and has no Satisfactory core in Ryna. So this core appears for the host alone.
+- **The API side**: a Durable Object holds the socket. `frm-context` asks it first; with no relay
+  connected it answers what a down tunnel answers today (the existing 530 path and its words). The
+  tunnel stays as the fallback until the relay has run for a while, then is removed.
+- **Frames**: `{ id, method, path, query, body }` down, `{ id, status, body }` up, JSON, one
+  request at a time per id, a 25 s limit. The core calls only `127.0.0.1` on the configured port
+  and only FRM's known endpoints (an allow-list in the core, GET by default; POST only for the
+  endpoints the API's write switch already covers). The FRM write token stays in the API and
+  travels in the frame's header, as it does through the tunnel today.
+- **Builtin, in Rust**: a WebSocket client and a localhost HTTP call, no parser, so no sidecar and
+  no package. It needs the Windows build, which exists.
+- **What changes for her**: the relay runs only while Ryna is open on the game PC; cloudflared is a
+  service that survives a logout. Ryna starting with Windows (it has the setting) covers a reboot,
+  not a signed-out session. If that matters, the tunnel stays and this core is only a status page.
+
+**Hers to call**: the relay at all, given the last point; `frm:host` as the gate; whether writes
+ever travel the relay or it stays read-only.
