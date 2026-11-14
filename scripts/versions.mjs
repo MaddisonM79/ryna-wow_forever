@@ -39,6 +39,10 @@ export function readVersions(root) {
     "cores/wow/addon/Ryna/Ryna.toc": tocVersion(read("cores/wow/addon/Ryna/Ryna.toc")),
     // A core's manifest version is what its heartbeat reports; bundled cores take the agent's.
     "cores/wow/core.json": JSON.parse(read("cores/wow/core.json")).version ?? null,
+    // A fetched core's package is on the same release, named for the same version (13.3), and
+    // its bundle stamps its own package.json's version into every snapshot.
+    "cores/palworld/core.json": JSON.parse(read("cores/palworld/core.json")).version ?? null,
+    "cores/palworld/package.json": JSON.parse(read("cores/palworld/package.json")).version ?? null,
   };
   // Each bundled mod (mods/wow/<id>/mod.json, `kind: "addon"` or `kind: "agent"`) versions with the
   // agent, and so does each addon folder it installs (its TOC; an agent mod has none).

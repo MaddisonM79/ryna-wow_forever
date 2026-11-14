@@ -2,9 +2,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { manifest } from "./latest-json.mjs";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { NODE_BUILDS, NODE_VERSION, PACKAGE_FILES, TARGETS, buildPackage, bundleNodeMajor, nodeTarball, packageName, shasumOf } from "./core-package.mjs";
 import { agree, escapeRegExp, lockVersion, luaVersions, modVersions, readVersions, tocVersion, workspaceVersion } from "./versions.mjs";
 
 test("reads each place's version", () => {
@@ -64,8 +66,10 @@ test("no addon in this repository carries its own copy of the version", () => {
   assert.deepEqual(luaVersions(join(import.meta.dirname, "..")), []);
 });
 
-test("this repository's versions include Chronicle's and the Settings mod's", () => {
+test("this repository's versions include Chronicle's, the Settings mod's and the Palworld core's", () => {
   const found = readVersions(join(import.meta.dirname, ".."));
+  assert.ok("cores/palworld/core.json" in found);
+  assert.ok("cores/palworld/package.json" in found);
   assert.ok("mods/wow/chronicle/mod.json" in found);
   assert.ok("mods/wow/chronicle/addon/Ryna_Chronicle/Ryna_Chronicle.toc" in found);
   // An agent mod (no addon folder) has a manifest to agree and no TOC.
@@ -134,4 +138,71 @@ test("an unsigned AppImage (a build without the key) is not a platform", () => {
 test("no signatures, no manifest", () => {
   const m = manifest({ files: ["Ryna_0.2.0_x64-setup.exe"], sig: () => "", version: "0.2.0", tag: "v0.2.0", repo: "o/r", date: "d" });
   assert.equal(m, null);
+});
+
+test("a core package is named for its core, the release's version and the target", () => {
+  assert.deepEqual(TARGETS, ["aarch64-apple-darwin", "x86_64-apple-darwin"]);
+  assert.equal(packageName("palworld", "0.5.0", "aarch64-apple-darwin"), "ryna-core-palworld-0.5.0-aarch64-apple-darwin.tar.gz");
+  assert.equal(packageName("palworld", "0.5.0-rc.1", "x86_64-apple-darwin"), "ryna-core-palworld-0.5.0-rc.1-x86_64-apple-darwin.tar.gz");
+  assert.throws(() => packageName("palworld", "0.5.0", "x86_64-pc-windows-msvc"), /no package for/);
+  assert.throws(() => packageName("Pal World", "0.5.0", "aarch64-apple-darwin"), /bad core id/);
+  assert.throws(() => packageName("palworld", "v0.5", "aarch64-apple-darwin"), /bad version/);
+  assert.equal(nodeTarball("aarch64-apple-darwin", "26.13.1"), "node-v26.13.1-darwin-arm64.tar.gz");
+  assert.equal(nodeTarball("x86_64-apple-darwin", "26.13.1"), "node-v26.13.1-darwin-x64.tar.gz");
+});
+
+test("the Node it carries is the major the bundle is built for, pinned by hash", () => {
+  const pkg = JSON.parse(readFileSync(join(import.meta.dirname, "..", "cores", "palworld", "package.json"), "utf8"));
+  assert.equal(bundleNodeMajor(pkg.scripts.build), Number(NODE_VERSION.split(".")[0]));
+  for (const t of TARGETS) assert.match(NODE_BUILDS[t].sha256, /^[0-9a-f]{64}$/);
+  const shasums = `${"a".repeat(64)}  node-v1.0.0-darwin-arm64.tar.gz\n${"b".repeat(64)}  node-v1.0.0-darwin-arm64.tar.xz\n`;
+  assert.equal(shasumOf(shasums, "node-v1.0.0-darwin-arm64.tar.gz"), "a".repeat(64));
+  assert.equal(shasumOf(shasums, "node-v1.0.0-darwin-x64.tar.gz"), null);
+});
+
+test("a core package is flat: node, the bundle, the manifest and the licences, regular files only", () => {
+  const root = mkdtempSync(join(tmpdir(), "ryna-core-pkg-"));
+  writeFileSync(join(root, "LICENSE"), "MIT\n");
+  const core = join(root, "cores", "palworld");
+  mkdirSync(join(core, "dist"), { recursive: true });
+  mkdirSync(join(core, "node_modules", "ooz-wasm"), { recursive: true });
+  writeFileSync(join(core, "core.json"), JSON.stringify({ id: "palworld", version: "0.5.0" }));
+  writeFileSync(join(core, "package.json"), JSON.stringify({ version: "0.5.0", scripts: { build: `esbuild --target=node${NODE_VERSION.split(".")[0]}` } }));
+  writeFileSync(join(core, "NOTICE.md"), "notice\n");
+  writeFileSync(join(core, "dist", "agent.mjs"), "console.log(1)\n");
+  writeFileSync(join(core, "node_modules", "ooz-wasm", "LICENSE"), "GPL\n");
+  // A stand-in for Node's tarball, with the symlinks the real one has (npm, npx): they stay out.
+  const prefix = `node-v${NODE_VERSION}-darwin-arm64`;
+  const nodeDir = join(root, "nodetar", prefix);
+  mkdirSync(join(nodeDir, "bin"), { recursive: true });
+  writeFileSync(join(nodeDir, "bin", "node"), "#!/bin/sh\n");
+  writeFileSync(join(nodeDir, "LICENSE"), "Node's licence\n");
+  symlinkSync("../lib/node_modules/npm/bin/npm-cli.js", join(nodeDir, "bin", "npm"));
+  const nodeTar = join(root, "node.tar.gz");
+  execFileSync("tar", ["-czf", nodeTar, "-C", join(root, "nodetar"), prefix]);
+
+  const out = buildPackage({ root, core, target: "aarch64-apple-darwin", nodeTar, outDir: join(root, "out") });
+  assert.ok(out.endsWith("/ryna-core-palworld-0.5.0-aarch64-apple-darwin.tar.gz"));
+  const names = execFileSync("tar", ["-tzf", out], { encoding: "utf8" }).trim().split("\n");
+  assert.deepEqual(names, PACKAGE_FILES);
+  const listing = execFileSync("tar", ["-tvzf", out], { encoding: "utf8" }).trim().split("\n");
+  assert.ok(listing.every((l) => l.startsWith("-")), listing.join("\n"));
+  assert.ok(listing[0].startsWith("-rwx"), "node is executable");
+  const unpacked = join(root, "unpacked");
+  mkdirSync(unpacked);
+  execFileSync("tar", ["-xzf", out, "-C", unpacked]);
+  assert.equal(readFileSync(join(unpacked, "LICENSE-node"), "utf8"), "Node's licence\n");
+  assert.equal(readFileSync(join(unpacked, "LICENSE-ooz-wasm"), "utf8"), "GPL\n");
+
+  // A manifest and package.json that disagree, or a bundle for another Node, make no package.
+  writeFileSync(join(core, "package.json"), JSON.stringify({ version: "0.4.9", scripts: { build: "esbuild --target=node26" } }));
+  assert.throws(() => buildPackage({ root, core, target: "aarch64-apple-darwin", nodeTar, outDir: join(root, "out") }), /core.json says 0.5.0/);
+  writeFileSync(join(core, "package.json"), JSON.stringify({ version: "0.5.0", scripts: { build: "esbuild --target=node18" } }));
+  assert.throws(() => buildPackage({ root, core, target: "aarch64-apple-darwin", nodeTar, outDir: join(root, "out") }), /targets node18/);
+});
+
+test("a signed core package is not an updater platform", () => {
+  const files = ["ryna-core-palworld-0.5.0-aarch64-apple-darwin.tar.gz", "ryna-core-palworld-0.5.0-aarch64-apple-darwin.tar.gz.sig", "Ryna_0.5.0_x64.app.tar.gz", "Ryna_0.5.0_x64.app.tar.gz.sig"];
+  const m = manifest({ files, sig: (n) => `sig of ${n}`, version: "0.5.0", tag: "v0.5.0", repo: "o/r", date: "d" });
+  assert.deepEqual(Object.keys(m.platforms), ["darwin-x86_64"]);
 });

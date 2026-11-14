@@ -1,0 +1,57 @@
+# The Palworld core (cores/palworld, Node): typecheck, test and build it, then make its core
+# package for Apple silicon, unsigned, and run the packaged Node on the bundle once. Releases are
+# release.yml's (the `core` job), which signs the packages.
+name: palworld
+
+on:
+  push:
+    branches: [main]
+    paths: ["cores/palworld/**", "scripts/core-package.mjs", ".github/workflows/palworld.yml"]
+  pull_request:
+    paths: ["cores/palworld/**", "scripts/core-package.mjs", ".github/workflows/palworld.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: cores/palworld
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          package_json_file: cores/palworld/package.json
+      # The major the bundle targets (esbuild --target=node26) and the package carries.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26"
+          cache: pnpm
+          cache-dependency-path: cores/palworld/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      # The package as the release makes it (unsigned), and the packaged Node answering hello.
+      - name: The core package, and a hello through it
+        if: runner.os == 'macOS'
+        working-directory: .
+        run: |
+          set -euo pipefail
+          node scripts/core-package.mjs --target aarch64-apple-darwin --out dist-core
+          version="$(node -p 'require("./cores/palworld/core.json").version')"
+          mkdir -p "$RUNNER_TEMP/core"
+          tar -xzf "dist-core/ryna-core-palworld-${version}-aarch64-apple-darwin.tar.gz" -C "$RUNNER_TEMP/core"
+          mkdir -p "$RUNNER_TEMP/saves"
+          cd "$RUNNER_TEMP/core"
+          codesign --verify ./node
+          hello="{\"type\":\"hello\",\"protocol\":1,\"api\":\"https://api.example.invalid\",\"stateDir\":\"$RUNNER_TEMP/state\",\"agent\":\"ryna-agent/ci\",\"gameFolder\":\"$RUNNER_TEMP/saves\"}"
+          out="$(printf '%s\n%s\n' "$hello" '{"type":"stop"}' | ./node agent.mjs serve)"
+          echo "$out"
+          test "$out" = "{\"type\":\"ready\",\"protocol\":1,\"core\":\"palworld\",\"version\":\"${version}\"}"

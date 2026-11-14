@@ -1,0 +1,1173 @@
+{
+ "description": "Repeatables sections of real saves, unwrapped by read_gvas and trimmed: chests' item lists, dungeon reward bytes and unread map-object fields dropped, a sample of spawners kept. Scrubbed (scripts/scrub.ts): every world-made GUID replaced by a stand-in.",
+ "cleared": {
+  "source": "a save from 2026-10-07",
+  "Timestamp": 639269603904340000,
+  "worldSaveData": {
+   "GameTimeSaveData": {
+    "GameDateTimeTicks": 17534270000000,
+    "RealDateTimeTicks": 372765390000
+   },
+   "EnemyCampSaveData": {
+    "EnemyCampStatusMap": [
+     {
+      "key": "Forest1",
+      "value": {
+       "bIsSpawned": true,
+       "bIsEnemyAllDead": false,
+       "bIsClear": true,
+       "bRewardReceived": true,
+       "RewardPalId": "GrassPanda_Electric",
+       "RewardPalLevel": 23,
+       "ClearDate": 639269777772730000,
+       "ElapsedTime": 613.1610107421875,
+       "TreasureBoxInfoMapBySpawnerName": [],
+       "CampPresetIndex": 0
+      }
+     },
+     {
+      "key": "BP_NPCCampSpawner_Hunter_SeaBase_01_04_B",
+      "value": {
+       "bIsSpawned": true,
+       "bIsEnemyAllDead": false,
+       "bIsClear": false,
+       "bRewardReceived": false,
+       "RewardPalId": "FlyingManta",
+       "RewardPalLevel": 17,
+       "ClearDate": 0,
+       "ElapsedTime": -1.0,
+       "TreasureBoxInfoMapBySpawnerName": [
+        {
+         "key": "BP_EnemyCampTreasureBoxSpawnerComponent",
+         "value": {
+          "MapObjectId": "TreasureBox_EnemyCamp",
+          "bOpened": false
+         }
+        },
+        {
+         "key": "BP_EnemyCampTreasureBoxSpawnerComponent_Goal",
+         "value": {
+          "MapObjectId": "TreasureBox_EnemyCampGoal",
+          "bOpened": false
+         }
+        },
+        {
+         "key": "BP_EnemyCampTreasureBoxSpawnerComponent1",
+         "value": {
+          "MapObjectId": "TreasureBox_EnemyCamp",
+          "bOpened": false
+         }
+        },
+        {
+         "key": "BP_EnemyCampTreasureBoxSpawnerComponent2",
+         "value": {
+          "MapObjectId": "TreasureBox_EnemyCamp",
+          "bOpened": false
+         }
+        }
+       ],
+       "CampPresetIndex": 0
+      }
+     }
+    ]
+   }
+  }
+ },
+ "rewarded": {
+  "source": "a save from 2026-10-06",
+  "worldSaveData": {
+   "GameTimeSaveData": {
+    "GameDateTimeTicks": 11142170000000,
+    "RealDateTimeTicks": 232816120000
+   },
+   "DungeonSaveData": [
+    {
+     "InstanceId": "3d98ba6f-89c9-3e5c-f017-9c8dd7c6f0f3",
+     "DungeonType": "EPalDungeonType::Normal",
+     "MarkerPointId": "2b9399c2-b3a1-0e06-8e57-98c2dcc8af47",
+     "DungeonSpawnAreaId": "Grass001",
+     "DungeonLevelName": "Grass001_01",
+     "BossState": "EPalDungeonInstanceBossState::Dead",
+     "EnemySpawnerDataBossRowName": "5",
+     "DisappearTimeAt": {
+      "Ticks": 11176450000000
+     },
+     "ReservedDataLayerAssetIndex": 4,
+     "StageInstanceId": {
+      "InternalId": "51064347-8161-5a3d-c814-d0cc78f5f2de",
+      "bValid": true
+     },
+     "RewardSaveDataMap": [
+      {
+       "key": "9320110f-a102-9e64-4cf5-554179817d16",
+       "value": {
+        "ContentType": "EPalDungeonRewardSpawnerContentType::MapObjectSpawner"
+       }
+      },
+      {
+       "key": "415e7d4e-b44a-a555-61de-baf4a3b71fef",
+       "value": {
+        "ContentType": "EPalDungeonRewardSpawnerContentType::MapObjectSpawner"
+       }
+      }
+     ],
+     "ReceivedBonusExpPlayerIds": [
+      "00000000-0000-0000-0000-000000000001"
+     ],
+     "RespawnBossTimeAt": {
+      "Ticks": 0
+     }
+    }
+   ]
+  }
+ },
+ "newest": {
+  "source": "a save from 2026-10-08",
+  "Timestamp": 639270726733680000,
+  "worldSaveData": {
+   "GameTimeSaveData": {
+    "GameDateTimeTicks": 39837270000000,
+    "RealDateTimeTicks": 868445240000
+   },
+   "DungeonSaveData": [
+    {
+     "InstanceId": "ac31d838-f1af-5a3d-e334-e202abbe9cab",
+     "DungeonType": "EPalDungeonType::Fixed",
+     "MarkerPointId": "00000000-0000-0000-0000-000000000000",
+     "DungeonSpawnAreaId": "None",
+     "DungeonLevelName": "None",
+     "BossState": "EPalDungeonInstanceBossState::Dead",
+     "EnemySpawnerDataBossRowName": "None",
+     "DisappearTimeAt": {
+      "Ticks": 0
+     },
+     "ReservedDataLayerAssetIndex": -1,
+     "StageInstanceId": {
+      "InternalId": "536fd5ab-3fdc-7b02-a9f4-8908e07ce2ae",
+      "bValid": true
+     },
+     "RewardSaveDataMap": [],
+     "ReceivedBonusExpPlayerIds": [],
+     "RespawnBossTimeAt": {
+      "Ticks": 40873990000000
+     }
+    },
+    {
+     "InstanceId": "2e126fc6-bbb1-6343-9431-77d81ef2ea69",
+     "DungeonType": "EPalDungeonType::Fixed",
+     "MarkerPointId": "00000000-0000-0000-0000-000000000000",
+     "DungeonSpawnAreaId": "None",
+     "DungeonLevelName": "None",
+     "BossState": "EPalDungeonInstanceBossState::Spawned",
+     "EnemySpawnerDataBossRowName": "None",
+     "DisappearTimeAt": {
+      "Ticks": 0
+     },
+     "ReservedDataLayerAssetIndex": -1,
+     "StageInstanceId": {
+      "InternalId": "339ac3af-432b-3397-9ce5-3d9e3d537c77",
+      "bValid": true
+     },
+     "RewardSaveDataMap": [],
+     "ReceivedBonusExpPlayerIds": [],
+     "RespawnBossTimeAt": {
+      "Ticks": 0
+     }
+    },
+    {
+     "InstanceId": "a62ef3f4-2b55-4dfc-0cf1-a7b8799a4c01",
+     "DungeonType": "EPalDungeonType::Normal",
+     "MarkerPointId": "0f696e27-4472-ff2d-fecb-99db592799b4",
+     "DungeonSpawnAreaId": "Island002",
+     "DungeonLevelName": "Island002_01",
+     "BossState": "EPalDungeonInstanceBossState::Spawned",
+     "EnemySpawnerDataBossRowName": "21",
+     "DisappearTimeAt": {
+      "Ticks": 47160950000000
+     },
+     "ReservedDataLayerAssetIndex": 3,
+     "StageInstanceId": {
+      "InternalId": "d195202d-1d45-634a-d319-5195cb6470a2",
+      "bValid": true
+     },
+     "RewardSaveDataMap": [],
+     "ReceivedBonusExpPlayerIds": [],
+     "RespawnBossTimeAt": {
+      "Ticks": 0
+     }
+    }
+   ],
+   "DungeonPointMarkerSaveData": [
+    {
+     "MarkerPointId": "0f696e27-4472-ff2d-fecb-99db592799b4",
+     "NextRespawnGameTime": {
+      "Ticks": 0
+     },
+     "ConnectedDungeonInstanceId": "a62ef3f4-2b55-4dfc-0cf1-a7b8799a4c01"
+    },
+    {
+     "MarkerPointId": "bccd52b9-3e57-7faa-8909-4f5e4bd22983",
+     "NextRespawnGameTime": {
+      "Ticks": 40680950000000
+     },
+     "ConnectedDungeonInstanceId": "00000000-0000-0000-0000-000000000000"
+    }
+   ],
+   "OilrigSaveData": {
+    "OilrigMap": [
+     {
+      "key": "EPalOilrigType::TypeA",
+      "value": {
+       "DestroyedCannon": [],
+       "DestroyedGasTank": [],
+       "WipedOutEnemySpawner": [],
+       "OpenedTreasureBoxSpawner": [],
+       "GoalTreasureBoxSpawnerIndex": 2,
+       "Alarm": false,
+       "Clear": false,
+       "ResetTimer": 0.0,
+       "IsMachineSpawned": false,
+       "IsMachineDestroyed": false
+      }
+     },
+     {
+      "key": "EPalOilrigType::TypeB",
+      "value": {
+       "DestroyedCannon": [],
+       "DestroyedGasTank": [],
+       "WipedOutEnemySpawner": [],
+       "OpenedTreasureBoxSpawner": [],
+       "GoalTreasureBoxSpawnerIndex": 1,
+       "Alarm": false,
+       "Clear": false,
+       "ResetTimer": 0.0,
+       "IsMachineSpawned": false,
+       "IsMachineDestroyed": false
+      }
+     },
+     {
+      "key": "EPalOilrigType::TypeC",
+      "value": {
+       "DestroyedCannon": [],
+       "DestroyedGasTank": [],
+       "WipedOutEnemySpawner": [],
+       "OpenedTreasureBoxSpawner": [],
+       "GoalTreasureBoxSpawnerIndex": 4,
+       "Alarm": false,
+       "Clear": false,
+       "ResetTimer": 0.0,
+       "IsMachineSpawned": false,
+       "IsMachineDestroyed": false
+      }
+     }
+    ]
+   },
+   "InvaderSaveData": [
+    {
+     "key": "7cdba55f-216a-a79d-bba8-d0f565e3b5a4",
+     "value": {
+      "bIsInvading": false,
+      "CoolTimeElapsed": 19.373382568359375,
+      "CoolTimeFinish": 5576.74365234375
+     }
+    },
+    {
+     "key": "d6ff5c48-385c-4e54-4d42-1338fbd1ae86",
+     "value": {
+      "bIsInvading": false,
+      "CoolTimeElapsed": 0.0,
+      "CoolTimeFinish": 0.0
+     }
+    }
+   ],
+   "SupplySaveData": {
+    "LastSupplyGuid": "8f1cb1b5-e478-2a40-d7b1-11530db5e79d",
+    "LastSupplyTime": 785517370000,
+    "LastLotteryTime": 868443990000,
+    "SupplyInfos": [
+     {
+      "key": "8f1cb1b5-e478-2a40-d7b1-11530db5e79d",
+      "value": {
+       "SupplyType": "EPalSupplyType::Capsule",
+       "SupplySpawnerGuid": "8f1cb1b5-e478-2a40-d7b1-11530db5e79d",
+       "SupplyTime": 785517370000,
+       "SupplyLandedTime": 785667240000,
+       "bWipedOut_Pal": false,
+       "bWipedOut_NPC": false,
+       "SupplyMapObjectId": "06d514c2-1830-d0c8-8a26-cc1b36d9afec",
+       "DropItemGuids": [],
+       "MapLocationId": "a66a21d8-a48e-b4fd-cab3-d7eb505df36c"
+      }
+     }
+    ]
+   },
+   "BossSpawnerSaveData": {
+    "RespawnDisableFlag": [
+     {
+      "key": "BOSS_Believer_CrossBow",
+      "value": true
+     }
+    ]
+   },
+   "MapObjectSpawnerInStageSaveData": [
+    {
+     "key": {
+      "InternalId": "00000000-0000-0000-0000-000000000000",
+      "bValid": true
+     },
+     "value": {
+      "SpawnerDataMapByLevelObjectInstanceId": [
+       {
+        "key": "bc9cf5e3-2e27-20d4-af20-88f4a87acdbb",
+        "value": {
+         "ItemMap": [
+          {
+           "key": 0,
+           "value": {
+            "NextLotteryGameTime": 0,
+            "MapObjectInstanceId": "00000000-0000-0000-0000-000000000000"
+           }
+          }
+         ]
+        }
+       },
+       {
+        "key": "ef648a4a-7c86-d47b-2951-b07f264dca5b",
+        "value": {
+         "ItemMap": [
+          {
+           "key": 0,
+           "value": {
+            "NextLotteryGameTime": -1,
+            "MapObjectInstanceId": "c40d57b2-5088-d5d8-ed04-195910424fec"
+           }
+          }
+         ]
+        }
+       },
+       {
+        "key": "be3a598a-2a07-4ec5-e75a-10c0eeb86368",
+        "value": {
+         "ItemMap": [
+          {
+           "key": 0,
+           "value": {
+            "NextLotteryGameTime": -1,
+            "MapObjectInstanceId": "1b86d0f9-79d2-d5a3-e8e0-19485ebdb639"
+           }
+          }
+         ]
+        }
+       },
+       {
+        "key": "658965b2-0378-bdde-4828-074c04037e2f",
+        "value": {
+         "ItemMap": [
+          {
+           "key": 0,
+           "value": {
+            "NextLotteryGameTime": 31359870000000,
+            "MapObjectInstanceId": "00000000-0000-0000-0000-000000000000"
+           }
+          }
+         ]
+        }
+       },
+       {
+        "key": "f8052cc6-8d44-c45b-0212-56a7aeb9031b",
+        "value": {
+         "ItemMap": [
+          {
+           "key": 0,
+           "value": {
+            "NextLotteryGameTime": 28119840000000,
+            "MapObjectInstanceId": "00000000-0000-0000-0000-000000000000"
+           }
+          }
+         ]
+        }
+       },
+       {
+        "key": "794090d6-a3c7-f1f0-0dc7-fcc7ba1d2cd8",
+        "value": {
+         "ItemMap": [
+          {
+           "key": 0,
+           "value": {
+            "NextLotteryGameTime": 0,
+            "MapObjectInstanceId": "00000000-0000-0000-0000-000000000000"
+           }
+          }
+         ]
+        }
+       },
+       {
+        "key": "9af36d5f-cd37-394b-0968-c43883bd5235",
+        "value": {
+         "ItemMap": [
+          {
+           "key": 0,
+           "value": {
+            "NextLotteryGameTime": -1,
+            "MapObjectInstanceId": "79f17e26-e907-acef-221c-84dc96e31cb7"
+           }
+          },
+          {
+           "key": 1,
+           "value": {
+            "NextLotteryGameTime": -1,
+            "MapObjectInstanceId": "3ebf9c3e-65fe-5010-bbca-017284dc1228"
+           }
+          },
+          {
+           "key": 2,
+           "value": {
+            "NextLotteryGameTime": -1,
+            "MapObjectInstanceId": "553b29a2-2b98-fd6e-d9ab-31ec9570fb08"
+           }
+          }
+         ]
+        }
+       },
+       {
+        "key": "1a4c5d6e-46f4-100b-03c1-2686c909cf59",
+        "value": {
+         "ItemMap": [
+          {
+           "key": 0,
+           "value": {
+            "NextLotteryGameTime": 40734850000000,
+            "MapObjectInstanceId": "65a4a53d-e1d7-14a5-ff1d-6d9e3872ffd9"
+           }
+          }
+         ]
+        }
+       },
+       {
+        "key": "a6c9d1c1-8ff7-df2c-6ece-43a7d9b6f602",
+        "value": {
+         "ItemMap": [
+          {
+           "key": 0,
+           "value": {
+            "NextLotteryGameTime": 37495320000000,
+            "MapObjectInstanceId": "ad605aa8-c127-e013-e38f-da1cd307814e"
+           }
+          }
+         ]
+        }
+       },
+       {
+        "key": "f9b18cb6-5bb8-37e4-d38e-f8f3d3c5a413",
+        "value": {
+         "ItemMap": [
+          {
+           "key": 0,
+           "value": {
+            "NextLotteryGameTime": -1,
+            "MapObjectInstanceId": "b52a5ecf-7c21-c53c-addc-8727e33bbd11"
+           }
+          }
+         ]
+        }
+       },
+       {
+        "key": "c741a417-b13a-ea49-b913-45f40b20e091",
+        "value": {
+         "ItemMap": [
+          {
+           "key": 0,
+           "value": {
+            "NextLotteryGameTime": -1,
+            "MapObjectInstanceId": "8db56579-581f-c291-7689-88c693897c48"
+           }
+          }
+         ]
+        }
+       },
+       {
+        "key": "d9bc451b-e36f-e625-500e-9eb7c9933f30",
+        "value": {
+         "ItemMap": [
+          {
+           "key": 0,
+           "value": {
+            "NextLotteryGameTime": -1,
+            "MapObjectInstanceId": "90282012-3889-4b2e-fa5b-0b3f5650db9e"
+           }
+          }
+         ]
+        }
+       },
+       {
+        "key": "a54eb26b-0160-89f5-ee85-2b9a40ea92f4",
+        "value": {
+         "ItemMap": [
+          {
+           "key": 0,
+           "value": {
+            "NextLotteryGameTime": -1,
+            "MapObjectInstanceId": "00000000-0000-0000-0000-000000000000"
+           }
+          }
+         ]
+        }
+       },
+       {
+        "key": "e2e2d394-0446-b37d-6507-9b283c113b3f",
+        "value": {
+         "ItemMap": [
+          {
+           "key": 0,
+           "value": {
+            "NextLotteryGameTime": -1,
+            "MapObjectInstanceId": "00000000-0000-0000-0000-000000000000"
+           }
+          }
+         ]
+        }
+       }
+      ]
+     }
+    }
+   ],
+   "MapObjectSaveData": [
+    {
+     "MapObjectId": "DamagableRock0002",
+     "Model": {
+      "RawData": {
+       "instance_id": "b52a5ecf-7c21-c53c-addc-8727e33bbd11",
+       "base_camp_id_belong_to": "00000000-0000-0000-0000-000000000000",
+       "owner_spawner_level_object_instance_id": "f9b18cb6-5bb8-37e4-d38e-f8f3d3c5a413",
+       "hp": {
+        "current": 4496,
+        "max": 4500
+       },
+       "initital_transform_cache": {
+        "rotation": {
+         "x": 0.0,
+         "y": 0.0,
+         "z": 0.0,
+         "w": 1.0
+        },
+        "translation": {
+         "x": -279969.107421875,
+         "y": 152230.7578125,
+         "z": 1952.865966796875
+        },
+        "scale3d": {
+         "x": 1.0,
+         "y": 1.0,
+         "z": 1.0
+        }
+       }
+      }
+     }
+    },
+    {
+     "MapObjectId": "TreasureBox_RequiredLongHold",
+     "Model": {
+      "RawData": {
+       "instance_id": "90282012-3889-4b2e-fa5b-0b3f5650db9e",
+       "base_camp_id_belong_to": "00000000-0000-0000-0000-000000000000",
+       "owner_spawner_level_object_instance_id": "d9bc451b-e36f-e625-500e-9eb7c9933f30",
+       "hp": {
+        "current": -1,
+        "max": -1
+       },
+       "initital_transform_cache": {
+        "rotation": {
+         "x": -0.0,
+         "y": 0.0,
+         "z": -0.3420201407847478,
+         "w": 0.939692621710728
+        },
+        "translation": {
+         "x": -201100.0,
+         "y": 26390.0,
+         "z": 14144.547398431394
+        },
+        "scale3d": {
+         "x": 1.0,
+         "y": 1.0,
+         "z": 1.0
+        }
+       }
+      }
+     }
+    },
+    {
+     "MapObjectId": "StationDeforest2",
+     "Model": {
+      "RawData": {
+       "instance_id": "29c04b9f-e374-ba65-1d0e-59e33f3bc0f8",
+       "base_camp_id_belong_to": "d6ff5c48-385c-4e54-4d42-1338fbd1ae86",
+       "owner_spawner_level_object_instance_id": "00000000-0000-0000-0000-000000000000",
+       "hp": {
+        "current": 10000,
+        "max": 10000
+       },
+       "initital_transform_cache": {
+        "rotation": {
+         "x": -0.0,
+         "y": 0.0,
+         "z": -0.9980685119439507,
+         "w": 0.06212282564394302
+        },
+        "translation": {
+         "x": -302497.72331235214,
+         "y": 229401.98179371218,
+         "z": 2849.1907817230453
+        },
+        "scale3d": {
+         "x": 1.0,
+         "y": 1.0,
+         "z": 1.0
+        }
+       }
+      }
+     }
+    },
+    {
+     "MapObjectId": "TreasureBox_FishingJunk_RequiredLongHold",
+     "Model": {
+      "RawData": {
+       "instance_id": "8db56579-581f-c291-7689-88c693897c48",
+       "base_camp_id_belong_to": "00000000-0000-0000-0000-000000000000",
+       "owner_spawner_level_object_instance_id": "c741a417-b13a-ea49-b913-45f40b20e091",
+       "hp": {
+        "current": -1,
+        "max": -1
+       },
+       "initital_transform_cache": {
+        "rotation": {
+         "x": -0.0,
+         "y": 0.0,
+         "z": -0.2334453638559054,
+         "w": 0.9723699203976766
+        },
+        "translation": {
+         "x": -400038.7601352058,
+         "y": 194391.65389494417,
+         "z": -2102.615463733673
+        },
+        "scale3d": {
+         "x": 1.0,
+         "y": 1.0,
+         "z": 1.0
+        }
+       }
+      }
+     }
+    }
+   ]
+  }
+ },
+ "local": {
+  "source": "a save from 2026-10-08",
+  "SaveData": {
+   "Local_HiddenLocationFlagMap": [
+    {
+     "key": "yamijima_IceLand_pink_D_BOSS",
+     "value": true
+    },
+    {
+     "key": "yamijima_plateau_pink_G_BOSS_2",
+     "value": true
+    },
+    {
+     "key": "yamijima_forest_purple_C_BOSS",
+     "value": true
+    },
+    {
+     "key": "yamijima_forest_purple_A_BOSS",
+     "value": true
+    },
+    {
+     "key": "yamijima_rock_purple_BOSS",
+     "value": true
+    },
+    {
+     "key": "yamijima_rock_pink_E_BOSS",
+     "value": true
+    },
+    {
+     "key": "yamijima_forest_purple_A_BOSS_2",
+     "value": true
+    },
+    {
+     "key": "yamijima_beach_purple_BOSS",
+     "value": true
+    },
+    {
+     "key": "yamijima_plateau_pink_F_BOSS",
+     "value": true
+    },
+    {
+     "key": "yamijima_IceLand_pink_F_BOSS",
+     "value": true
+    },
+    {
+     "key": "yamijima_forest_pink_D_WhiteDeer",
+     "value": true
+    },
+    {
+     "key": "yamijima_plateau_purple_BOSS",
+     "value": true
+    },
+    {
+     "key": "yamijima_plateau_purple_BOSS_2",
+     "value": true
+    },
+    {
+     "key": "yamijima_plateau_purple_C_BOSS",
+     "value": true
+    },
+    {
+     "key": "yamijima_IceLand_pink_A_BOSS",
+     "value": true
+    },
+    {
+     "key": "remainsIsland_1_GrassGolem_FBOSS",
+     "value": true
+    },
+    {
+     "key": "worldtree_9_11_N_FBOSS_1",
+     "value": true
+    },
+    {
+     "key": "worldtree_9_02_B_FBOSS_1",
+     "value": true
+    },
+    {
+     "key": "worldtree_9_10_L_FBOSS_1",
+     "value": true
+    },
+    {
+     "key": "worldtree_9_07_I_FBOSS_1",
+     "value": true
+    },
+    {
+     "key": "worldtree_9_05_D_FBOSS_1",
+     "value": true
+    },
+    {
+     "key": "worldtree_9_13_M_FBOSS_1",
+     "value": true
+    },
+    {
+     "key": "81_2_dessert_FBOSS_FlowerDinosaur_Electric",
+     "value": true
+    },
+    {
+     "key": "81_2_dessert_FBOSS_1",
+     "value": true
+    },
+    {
+     "key": "81_2_dessert_FBOSS_3",
+     "value": true
+    },
+    {
+     "key": "81_2_dessert_FBOSS_5",
+     "value": true
+    },
+    {
+     "key": "81_2_dessert_FBOSS_2",
+     "value": true
+    },
+    {
+     "key": "volcanoiskand_1_FBOSS",
+     "value": true
+    },
+    {
+     "key": "volcanoiskand_2_FBOSS",
+     "value": true
+    },
+    {
+     "key": "desertisland_2_FBOSS",
+     "value": true
+    },
+    {
+     "key": "desertisland_1_FBOSS",
+     "value": true
+    },
+    {
+     "key": "remainsIsland_2_GrassGolem_Dark_FBOSS",
+     "value": true
+    },
+    {
+     "key": "snow_orange_I_BOSS",
+     "value": true
+    },
+    {
+     "key": "81_6_Ocean_FBOSS_1",
+     "value": true
+    },
+    {
+     "key": "81_3_snow_FBOSS_1",
+     "value": true
+    },
+    {
+     "key": "sakura_purple_D_LilyQueen",
+     "value": true
+    },
+    {
+     "key": "sakura_red_B_BOSS",
+     "value": true
+    },
+    {
+     "key": "sakura_purple_D_LilyQueen_Dark",
+     "value": true
+    },
+    {
+     "key": "skyisland_8_07_G_mountain_FBOSS_1",
+     "value": true
+    },
+    {
+     "key": "skyisland_8_15_1_lake_FBOSS_1",
+     "value": true
+    },
+    {
+     "key": "skyisland_8_04_B_highland_FBOSS_1",
+     "value": true
+    },
+    {
+     "key": "skyisland_8_07_G_mountain_FBOSS_2",
+     "value": true
+    },
+    {
+     "key": "skyisland_8_10_D_swamp_FBOSS_1",
+     "value": true
+    },
+    {
+     "key": "skyisland_8_06_C_lotsulake_FBOSS_1",
+     "value": true
+    },
+    {
+     "key": "skyisland_8_11_E_meadow_FBOSS_1",
+     "value": true
+    },
+    {
+     "key": "81_1_grass_FBOSS_14",
+     "value": true
+    },
+    {
+     "key": "81_1_grass_FBOSS_1",
+     "value": false
+    },
+    {
+     "key": "1_10_plain_F_Boss_FairyDragon",
+     "value": false
+    },
+    {
+     "key": "81_1_grass_FBOSS_16",
+     "value": true
+    },
+    {
+     "key": "81_1_grass_FBOSS_23",
+     "value": false
+    },
+    {
+     "key": "81_1_grass_FBOSS_4",
+     "value": true
+    },
+    {
+     "key": "81_1_grass_FBOSS_31",
+     "value": true
+    },
+    {
+     "key": "81_1_grass_FBOSS_18",
+     "value": true
+    },
+    {
+     "key": "81_1_grass_FBOSS_2",
+     "value": false
+    },
+    {
+     "key": "81_1_grass_FBOSS_24",
+     "value": true
+    },
+    {
+     "key": "81_1_grass_FBOSS_13",
+     "value": true
+    },
+    {
+     "key": "81_1_forest_FBOSS_7",
+     "value": false
+    },
+    {
+     "key": "81_1_grass_FBOSS_27",
+     "value": true
+    },
+    {
+     "key": "81_1_grass_FBOSS_22",
+     "value": true
+    },
+    {
+     "key": "81_1_grass_FBOSS_30",
+     "value": true
+    },
+    {
+     "key": "81_1_grass_FBOSS_25",
+     "value": true
+    },
+    {
+     "key": "81_1_grass_FBOSS_21",
+     "value": true
+    },
+    {
+     "key": "81_1_grass_FBOSS_26",
+     "value": true
+    },
+    {
+     "key": "81_1_grass_FBOSS_29",
+     "value": true
+    },
+    {
+     "key": "81_1_forest_FBOSS_6",
+     "value": true
+    },
+    {
+     "key": "81_4_Sakurajima_FBOSS_2",
+     "value": true
+    },
+    {
+     "key": "81_3_volcano_FBOSS_2",
+     "value": true
+    },
+    {
+     "key": "81_3_volcano_FBOSS_3",
+     "value": true
+    },
+    {
+     "key": "sanctuary_2_volcano_FBOSS",
+     "value": true
+    },
+    {
+     "key": "sanctuary_1_forest_FBOSS",
+     "value": true
+    },
+    {
+     "key": "sanctuary_3_dessert_FBOSS",
+     "value": true
+    },
+    {
+     "key": "BOSS_Female_Soldier02",
+     "value": true
+    },
+    {
+     "key": "BOSS_Male_People03",
+     "value": false
+    },
+    {
+     "key": "BOSS_Viking",
+     "value": true
+    },
+    {
+     "key": "BOSS_Police_Rifle",
+     "value": true
+    },
+    {
+     "key": "BOSS_Believer_CrossBow",
+     "value": false
+    },
+    {
+     "key": "BOSS_Hunter_Fat_GatlingGun",
+     "value": true
+    },
+    {
+     "key": "BOSS_Ninja",
+     "value": true
+    },
+    {
+     "key": "BOSS_VikingElite",
+     "value": true
+    },
+    {
+     "key": "BOSS_DarkTrader",
+     "value": true
+    },
+    {
+     "key": "BOSS_Male_Trader03",
+     "value": true
+    },
+    {
+     "key": "BOSS_Believer_Fat_GiantClub",
+     "value": true
+    },
+    {
+     "key": "BOSS_Male_Soldier03",
+     "value": true
+    },
+    {
+     "key": "BOSS_Male_Soldier04",
+     "value": false
+    },
+    {
+     "key": "BOSS_Scientist_LaserRifle",
+     "value": true
+    },
+    {
+     "key": "BOSS_Police_old",
+     "value": true
+    },
+    {
+     "key": "BOSS_Female_People03",
+     "value": false
+    },
+    {
+     "key": "BOSS_Female_Soldier04",
+     "value": false
+    },
+    {
+     "key": "BOSS_Male_Trader01",
+     "value": true
+    },
+    {
+     "key": "BOSS_Male_DesertPeople",
+     "value": true
+    },
+    {
+     "key": "BOSS_Female_DesertPeople",
+     "value": true
+    },
+    {
+     "key": "BOSS_FireCult_FlameThrower",
+     "value": true
+    },
+    {
+     "key": "BOSS_Male_NinjaElite",
+     "value": true
+    },
+    {
+     "key": "BOSS_Hunter_Rifle",
+     "value": false
+    },
+    {
+     "key": "BOSS_Male_People",
+     "value": true
+    },
+    {
+     "key": "BOSS_Male_Soldier02",
+     "value": true
+    },
+    {
+     "key": "BOSS_Male_People02",
+     "value": true
+    },
+    {
+     "key": "BOSS_Male_Soldier",
+     "value": true
+    },
+    {
+     "key": "BOSS_Female_People",
+     "value": true
+    },
+    {
+     "key": "BOSS_Female_Soldier",
+     "value": false
+    },
+    {
+     "key": "BOSS_Female_Soldier03",
+     "value": true
+    },
+    {
+     "key": "BOSS_Female_People02",
+     "value": true
+    },
+    {
+     "key": "BOSS_Male_Trader02",
+     "value": true
+    },
+    {
+     "key": "BOSS_Male_People2",
+     "value": true
+    },
+    {
+     "key": "5_2_island_iceblock_FBOSS_1",
+     "value": true
+    },
+    {
+     "key": "81_1_forest_FBOSS_3",
+     "value": true
+    },
+    {
+     "key": "81_1_grass_FBOSS_9",
+     "value": false
+    },
+    {
+     "key": "81_1_grass_FBOSS_28",
+     "value": true
+    },
+    {
+     "key": "81_5_Yamijima_FBOSS_9",
+     "value": true
+    },
+    {
+     "key": "81_5_Yamijima_FBOSS_8",
+     "value": true
+    },
+    {
+     "key": "81_1_forest_FBOSS_2",
+     "value": true
+    },
+    {
+     "key": "81_1_grass_FBOSS_20",
+     "value": true
+    },
+    {
+     "key": "81_1_forest_FBOSS_4",
+     "value": true
+    },
+    {
+     "key": "81_1_forest_FBOSS_5",
+     "value": true
+    },
+    {
+     "key": "81_1_forest_FBOSS_1",
+     "value": false
+    },
+    {
+     "key": "skyisland_8_09_D_forest_FBOSS_2",
+     "value": true
+    },
+    {
+     "key": "81_1_grass_FBOSS_6",
+     "value": true
+    },
+    {
+     "key": "81_5_Yamijima_FBOSS_16",
+     "value": true
+    },
+    {
+     "key": "81_1_grass_FBOSS_10",
+     "value": false
+    },
+    {
+     "key": "81_1_grass_FBOSS_FlameBuffalo",
+     "value": false
+    },
+    {
+     "key": "81_5_Yamijima_FBOSS_11",
+     "value": true
+    },
+    {
+     "key": "81_1_grass_FBOSS_15",
+     "value": false
+    },
+    {
+     "key": "REGION_Oilrig_3",
+     "value": true
+    },
+    {
+     "key": "REGION_Oilrig_1",
+     "value": true
+    },
+    {
+     "key": "REGION_Oilrig_2",
+     "value": true
+    }
+   ]
+  }
+ }
+}

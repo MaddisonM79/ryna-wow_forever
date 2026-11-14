@@ -8,3 +8,5 @@ dist/
 target/
 .env
 .env.*
+# The core packages scripts/core-package.mjs builds by default.
+dist-core/

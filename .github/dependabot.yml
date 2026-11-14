@@ -34,3 +34,15 @@ updates:
       # PR #13, 2026-11-10). Drop this when a vue-tsc release supports 7.
       - dependency-name: typescript
         update-types: ["version-update:semver-major"]
+
+  # The Palworld core (cores/palworld, pnpm-lock.yaml). ooz-wasm is pinned exactly: a new version
+  # changes what decompresses every save, so take it on purpose.
+  - package-ecosystem: npm
+    directory: /cores/palworld
+    schedule: { interval: weekly, day: tuesday, time: "09:00", timezone: America/Chicago }
+    cooldown: { default-days: 2 }
+    commit-message: { prefix: "palworld core" }
+    groups:
+      palworld: { patterns: ["*"], update-types: [minor, patch] }
+    ignore:
+      - dependency-name: ooz-wasm
